@@ -59,4 +59,4 @@ Each model has a dedicated function (e.g. `sars.sar_power()`, `sars.sar_negexpo(
 
 If you use this software, please cite it:
 
-> McMeen, J. (2026). *sars: Species-Area Relationship curve fitting in Python*. [![DOI](https://zenodo.org/badge/1200249864.svg)](https://doi.org/10.5281/zenodo.19410393)
+> McMeen, J. (2026). *sars: Species-area relationship curve fitting in Python*. [![DOI](https://zenodo.org/badge/1200249864.svg)](https://doi.org/10.5281/zenodo.19410393)
