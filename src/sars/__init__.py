@@ -4,6 +4,16 @@ Conceptual mirror of the R `sars` package (Matthews et al. 2019),
 native to the Python scientific stack.
 """
 
+from sars._inference import (
+    AveragedSAR,
+    BootstrappedCI,
+    MultiSARFit,
+    aicc,
+    akaike_weights,
+    bootstrap_ci,
+    sar_average,
+    sar_multi,
+)
 from sars._io import load_galap
 from sars._models import (
     SARFit,
@@ -30,8 +40,16 @@ from sars._models import (
 )
 
 __all__ = [
+    "AveragedSAR",
+    "BootstrappedCI",
+    "MultiSARFit",
     "SARFit",
+    "aicc",
+    "akaike_weights",
+    "bootstrap_ci",
     "load_galap",
+    "sar_average",
+    "sar_multi",
     "sar_asymp",
     "sar_betap",
     "sar_chapman",
