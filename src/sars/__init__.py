@@ -38,18 +38,21 @@ from sars._models import (
     sar_weibull3,
     sar_weibull4,
 )
+from sars._threshold import ThresholdFit, sar_threshold
 
 __all__ = [
     "AveragedSAR",
     "BootstrappedCI",
     "MultiSARFit",
     "SARFit",
+    "ThresholdFit",
     "aicc",
     "akaike_weights",
     "bootstrap_ci",
     "load_galap",
     "sar_average",
     "sar_multi",
+    "sar_threshold",
     "sar_asymp",
     "sar_betap",
     "sar_chapman",
