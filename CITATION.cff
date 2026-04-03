@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
-title: "sars: Species-Area Relationship curve fitting in Python"
+title: "sars: Species-area relationship curve fitting in Python"
 type: software
 authors:
   - family-names: McMeen
