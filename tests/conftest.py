@@ -10,7 +10,7 @@ def galap():
     path = REF / "galap.csv"
     if not path.exists():
         pytest.skip("Run generate_r_reference.R first")
-    return pd.read_csv(path)
+    return pd.read_csv(path).rename(columns={"a": "area", "s": "species"})
 
 
 @pytest.fixture(scope="session")
