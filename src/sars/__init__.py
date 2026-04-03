@@ -5,10 +5,51 @@ native to the Python scientific stack.
 """
 
 from sars._io import load_galap
-from sars._models import SARFit, sar_power
+from sars._models import (
+    SARFit,
+    sar_asymp,
+    sar_betap,
+    sar_chapman,
+    sar_epm1,
+    sar_epm2,
+    sar_gompertz,
+    sar_heleg,
+    sar_koba,
+    sar_linear,
+    sar_loga,
+    sar_mmf,
+    sar_monod,
+    sar_negexpo,
+    sar_p1,
+    sar_p2,
+    sar_power,
+    sar_powerR,
+    sar_ratio,
+    sar_weibull3,
+    sar_weibull4,
+)
 
 __all__ = [
     "SARFit",
-    "sar_power",
     "load_galap",
+    "sar_asymp",
+    "sar_betap",
+    "sar_chapman",
+    "sar_epm1",
+    "sar_epm2",
+    "sar_gompertz",
+    "sar_heleg",
+    "sar_koba",
+    "sar_linear",
+    "sar_loga",
+    "sar_mmf",
+    "sar_monod",
+    "sar_negexpo",
+    "sar_p1",
+    "sar_p2",
+    "sar_power",
+    "sar_powerR",
+    "sar_ratio",
+    "sar_weibull3",
+    "sar_weibull4",
 ]
