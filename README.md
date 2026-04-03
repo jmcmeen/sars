@@ -1,5 +1,7 @@
 # sars
 
+[![DOI](https://zenodo.org/badge/1200249864.svg)](https://doi.org/10.5281/zenodo.19410393)
+
 Species-area relationship curve fitting in Python.
 
 A conceptual mirror of the R [`sars`](https://cran.r-project.org/package=sars) package (Matthews et al. 2019), native to the Python scientific stack.
@@ -52,3 +54,9 @@ ci = sars.bootstrap_ci(galap, n_boot=100)
 | Asymptotic sigmoid | `mmf`, `gompertz`, `weibull3`, `weibull4`, `chapman`, `betap`, `heleg` |
 
 Each model has a dedicated function (e.g. `sars.sar_power()`, `sars.sar_negexpo()`) and returns a `SARFit` object with parameters, R², AIC, AICc, and BIC.
+
+## Citation
+
+If you use this software, please cite it:
+
+> McMeen, J. (2026). *sars: Species-Area Relationship curve fitting in Python*. [![DOI](https://zenodo.org/badge/1200249864.svg)](https://doi.org/10.5281/zenodo.19410393)
