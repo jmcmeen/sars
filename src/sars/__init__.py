@@ -15,6 +15,7 @@ from sars._inference import (
     sar_multi,
 )
 from sars._io import from_csv, from_geodataframe, from_pyinaturalist, load_galap
+from sars._plots import plot_average, plot_fit, plot_multi, plot_residuals
 from sars._models import (
     SARFit,
     sar_asymp,
@@ -56,6 +57,10 @@ __all__ = [
     "sar_average",
     "sar_multi",
     "sar_threshold",
+    "plot_average",
+    "plot_fit",
+    "plot_multi",
+    "plot_residuals",
     "sar_asymp",
     "sar_betap",
     "sar_chapman",
