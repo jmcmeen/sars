@@ -217,3 +217,13 @@ class TestBootstrapCI:
         assert len(ci.convergence_counts) == ci.n_boot
         assert ci.n_models_attempted == 2
         assert all(0 < c <= 2 for c in ci.convergence_counts)
+
+    def test_convergence_diagnostics_fast(self, galap):
+        """BootstrappedCI should expose convergence counts in fast mode."""
+        ci = sars.bootstrap_ci(
+            galap, models=["power", "loga"], n_boot=5,
+            rng=np.random.default_rng(42), method="fast",
+        )
+        assert len(ci.convergence_counts) == ci.n_boot
+        assert ci.n_models_attempted == 2
+        assert all(0 < c <= 2 for c in ci.convergence_counts)
