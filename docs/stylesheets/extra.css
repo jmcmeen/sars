@@ -1,0 +1,400 @@
+/* =============================================================
+   sars docs — Dark earthy theme override for Material for MkDocs
+   Fonts: DM Serif Display · IBM Plex Mono · Lora
+   Palette: terra cotta, sand, cream on near-black
+   ============================================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=IBM+Plex+Mono:wght@400;500&family=Lora:ital,wght@0,400;0,500;1,400&display=swap');
+
+/* -- Design tokens -------------------------------------------------- */
+:root,
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color:         #c4693a;
+  --md-primary-fg-color--light:  #e0855a;
+  --md-primary-fg-color--dark:   #a3522a;
+  --md-accent-fg-color:          #e0855a;
+  --md-accent-fg-color--transparent: rgba(224,133,90,0.12);
+
+  --md-default-bg-color:         #0f0e0c;
+  --md-default-bg-color--light:  #181612;
+  --md-default-bg-color--lighter:#221f1a;
+  --md-default-fg-color:         #f0e8d8;
+  --md-default-fg-color--light:  #d4b896;
+  --md-default-fg-color--lighter:#8a7560;
+  --md-default-fg-color--lightest:rgba(107,96,85,0.4);
+
+  --md-code-bg-color:            #181612;
+  --md-code-fg-color:            #d4b896;
+  --md-code-hl-color:            rgba(196,105,58,0.15);
+  --md-code-hl-number-color:     #a8c6e8;
+  --md-code-hl-string-color:     #9fcda8;
+  --md-code-hl-keyword-color:    #e0855a;
+  --md-code-hl-name-color:       #d4b896;
+  --md-code-hl-operator-color:   #8a7560;
+  --md-code-hl-comment-color:    #6b6055;
+  --md-code-hl-function-color:   #e0855a;
+  --md-code-hl-constant-color:   #a8c6e8;
+  --md-code-hl-special-color:    #c4693a;
+  --md-code-hl-punctuation-color:#6b6055;
+  --md-code-hl-generic-color:    #d4b896;
+
+  --md-typeset-color:            #d4b896;
+  --md-typeset-a-color:          #e0855a;
+
+  --md-footer-bg-color:          #0f0e0c;
+  --md-footer-bg-color--dark:    #0a0908;
+  --md-footer-fg-color:          #6b6055;
+  --md-footer-fg-color--light:   #8a7560;
+  --md-footer-fg-color--lighter: #d4b896;
+
+  /* Borders */
+  --border: #2e2a23;
+  --terra:  #c4693a;
+  --terra-lt: #e0855a;
+  --sand:   #d4b896;
+  --cream:  #f0e8d8;
+  --muted:  #6b6055;
+  --bg2:    #181612;
+  --bg3:    #221f1a;
+}
+
+/* -- Topographic grid background ------------------------------------ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(196,105,58,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(196,105,58,0.05) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* -- Grain overlay -------------------------------------------------- */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 128px;
+  opacity: 0.3;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Ensure content sits above overlays */
+.md-container,
+.md-header,
+.md-tabs,
+.md-footer {
+  position: relative;
+  z-index: 1;
+}
+
+/* -- Typography ----------------------------------------------------- */
+.md-typeset {
+  font-family: 'Lora', Georgia, serif;
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--sand);
+}
+
+.md-typeset h1 {
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-size: 2.2em;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--cream);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+
+.md-typeset h2 {
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-size: 1.6em;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--cream);
+  margin-top: 2em;
+  border-bottom: none;
+}
+.md-typeset h2::before {
+  content: '\00a7';
+  color: var(--terra);
+  margin-right: 8px;
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+
+.md-typeset h3 {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.75em;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--terra-lt);
+}
+
+.md-typeset h4,
+.md-typeset h5,
+.md-typeset h6 {
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--cream);
+  letter-spacing: 0.04em;
+}
+
+.md-typeset strong {
+  color: var(--cream);
+  font-weight: 500;
+}
+
+/* -- Links ---------------------------------------------------------- */
+.md-typeset a {
+  color: var(--terra-lt);
+  text-decoration: underline;
+  text-decoration-color: rgba(196,105,58,0.3);
+  text-underline-offset: 3px;
+}
+.md-typeset a:hover {
+  color: var(--cream);
+  text-decoration-color: var(--terra-lt);
+}
+
+/* -- Header bar ----------------------------------------------------- */
+.md-header {
+  background: var(--md-default-bg-color);
+  border-bottom: 1px solid var(--border);
+  box-shadow: none;
+}
+
+.md-header__title {
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
+/* -- Tabs (top navigation) ------------------------------------------ */
+.md-tabs {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+}
+
+/* -- Sidebar / Nav -------------------------------------------------- */
+.md-sidebar {
+  background: transparent;
+}
+
+.md-nav__link {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+.md-nav__link--active,
+.md-nav__link:hover {
+  color: var(--terra-lt);
+}
+
+.md-nav__item--active > .md-nav__link {
+  color: var(--terra-lt);
+  font-weight: 500;
+}
+
+/* -- Inline code ---------------------------------------------------- */
+.md-typeset code {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.82em;
+  background: var(--bg3);
+  color: var(--terra-lt);
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
+/* -- Code blocks ---------------------------------------------------- */
+.md-typeset pre {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--terra);
+  border-radius: 4px;
+}
+
+.md-typeset pre > code {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  background: var(--bg2);
+  border: none;
+  padding: 0;
+  color: var(--sand);
+}
+
+/* Highlight overrides */
+.highlight .hll { background: rgba(196,105,58,0.12); }
+
+/* -- Tables --------------------------------------------------------- */
+.md-typeset table:not([class]) {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  font-size: 14px;
+}
+
+.md-typeset table:not([class]) th {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 14px;
+}
+
+.md-typeset table:not([class]) td {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 14px;
+  color: var(--sand);
+}
+
+.md-typeset table:not([class]) tr:hover td {
+  background: var(--bg3);
+}
+
+/* First column (function/model names) in accent color */
+.md-typeset table:not([class]) td:first-child {
+  color: var(--terra-lt);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* -- Admonitions ---------------------------------------------------- */
+.md-typeset .admonition,
+.md-typeset details {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--terra);
+  border-radius: 3px;
+  box-shadow: none;
+  font-size: 15px;
+}
+
+.md-typeset .admonition-title,
+.md-typeset summary {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(196,105,58,0.08);
+  border-bottom: 1px solid var(--border);
+}
+
+/* -- Blockquotes ---------------------------------------------------- */
+.md-typeset blockquote {
+  border-left: none;
+  background: var(--bg3);
+  border-radius: 2px;
+  padding: 24px 32px;
+  margin: 32px 0;
+  position: relative;
+}
+.md-typeset blockquote::before {
+  content: '\201C';
+  position: absolute;
+  top: 4px;
+  left: 16px;
+  font-family: 'DM Serif Display', serif;
+  font-size: 64px;
+  color: var(--terra);
+  opacity: 0.2;
+  line-height: 1;
+}
+.md-typeset blockquote p {
+  font-family: 'DM Serif Display', serif;
+  font-style: italic;
+  font-size: 1.15em;
+  color: var(--cream);
+  line-height: 1.5;
+}
+
+/* -- Search --------------------------------------------------------- */
+.md-search__input {
+  font-family: 'IBM Plex Mono', monospace;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+}
+
+.md-search-result__meta {
+  color: var(--muted);
+}
+
+/* -- Footer --------------------------------------------------------- */
+.md-footer {
+  border-top: 1px solid var(--border);
+}
+
+.md-footer-meta {
+  background: var(--md-default-bg-color);
+}
+
+/* -- Scrollbar ------------------------------------------------------ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--md-default-bg-color);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+/* -- API reference (mkdocstrings) ----------------------------------- */
+.doc-heading {
+  font-family: 'DM Serif Display', Georgia, serif !important;
+  color: var(--cream) !important;
+}
+
+.doc-signature {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--terra);
+  border-radius: 4px;
+  padding: 12px 16px;
+}
+
+.doc-param-details {
+  border-left: 2px solid var(--border);
+  padding-left: 16px;
+  margin-left: 8px;
+}
+
+/* -- Selection highlight -------------------------------------------- */
+::selection {
+  background: rgba(196,105,58,0.3);
+  color: var(--cream);
+}
+
+/* -- Permalink anchors ---------------------------------------------- */
+.md-typeset .headerlink {
+  color: var(--terra);
+  opacity: 0.4;
+}
+.md-typeset .headerlink:hover {
+  color: var(--terra-lt);
+  opacity: 1;
+}
+
+/* -- Responsive ----------------------------------------------------- */
+@media (max-width: 560px) {
+  .md-typeset h1 { font-size: 1.8em; }
+  .md-typeset h2 { font-size: 1.3em; }
+}
