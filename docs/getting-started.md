@@ -70,6 +70,15 @@ ci = sars.bootstrap_ci(galap, n_boot=100)
 # ci.mean, ci.lower, ci.upper are arrays over ci.area_grid
 ```
 
+By default, `bootstrap_ci` uses `method="fast"`, which fits all models once on
+the original data and warm-starts each bootstrap resample from those parameters.
+Use `method="full"` for a complete grid search on every resample (much slower
+but maximally robust):
+
+```python
+ci = sars.bootstrap_ci(galap, n_boot=100, method="full")
+```
+
 ## Threshold models
 
 Detect breakpoints in the species-area relationship (e.g., the small island

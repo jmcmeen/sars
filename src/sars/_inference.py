@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -306,6 +307,12 @@ class BootstrappedCI:
         Confidence level (e.g. 0.95).
     n_boot : int
         Number of bootstrap replicates completed.
+    convergence_counts : list[int]
+        Number of models that converged in each successful replicate.
+        Length equals ``n_boot``. Empty when no replicates succeeded.
+    n_models_attempted : int
+        Number of models attempted per replicate (i.e. the number that
+        converged on the original data).
     """
 
     area_grid: np.ndarray
@@ -314,10 +321,43 @@ class BootstrappedCI:
     upper: np.ndarray
     conf: float
     n_boot: int
+    convergence_counts: list[int] = field(default_factory=list, repr=False)
+    n_models_attempted: int = 0
 
     def __repr__(self) -> str:
         return (f"BootstrappedCI(n_boot={self.n_boot}, "
                 f"conf={self.conf}, points={len(self.area_grid)})")
+
+
+def _sar_multi_fast(
+    data: pd.DataFrame,
+    warm_starts: dict[str, dict[str, float]],
+) -> MultiSARFit:
+    """Fit multiple SAR models using warm-start parameters (no grid search).
+
+    Used internally by bootstrap to avoid the expensive full grid search
+    on each resample. Each model is fitted from a single starting point
+    derived from the original data fit.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        DataFrame with columns 'area' and 'species'.
+    warm_starts : dict[str, dict[str, float]]
+        Map of model name -> parameter dict from the original fit.
+
+    Returns
+    -------
+    MultiSARFit
+    """
+    fits: list[SARFit] = []
+    for name, params in warm_starts.items():
+        fit = _fit_nls(name, data, start_from=params)
+        if fit.converged:
+            fits.append(fit)
+
+    summary = _build_summary(fits)
+    return MultiSARFit(fits=fits, data=data, summary=summary)
 
 
 def bootstrap_ci(
@@ -327,6 +367,7 @@ def bootstrap_ci(
     conf: float = 0.95,
     area_grid: np.ndarray | None = None,
     rng: np.random.Generator | None = None,
+    method: str = "fast",
 ) -> BootstrappedCI:
     """Compute bootstrap confidence intervals for model-averaged predictions.
 
@@ -349,11 +390,20 @@ def bootstrap_ci(
         the range of the data.
     rng : np.random.Generator, optional
         Random number generator for reproducibility.
+    method : str
+        Bootstrap fitting strategy. ``"fast"`` (default) fits all models once
+        on the original data with full grid search, then uses those converged
+        parameters as warm starts for each resample (~2000x faster).
+        ``"full"`` runs the complete grid search on every resample (slow but
+        maximally robust).
 
     Returns
     -------
     BootstrappedCI
     """
+    if method not in ("fast", "full"):
+        raise ValueError(f"method must be 'fast' or 'full', got {method!r}")
+
     if rng is None:
         rng = np.random.default_rng()
 
@@ -362,18 +412,49 @@ def bootstrap_ci(
         a_max = data["area"].max()
         area_grid = np.linspace(a_min, a_max, 100)
 
+    # For "fast" mode, do one full grid-search fit to get warm-start params
+    warm_starts: dict[str, dict[str, float]] | None = None
+    if method == "fast":
+        base_multi = sar_multi(data, models=models)
+        warm_starts = {
+            fit.model: dict(fit.params) for fit in base_multi.fits
+        }
+        if not warm_starts:
+            nan_arr = np.full_like(area_grid, np.nan)
+            return BootstrappedCI(
+                area_grid=area_grid, mean=nan_arr, lower=nan_arr,
+                upper=nan_arr, conf=conf, n_boot=0,
+            )
+
+    n_attempted = len(warm_starts) if warm_starts else 0
     n = len(data)
     alpha = 1.0 - conf
     preds = []
+    convergence_counts: list[int] = []
 
     for _ in range(n_boot):
         idx = rng.integers(0, n, size=n)
         boot_data = data.iloc[idx].reset_index(drop=True)
         try:
-            avg = sar_average(boot_data, models=models)
+            if method == "fast":
+                multi = _sar_multi_fast(boot_data, warm_starts)
+                n_converged = len(multi.fits)
+                if not multi.fits:
+                    continue
+                weights = dict(
+                    zip(multi.summary["model"], multi.summary["weight"])
+                )
+                avg = AveragedSAR(multi=multi, ic="AICc", weights=weights)
+            else:
+                avg = sar_average(boot_data, models=models)
+                n_converged = len(avg.multi.fits)
+                n_attempted = len(
+                    ALL_MODEL_NAMES if models == "all" else list(models)
+                )
             pred = avg.predict(area_grid)
             if np.all(np.isfinite(pred)):
                 preds.append(pred)
+                convergence_counts.append(n_converged)
         except Exception:
             continue
 
@@ -382,7 +463,20 @@ def bootstrap_ci(
         return BootstrappedCI(
             area_grid=area_grid, mean=nan_arr, lower=nan_arr,
             upper=nan_arr, conf=conf, n_boot=0,
+            convergence_counts=[], n_models_attempted=n_attempted,
         )
+
+    # Warn if convergence rate across resamples was poor
+    if n_attempted > 0 and convergence_counts:
+        mean_converged = np.mean(convergence_counts)
+        rate = mean_converged / n_attempted
+        if rate < 0.5:
+            warnings.warn(
+                f"Bootstrap convergence rate is low: on average "
+                f"{mean_converged:.1f}/{n_attempted} models converged per "
+                f"resample ({rate:.0%}). CI estimates may be unreliable.",
+                stacklevel=2,
+            )
 
     preds_arr = np.array(preds)
     return BootstrappedCI(
@@ -392,4 +486,6 @@ def bootstrap_ci(
         upper=np.percentile(preds_arr, 100 * (1 - alpha / 2), axis=0),
         conf=conf,
         n_boot=len(preds),
+        convergence_counts=convergence_counts,
+        n_models_attempted=n_attempted,
     )

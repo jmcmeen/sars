@@ -132,6 +132,7 @@ def _register(spec: _ModelSpec) -> _ModelSpec:
 def _fit_nls(
     name: str,
     data: pd.DataFrame,
+    start_from: dict[str, float] | None = None,
 ) -> SARFit:
     """Fit a model from the registry using multi-start NLS.
 
@@ -141,6 +142,10 @@ def _fit_nls(
         Model name (key in _MODEL_REGISTRY).
     data : pd.DataFrame
         DataFrame with columns 'area' and 'species'.
+    start_from : dict[str, float], optional
+        If provided, use these parameter values as the single starting point
+        instead of the full grid search. Used by bootstrap to avoid the
+        expensive grid search on each resample.
 
     Returns
     -------
@@ -160,7 +165,26 @@ def _fit_nls(
     best_cost = np.inf
     best_result = None
 
-    for start in product(*spec.start_grid):
+    if start_from is not None:
+        expected = set(spec.param_names)
+        provided = set(start_from)
+        if provided != expected:
+            missing = expected - provided
+            extra = provided - expected
+            parts = []
+            if missing:
+                parts.append(f"missing {missing}")
+            if extra:
+                parts.append(f"unexpected {extra}")
+            raise ValueError(
+                f"start_from keys don't match model '{name}' "
+                f"params {spec.param_names}: {', '.join(parts)}"
+            )
+        starts = [[start_from[k] for k in spec.param_names]]
+    else:
+        starts = product(*spec.start_grid)
+
+    for start in starts:
         try:
             result = least_squares(
                 residuals,

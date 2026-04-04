@@ -194,3 +194,26 @@ class TestBootstrapCI:
             conf=0.90, rng=np.random.default_rng(42),
         )
         assert ci.conf == 0.90
+
+    def test_method_full(self, galap):
+        """method='full' uses complete grid search per resample."""
+        ci = sars.bootstrap_ci(
+            galap, models=["power", "loga"], n_boot=3,
+            rng=np.random.default_rng(42), method="full",
+        )
+        assert isinstance(ci, sars.BootstrappedCI)
+        assert ci.n_boot > 0
+
+    def test_invalid_method(self, galap):
+        with pytest.raises(ValueError, match="method must be"):
+            sars.bootstrap_ci(galap, n_boot=1, method="invalid")
+
+    def test_convergence_diagnostics(self, galap):
+        """BootstrappedCI should expose per-replicate convergence counts."""
+        ci = sars.bootstrap_ci(
+            galap, models=["power", "loga"], n_boot=5,
+            rng=np.random.default_rng(42),
+        )
+        assert len(ci.convergence_counts) == ci.n_boot
+        assert ci.n_models_attempted == 2
+        assert all(0 < c <= 2 for c in ci.convergence_counts)
