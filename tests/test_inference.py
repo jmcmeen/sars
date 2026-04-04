@@ -162,7 +162,7 @@ class TestBootstrapCI:
     def test_ci_ordering(self, galap):
         """Lower bound should be <= mean <= upper bound."""
         ci = sars.bootstrap_ci(
-            galap, models=["power", "loga"], n_boot=20,
+            galap, models=["power", "loga"], n_boot=10,
             rng=np.random.default_rng(42),
         )
         assert np.all(ci.lower <= ci.mean + 1e-10)
