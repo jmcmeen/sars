@@ -52,3 +52,9 @@ select = ["E", "F", "I", "N", "UP", "B"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-n auto --cov=sars --cov-report=term-missing"
+filterwarnings = [
+    "ignore::scipy.optimize.OptimizeWarning",
+    "ignore:invalid value encountered:RuntimeWarning",
+    "ignore:overflow encountered:RuntimeWarning",
+    "ignore:divide by zero:RuntimeWarning",
+]
