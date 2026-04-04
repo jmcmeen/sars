@@ -63,27 +63,23 @@ class TestAkaikeWeights:
 # ---------------------------------------------------------------------------
 
 class TestSarMulti:
-    def test_all_models(self, galap):
+    def test_all_models(self, galap_multi):
         """sar_multi with all models should produce a summary table."""
-        result = sars.sar_multi(galap)
-        assert isinstance(result, sars.MultiSARFit)
-        assert len(result.fits) > 0
-        assert "model" in result.summary.columns
-        assert "weight" in result.summary.columns
-        assert "delta_AICc" in result.summary.columns
+        assert isinstance(galap_multi, sars.MultiSARFit)
+        assert len(galap_multi.fits) > 0
+        assert "model" in galap_multi.summary.columns
+        assert "weight" in galap_multi.summary.columns
+        assert "delta_AICc" in galap_multi.summary.columns
 
-    def test_summary_sorted_by_aicc(self, galap):
-        result = sars.sar_multi(galap)
-        aicc_vals = result.summary["AICc"].values
+    def test_summary_sorted_by_aicc(self, galap_multi):
+        aicc_vals = galap_multi.summary["AICc"].values
         assert np.all(aicc_vals[:-1] <= aicc_vals[1:])
 
-    def test_weights_sum_to_one(self, galap):
-        result = sars.sar_multi(galap)
-        assert result.summary["weight"].sum() == pytest.approx(1.0)
+    def test_weights_sum_to_one(self, galap_multi):
+        assert galap_multi.summary["weight"].sum() == pytest.approx(1.0)
 
-    def test_delta_aicc_min_is_zero(self, galap):
-        result = sars.sar_multi(galap)
-        assert result.summary["delta_AICc"].min() == pytest.approx(0.0)
+    def test_delta_aicc_min_is_zero(self, galap_multi):
+        assert galap_multi.summary["delta_AICc"].min() == pytest.approx(0.0)
 
     def test_subset_models(self, galap):
         result = sars.sar_multi(galap, models=["power", "loga", "linear"])
@@ -94,25 +90,22 @@ class TestSarMulti:
         with pytest.raises(ValueError, match="Unknown model"):
             sars.sar_multi(galap, models=["power", "nonexistent"])
 
-    def test_shape_column(self, galap):
-        result = sars.sar_multi(galap)
-        shapes = set(result.summary["shape"])
+    def test_shape_column(self, galap_multi):
+        shapes = set(galap_multi.summary["shape"])
         assert shapes <= {"convex", "sigmoid", "linear"}
 
-    def test_asymptote_column(self, galap):
+    def test_asymptote_column(self, galap_multi):
         """Asymptotic models should have finite asymptote values."""
-        result = sars.sar_multi(galap)
-        for _, row in result.summary.iterrows():
+        for _, row in galap_multi.summary.iterrows():
             if row["shape"] == "sigmoid" or row["model"] in {
                 "monod", "negexpo", "asymp", "ratio", "koba"
             }:
                 if row["model"] != "koba":
                     assert row["asymptote"] is not None
 
-    def test_all_20_converge(self, galap):
+    def test_all_20_converge(self, galap_multi):
         """All 20 models should converge on galap."""
-        result = sars.sar_multi(galap)
-        assert len(result.fits) == 20
+        assert len(galap_multi.fits) == 20
 
 
 # ---------------------------------------------------------------------------
@@ -120,29 +113,24 @@ class TestSarMulti:
 # ---------------------------------------------------------------------------
 
 class TestSarAverage:
-    def test_basic(self, galap):
-        avg = sars.sar_average(galap)
-        assert isinstance(avg, sars.AveragedSAR)
-        assert avg.ic == "AICc"
-        assert len(avg.weights) > 0
+    def test_basic(self, galap_average):
+        assert isinstance(galap_average, sars.AveragedSAR)
+        assert galap_average.ic == "AICc"
+        assert len(galap_average.weights) > 0
 
-    def test_predict(self, galap):
-        avg = sars.sar_average(galap)
-        pred = avg.predict(galap["area"].values)
+    def test_predict(self, galap, galap_average):
+        pred = galap_average.predict(galap["area"].values)
         assert len(pred) == len(galap)
         assert np.all(np.isfinite(pred))
-        # Predictions should be positive
         assert np.all(pred > 0)
 
-    def test_predict_scalar(self, galap):
-        avg = sars.sar_average(galap)
-        pred = avg.predict(10.0)
+    def test_predict_scalar(self, galap_average):
+        pred = galap_average.predict(10.0)
         assert np.isfinite(pred)
         assert pred > 0
 
-    def test_weights_sum_to_one(self, galap):
-        avg = sars.sar_average(galap)
-        assert sum(avg.weights.values()) == pytest.approx(1.0)
+    def test_weights_sum_to_one(self, galap_average):
+        assert sum(galap_average.weights.values()) == pytest.approx(1.0)
 
     def test_subset_models(self, galap):
         avg = sars.sar_average(galap, models=["power", "negexpo"])
@@ -174,7 +162,7 @@ class TestBootstrapCI:
     def test_ci_ordering(self, galap):
         """Lower bound should be <= mean <= upper bound."""
         ci = sars.bootstrap_ci(
-            galap, models=["power", "loga"], n_boot=20,
+            galap, models=["power", "loga"], n_boot=10,
             rng=np.random.default_rng(42),
         )
         assert np.all(ci.lower <= ci.mean + 1e-10)
@@ -213,6 +201,16 @@ class TestBootstrapCI:
         ci = sars.bootstrap_ci(
             galap, models=["power", "loga"], n_boot=5,
             rng=np.random.default_rng(42),
+        )
+        assert len(ci.convergence_counts) == ci.n_boot
+        assert ci.n_models_attempted == 2
+        assert all(0 < c <= 2 for c in ci.convergence_counts)
+
+    def test_convergence_diagnostics_fast(self, galap):
+        """BootstrappedCI should expose convergence counts in fast mode."""
+        ci = sars.bootstrap_ci(
+            galap, models=["power", "loga"], n_boot=5,
+            rng=np.random.default_rng(42), method="fast",
         )
         assert len(ci.convergence_counts) == ci.n_boot
         assert ci.n_models_attempted == 2

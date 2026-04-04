@@ -17,7 +17,7 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering",
 ]
 dependencies = [
     "numpy>=1.22",
@@ -27,7 +27,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "pytest-cov", "ruff", "mypy"]
+dev = ["pytest>=7", "pytest-cov", "pytest-xdist", "ruff", "mypy"]
 docs = ["mkdocs-material", "mkdocstrings[python]"]
 interactive = ["plotly>=5"]
 geo = ["geopandas>=0.12", "shapely>=2.0"]
@@ -51,4 +51,10 @@ select = ["E", "F", "I", "N", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=sars --cov-report=term-missing"
+addopts = "-n auto --cov=sars --cov-report=term-missing"
+filterwarnings = [
+    "ignore::scipy.optimize.OptimizeWarning",
+    "ignore:invalid value encountered:RuntimeWarning",
+    "ignore:overflow encountered:RuntimeWarning",
+    "ignore:divide by zero:RuntimeWarning",
+]

@@ -55,6 +55,12 @@ ci = sars.bootstrap_ci(galap, n_boot=100)
 
 Each model has a dedicated function (e.g. `sars.sar_power()`, `sars.sar_negexpo()`) and returns a `SARFit` object with parameters, R², AIC, AICc, and BIC.
 
+## Citation
+
+If you use this software, please cite it:
+
+> McMeen, J. (2026). *sars: Species-area relationship curve fitting in Python*. [![DOI](https://zenodo.org/badge/1200249864.svg)](https://doi.org/10.5281/zenodo.19410393)
+
 ## References
 
 This package is a Python implementation inspired by the R [`sars`](https://github.com/txm676/sars) package. The 20 SAR models and multi-model inference framework draw on the following works:
@@ -89,9 +95,3 @@ This package is a Python implementation inspired by the R [`sars`](https://githu
 ### Threshold models
 
 - Matthews TJ, Rigal F (2021). Thresholds and the species-area relationship. *Frontiers of Biogeography*, 13, e49404.
-
-## Citation
-
-If you use this software, please cite it:
-
-> McMeen, J. (2026). *sars: Species-area relationship curve fitting in Python*. [![DOI](https://zenodo.org/badge/1200249864.svg)](https://doi.org/10.5281/zenodo.19410393)
