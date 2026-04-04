@@ -325,8 +325,16 @@ class BootstrappedCI:
     n_models_attempted: int = 0
 
     def __repr__(self) -> str:
-        return (f"BootstrappedCI(n_boot={self.n_boot}, "
-                f"conf={self.conf}, points={len(self.area_grid)})")
+        parts = [
+            f"n_boot={self.n_boot}",
+            f"conf={self.conf}",
+            f"points={len(self.area_grid)}",
+            f"n_models_attempted={self.n_models_attempted}",
+        ]
+        if self.convergence_counts:
+            rate = np.mean(self.convergence_counts) / self.n_models_attempted
+            parts.append(f"mean_convergence_rate={rate:.0%}")
+        return f"BootstrappedCI({', '.join(parts)})"
 
 
 def _sar_multi_fast(
@@ -426,7 +434,10 @@ def bootstrap_ci(
                 upper=nan_arr, conf=conf, n_boot=0,
             )
 
-    n_attempted = len(warm_starts) if warm_starts else 0
+    if warm_starts is not None:
+        n_attempted = len(warm_starts)
+    else:
+        n_attempted = len(ALL_MODEL_NAMES if models == "all" else list(models))
     n = len(data)
     alpha = 1.0 - conf
     preds = []
@@ -448,9 +459,6 @@ def bootstrap_ci(
             else:
                 avg = sar_average(boot_data, models=models)
                 n_converged = len(avg.multi.fits)
-                n_attempted = len(
-                    ALL_MODEL_NAMES if models == "all" else list(models)
-                )
             pred = avg.predict(area_grid)
             if np.all(np.isfinite(pred)):
                 preds.append(pred)
@@ -467,14 +475,23 @@ def bootstrap_ci(
         )
 
     # Warn if convergence rate across resamples was poor
-    if n_attempted > 0 and convergence_counts:
-        mean_converged = np.mean(convergence_counts)
-        rate = mean_converged / n_attempted
-        if rate < 0.5:
+    if n_attempted > 0:
+        if convergence_counts:
+            mean_converged = np.mean(convergence_counts)
+            rate = mean_converged / n_attempted
+            if rate < 0.5:
+                warnings.warn(
+                    f"Bootstrap convergence rate is low: on average "
+                    f"{mean_converged:.1f}/{n_attempted} models converged "
+                    f"per resample ({rate:.0%}). CI estimates may be "
+                    f"unreliable.",
+                    stacklevel=2,
+                )
+        else:
             warnings.warn(
-                f"Bootstrap convergence rate is low: on average "
-                f"{mean_converged:.1f}/{n_attempted} models converged per "
-                f"resample ({rate:.0%}). CI estimates may be unreliable.",
+                f"No bootstrap resamples produced valid predictions "
+                f"({n_attempted} models attempted per resample). "
+                f"CI estimates are not available.",
                 stacklevel=2,
             )
 
