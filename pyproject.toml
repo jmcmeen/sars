@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sars"
-version = "0.6.0"
+version = "0.7.0"
 description = "Species-area relationship curve fitting in Python"
 readme = "README.md"
 license = { file = "LICENSE" }
