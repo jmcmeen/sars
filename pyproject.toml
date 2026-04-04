@@ -28,12 +28,14 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7", "pytest-cov", "ruff", "mypy"]
+docs = ["mkdocs-material", "mkdocstrings[python]"]
 interactive = ["plotly>=5"]
 geo = ["geopandas>=0.12", "shapely>=2.0"]
 all = ["sars[interactive,geo]"]
 
 [project.urls]
 Homepage = "https://github.com/jmcmeen/sars"
+Documentation = "https://jmcmeen.github.io/sars/"
 Repository = "https://github.com/jmcmeen/sars"
 Issues = "https://github.com/jmcmeen/sars/issues"
 
