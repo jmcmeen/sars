@@ -216,35 +216,6 @@ def _failed_fit(
 
 
 # ---------------------------------------------------------------------------
-# Helper: build a data-adaptive start grid
-# ---------------------------------------------------------------------------
-
-def _data_anchors(data: pd.DataFrame) -> dict:
-    """Compute useful anchors from the data for building start grids."""
-    area = np.asarray(data["area"], dtype=float)
-    species = np.asarray(data["species"], dtype=float)
-    s_max = float(np.max(species))
-    s_mean = float(np.mean(species))
-    a_max = float(np.max(area))
-    a_mean = float(np.mean(area))
-
-    # Log-space OLS for power-law anchor
-    log_a = np.log(np.maximum(area, 1e-10))
-    log_s = np.log(np.maximum(species, 1e-10))
-    z_ols, log_c_ols = np.polyfit(log_a, log_s, 1)
-    c_ols = float(np.exp(log_c_ols))
-
-    return {
-        "s_max": s_max,
-        "s_mean": s_mean,
-        "a_max": a_max,
-        "a_mean": a_mean,
-        "c_ols": c_ols,
-        "z_ols": z_ols,
-    }
-
-
-# ---------------------------------------------------------------------------
 # Model definitions
 # ---------------------------------------------------------------------------
 
