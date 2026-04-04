@@ -207,3 +207,13 @@ class TestBootstrapCI:
     def test_invalid_method(self, galap):
         with pytest.raises(ValueError, match="method must be"):
             sars.bootstrap_ci(galap, n_boot=1, method="invalid")
+
+    def test_convergence_diagnostics(self, galap):
+        """BootstrappedCI should expose per-replicate convergence counts."""
+        ci = sars.bootstrap_ci(
+            galap, models=["power", "loga"], n_boot=5,
+            rng=np.random.default_rng(42),
+        )
+        assert len(ci.convergence_counts) == ci.n_boot
+        assert ci.n_models_attempted == 2
+        assert all(0 < c <= 2 for c in ci.convergence_counts)
