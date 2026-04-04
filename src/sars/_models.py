@@ -166,7 +166,20 @@ def _fit_nls(
     best_result = None
 
     if start_from is not None:
-        # Single-start mode: use provided params directly
+        expected = set(spec.param_names)
+        provided = set(start_from)
+        if provided != expected:
+            missing = expected - provided
+            extra = provided - expected
+            parts = []
+            if missing:
+                parts.append(f"missing {missing}")
+            if extra:
+                parts.append(f"unexpected {extra}")
+            raise ValueError(
+                f"start_from keys don't match model '{name}' "
+                f"params {spec.param_names}: {', '.join(parts)}"
+            )
         starts = [[start_from[k] for k in spec.param_names]]
     else:
         starts = product(*spec.start_grid)
