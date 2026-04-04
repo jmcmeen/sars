@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -306,6 +307,12 @@ class BootstrappedCI:
         Confidence level (e.g. 0.95).
     n_boot : int
         Number of bootstrap replicates completed.
+    convergence_counts : list[int]
+        Number of models that converged in each successful replicate.
+        Length equals ``n_boot``. Empty when no replicates succeeded.
+    n_models_attempted : int
+        Number of models attempted per replicate (i.e. the number that
+        converged on the original data).
     """
 
     area_grid: np.ndarray
@@ -314,6 +321,8 @@ class BootstrappedCI:
     upper: np.ndarray
     conf: float
     n_boot: int
+    convergence_counts: list[int] = field(default_factory=list, repr=False)
+    n_models_attempted: int = 0
 
     def __repr__(self) -> str:
         return (f"BootstrappedCI(n_boot={self.n_boot}, "
@@ -417,9 +426,11 @@ def bootstrap_ci(
                 upper=nan_arr, conf=conf, n_boot=0,
             )
 
+    n_attempted = len(warm_starts) if warm_starts else 0
     n = len(data)
     alpha = 1.0 - conf
     preds = []
+    convergence_counts: list[int] = []
 
     for _ in range(n_boot):
         idx = rng.integers(0, n, size=n)
@@ -427,6 +438,7 @@ def bootstrap_ci(
         try:
             if method == "fast":
                 multi = _sar_multi_fast(boot_data, warm_starts)
+                n_converged = len(multi.fits)
                 if not multi.fits:
                     continue
                 weights = dict(
@@ -435,9 +447,14 @@ def bootstrap_ci(
                 avg = AveragedSAR(multi=multi, ic="AICc", weights=weights)
             else:
                 avg = sar_average(boot_data, models=models)
+                n_converged = len(avg.multi.fits)
+                n_attempted = len(
+                    ALL_MODEL_NAMES if models == "all" else list(models)
+                )
             pred = avg.predict(area_grid)
             if np.all(np.isfinite(pred)):
                 preds.append(pred)
+                convergence_counts.append(n_converged)
         except Exception:
             continue
 
@@ -446,7 +463,20 @@ def bootstrap_ci(
         return BootstrappedCI(
             area_grid=area_grid, mean=nan_arr, lower=nan_arr,
             upper=nan_arr, conf=conf, n_boot=0,
+            convergence_counts=[], n_models_attempted=n_attempted,
         )
+
+    # Warn if convergence rate across resamples was poor
+    if n_attempted > 0 and convergence_counts:
+        mean_converged = np.mean(convergence_counts)
+        rate = mean_converged / n_attempted
+        if rate < 0.5:
+            warnings.warn(
+                f"Bootstrap convergence rate is low: on average "
+                f"{mean_converged:.1f}/{n_attempted} models converged per "
+                f"resample ({rate:.0%}). CI estimates may be unreliable.",
+                stacklevel=2,
+            )
 
     preds_arr = np.array(preds)
     return BootstrappedCI(
@@ -456,4 +486,6 @@ def bootstrap_ci(
         upper=np.percentile(preds_arr, 100 * (1 - alpha / 2), axis=0),
         conf=conf,
         n_boot=len(preds),
+        convergence_counts=convergence_counts,
+        n_models_attempted=n_attempted,
     )
