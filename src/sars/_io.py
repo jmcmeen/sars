@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pandas as pd
+
+if TYPE_CHECKING:
+    from geopandas import GeoDataFrame
 
 
 def load_galap() -> pd.DataFrame:
@@ -172,7 +176,7 @@ def from_pyinaturalist(
 
 
 def from_geodataframe(
-    gdf: GeoDataFrame,  # noqa: F821
+    gdf: GeoDataFrame,
     species_col: str = "species",
     area_col: str | None = None,
     crs_units: str = "km2",
