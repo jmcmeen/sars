@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.resources
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -22,13 +23,9 @@ def load_galap() -> pd.DataFrame:
     pd.DataFrame
         DataFrame with columns 'area' and 'species'.
     """
-    path = Path(__file__).resolve().parents[2] / "tests" / "r_reference" / "galap.csv"
-    if not path.exists():
-        raise FileNotFoundError(
-            f"galap.csv not found at {path}. "
-            "Run tests/r_reference/generate_r_reference.R first."
-        )
-    df = pd.read_csv(path)
+    ref = importlib.resources.files("sars") / "data" / "galap.csv"
+    with importlib.resources.as_file(ref) as path:
+        df = pd.read_csv(path)
     df = df.rename(columns={"a": "area", "s": "species"})
     return df
 
