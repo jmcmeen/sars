@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from sars._models import _compute_ic
+from sars._models import _compute_ic, _validate_data
 
 # ---------------------------------------------------------------------------
 # ThresholdFit dataclass
@@ -395,6 +395,8 @@ def sar_threshold(
                 f"Unknown threshold model: {m!r}. "
                 f"Choose from {sorted(valid_models)}"
             )
+
+    _validate_data(data)
 
     area = np.asarray(data["area"], dtype=float)
     species = np.asarray(data["species"], dtype=float)
