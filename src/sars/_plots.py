@@ -18,6 +18,8 @@ def plot_fit(
     fit: SARFit,
     ax: plt.Axes | None = None,
     log: bool = False,
+    scatter_kw: dict | None = None,
+    line_kw: dict | None = None,
 ) -> plt.Axes:
     """Plot a single SAR model fit with observed data points.
 
@@ -29,6 +31,12 @@ def plot_fit(
         Axes to plot on. If None, creates a new figure.
     log : bool
         If True, use log-log axes.
+    scatter_kw : dict, optional
+        Extra keyword arguments passed to ``ax.scatter()`` for the
+        observed data points.
+    line_kw : dict, optional
+        Extra keyword arguments passed to ``ax.plot()`` for the fitted
+        curve.
 
     Returns
     -------
@@ -40,12 +48,14 @@ def plot_fit(
     area = fit.data["area"].values
     species = fit.data["species"].values
 
-    ax.scatter(area, species, color="black", zorder=3, label="Observed")
+    s_defaults = dict(color="black", zorder=3, label="Observed")
+    ax.scatter(area, species, **{**s_defaults, **(scatter_kw or {})})
 
     a_grid = np.linspace(area.min(), area.max(), 200)
     pred = fit.predict(a_grid)
-    ax.plot(a_grid, pred, color="dodgerblue", linewidth=2,
-            label=f"{fit.model} (R²={fit.r_squared:.3f})")
+    l_defaults = dict(color="dodgerblue", linewidth=2,
+                      label=f"{fit.model} (R²={fit.r_squared:.3f})")
+    ax.plot(a_grid, pred, **{**l_defaults, **(line_kw or {})})
 
     if log:
         ax.set_xscale("log")
@@ -62,6 +72,8 @@ def plot_multi(
     multi_fit: MultiSARFit,
     top_n: int = 5,
     ax: plt.Axes | None = None,
+    scatter_kw: dict | None = None,
+    line_kw: dict | None = None,
 ) -> plt.Axes:
     """Plot the top N models from a multi-model fit.
 
@@ -73,6 +85,13 @@ def plot_multi(
         Number of top models (by AICc) to display.
     ax : matplotlib.axes.Axes, optional
         Axes to plot on. If None, creates a new figure.
+    scatter_kw : dict, optional
+        Extra keyword arguments passed to ``ax.scatter()`` for the
+        observed data points.
+    line_kw : dict, optional
+        Extra keyword arguments passed to ``ax.plot()`` for each
+        fitted curve.  Per-model ``color`` and ``label`` are set
+        automatically but can be overridden.
 
     Returns
     -------
@@ -85,7 +104,8 @@ def plot_multi(
     area = data["area"].values
     species = data["species"].values
 
-    ax.scatter(area, species, color="black", zorder=3, label="Observed")
+    s_defaults = dict(color="black", zorder=3, label="Observed")
+    ax.scatter(area, species, **{**s_defaults, **(scatter_kw or {})})
 
     a_grid = np.linspace(area.min(), area.max(), 200)
 
@@ -93,8 +113,10 @@ def plot_multi(
     top_models = multi_fit.summary.head(top_n)["model"].tolist()
     fits_by_name = {f.model: f for f in multi_fit.fits}
 
-    colors = plt.cm.tab10(np.linspace(0, 1, min(top_n, 10)))
+    cmap = plt.cm.tab20 if top_n > 10 else plt.cm.tab10
+    colors = cmap(np.linspace(0, 1, top_n))
 
+    extra_line = line_kw or {}
     for i, name in enumerate(top_models):
         fit = fits_by_name.get(name)
         if fit is None:
@@ -103,8 +125,9 @@ def plot_multi(
         w = multi_fit.summary.loc[
             multi_fit.summary["model"] == name, "weight"
         ].iloc[0]
-        ax.plot(a_grid, pred, color=colors[i], linewidth=1.5,
-                label=f"{name} (w={w:.3f})")
+        l_defaults = dict(color=colors[i], linewidth=1.5,
+                          label=f"{name} (w={w:.3f})")
+        ax.plot(a_grid, pred, **{**l_defaults, **extra_line})
 
     ax.set_xlabel("Area")
     ax.set_ylabel("Species")
@@ -118,6 +141,9 @@ def plot_average(
     ci: bool = True,
     boot: BootstrappedCI | None = None,
     ax: plt.Axes | None = None,
+    scatter_kw: dict | None = None,
+    line_kw: dict | None = None,
+    fill_kw: dict | None = None,
 ) -> plt.Axes:
     """Plot the model-averaged SAR prediction.
 
@@ -131,6 +157,15 @@ def plot_average(
         Bootstrap confidence intervals from ``bootstrap_ci()``.
     ax : matplotlib.axes.Axes, optional
         Axes to plot on. If None, creates a new figure.
+    scatter_kw : dict, optional
+        Extra keyword arguments passed to ``ax.scatter()`` for the
+        observed data points.
+    line_kw : dict, optional
+        Extra keyword arguments passed to ``ax.plot()`` for the
+        averaged curve.
+    fill_kw : dict, optional
+        Extra keyword arguments passed to ``ax.fill_between()`` for the
+        confidence band.
 
     Returns
     -------
@@ -143,18 +178,20 @@ def plot_average(
     area = data["area"].values
     species = data["species"].values
 
-    ax.scatter(area, species, color="black", zorder=3, label="Observed")
+    s_defaults = dict(color="black", zorder=3, label="Observed")
+    ax.scatter(area, species, **{**s_defaults, **(scatter_kw or {})})
 
     a_grid = np.linspace(area.min(), area.max(), 200)
     pred = averaged.predict(a_grid)
-    ax.plot(a_grid, pred, color="dodgerblue", linewidth=2,
-            label="Model-averaged")
+    l_defaults = dict(color="dodgerblue", linewidth=2, label="Model-averaged")
+    ax.plot(a_grid, pred, **{**l_defaults, **(line_kw or {})})
 
     if ci and boot is not None and np.any(np.isfinite(boot.lower)):
+        f_defaults = dict(alpha=0.2, color="dodgerblue",
+                          label=f"{boot.conf:.0%} CI")
         ax.fill_between(
             boot.area_grid, boot.lower, boot.upper,
-            alpha=0.2, color="dodgerblue",
-            label=f"{boot.conf:.0%} CI",
+            **{**f_defaults, **(fill_kw or {})},
         )
 
     ax.set_xlabel("Area")
@@ -167,6 +204,7 @@ def plot_average(
 def plot_residuals(
     fit: SARFit,
     ax: plt.Axes | None = None,
+    scatter_kw: dict | None = None,
 ) -> plt.Axes:
     """Plot residuals vs fitted values for a SAR model fit.
 
@@ -176,6 +214,9 @@ def plot_residuals(
         A fitted SAR model.
     ax : matplotlib.axes.Axes, optional
         Axes to plot on. If None, creates a new figure.
+    scatter_kw : dict, optional
+        Extra keyword arguments passed to ``ax.scatter()`` for the
+        residual points.
 
     Returns
     -------
@@ -189,7 +230,8 @@ def plot_residuals(
     fitted = fit.predict(area)
     residuals = observed - fitted
 
-    ax.scatter(fitted, residuals, color="black")
+    s_defaults = dict(color="black")
+    ax.scatter(fitted, residuals, **{**s_defaults, **(scatter_kw or {})})
     ax.axhline(0, color="red", linestyle="--", linewidth=1)
     ax.set_xlabel("Fitted values")
     ax.set_ylabel("Residuals")

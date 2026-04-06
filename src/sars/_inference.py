@@ -21,7 +21,16 @@ ALL_MODEL_NAMES: list[str] = [
     "ratio", "gompertz", "weibull4", "betap", "heleg", "linear",
 ]
 
-# Shape classification for each model
+# Static shape classification for each model.
+#
+# NOTE: This is a simplification. The R sars package classifies shape
+# dynamically based on fitted parameter values — a model can exhibit
+# convex, sigmoid, or other curvature depending on the data. Here we
+# assign each model its *typical* shape class. In particular, several
+# asymptotic models listed as "convex" (koba, monod, negexpo, asymp,
+# ratio) can produce sigmoid curves for certain parameter combinations,
+# and some sigmoid models can appear convex. Users needing the dynamic
+# classification from R should inspect the fitted curve directly.
 _MODEL_SHAPE: dict[str, str] = {
     "power": "convex", "powerR": "convex", "loga": "convex",
     "linear": "linear", "epm1": "convex", "epm2": "convex",
@@ -49,9 +58,11 @@ def _get_asymptote(fit: SARFit) -> float | None:
         d = fit.params.get("d", 0.0)
         z = fit.params.get("z", 0.0)
         return z / d if d != 0 else np.inf
-    # For heleg, the asymptote parameter is 'c' (our naming)
+    # For heleg, asymptote is c/f (as A -> inf, A^(-z) -> 0)
     if fit.model == "heleg":
-        return fit.params.get("c", np.nan)
+        f = fit.params.get("f", 0.0)
+        c = fit.params.get("c", 0.0)
+        return c / f if f != 0 else np.inf
     # For all others, the asymptote is 'd'
     return fit.params.get("d", np.nan)
 
@@ -84,25 +95,29 @@ def aicc(k: int, n: int, rss: float) -> float:
     return np.inf
 
 
-def akaike_weights(aicc_values: np.ndarray) -> np.ndarray:
-    """Compute Akaike weights from a vector of AICc values.
+def akaike_weights(ic_values: np.ndarray) -> np.ndarray:
+    """Compute Akaike weights from a vector of information criterion values.
+
+    The weighting formula ``w_i = exp(-0.5 * delta_i) / sum(exp(-0.5 * delta))``
+    applies identically to AIC, AICc, and BIC (Burnham & Anderson 2002).
 
     Parameters
     ----------
-    aicc_values : array-like
-        AICc values for each candidate model.
+    ic_values : array-like
+        Information criterion values (AIC, AICc, or BIC) for each candidate
+        model.
 
     Returns
     -------
     np.ndarray
-        Akaike weights (sum to 1). NaN inputs produce 0 weight.
+        Model weights (sum to 1). Non-finite inputs produce 0 weight.
     """
-    vals = np.asarray(aicc_values, dtype=float)
+    vals = np.asarray(ic_values, dtype=float)
     finite = np.isfinite(vals)
     if not np.any(finite):
         return np.zeros_like(vals)
-    min_aicc = np.min(vals[finite])
-    delta = vals - min_aicc
+    min_ic = np.min(vals[finite])
+    delta = vals - min_ic
     # Non-finite entries get zero weight
     raw = np.where(finite, np.exp(-0.5 * delta), 0.0)
     total = np.sum(raw)
@@ -127,7 +142,10 @@ class MultiSARFit:
         Original data.
     summary : pd.DataFrame
         Summary table with columns: model, R2, AIC, AICc, BIC, delta_AICc,
-        weight, shape, asymptote. Sorted by AICc ascending.
+        weight, shape, asymptote. Sorted by AICc ascending. The ``shape``
+        column is a static classification based on each model's typical
+        curvature (see ``_MODEL_SHAPE``), not a dynamic assessment of the
+        fitted curve.
     """
 
     fits: list[SARFit]
@@ -221,9 +239,9 @@ class AveragedSAR:
     multi : MultiSARFit
         The underlying multi-model fit.
     ic : str
-        Information criterion used for weighting ("AICc").
+        Information criterion used for weighting ("AICc", "AIC", or "BIC").
     weights : dict[str, float]
-        Akaike weights keyed by model name.
+        Model weights keyed by model name.
     """
 
     multi: MultiSARFit
@@ -256,6 +274,9 @@ class AveragedSAR:
         return f"AveragedSAR({n} models, ic='{self.ic}')"
 
 
+_VALID_ICS = {"AIC", "AICc", "BIC"}
+
+
 def sar_average(
     data: pd.DataFrame,
     models: str | list[str] = "all",
@@ -270,18 +291,24 @@ def sar_average(
     models : str or list[str]
         Model names to fit. Use "all" for all 20 models.
     ic : str
-        Information criterion for weighting. Currently only "AICc" is supported.
+        Information criterion for weighting: ``"AICc"`` (default), ``"AIC"``,
+        or ``"BIC"``. AICc may be infinite when the sample size is small
+        relative to the number of parameters; in that case ``"AIC"`` or
+        ``"BIC"`` can be used instead.
 
     Returns
     -------
     AveragedSAR
         Model-averaged SAR with weighted predictions.
     """
-    if ic != "AICc":
-        raise ValueError(f"Unsupported IC: {ic!r}. Use 'AICc'.")
+    if ic not in _VALID_ICS:
+        raise ValueError(
+            f"Unsupported IC: {ic!r}. Choose from {sorted(_VALID_ICS)}."
+        )
 
     multi = sar_multi(data, models=models)
-    weights = dict(zip(multi.summary["model"], multi.summary["weight"]))
+    weights_arr = akaike_weights(multi.summary[ic].to_numpy(dtype=float))
+    weights = dict(zip(multi.summary["model"], weights_arr))
     return AveragedSAR(multi=multi, ic=ic, weights=weights)
 
 
@@ -376,6 +403,7 @@ def bootstrap_ci(
     area_grid: np.ndarray | None = None,
     rng: np.random.Generator | None = None,
     method: str = "fast",
+    ic: str = "AICc",
 ) -> BootstrappedCI:
     """Compute bootstrap confidence intervals for model-averaged predictions.
 
@@ -404,6 +432,9 @@ def bootstrap_ci(
         parameters as warm starts for each resample (~2000x faster).
         ``"full"`` runs the complete grid search on every resample (slow but
         maximally robust).
+    ic : str
+        Information criterion for weighting: ``"AICc"`` (default), ``"AIC"``,
+        or ``"BIC"``.
 
     Returns
     -------
@@ -411,6 +442,10 @@ def bootstrap_ci(
     """
     if method not in ("fast", "full"):
         raise ValueError(f"method must be 'fast' or 'full', got {method!r}")
+    if ic not in _VALID_ICS:
+        raise ValueError(
+            f"Unsupported IC: {ic!r}. Choose from {sorted(_VALID_ICS)}."
+        )
 
     if rng is None:
         rng = np.random.default_rng()
@@ -452,12 +487,13 @@ def bootstrap_ci(
                 n_converged = len(multi.fits)
                 if not multi.fits:
                     continue
-                weights = dict(
-                    zip(multi.summary["model"], multi.summary["weight"])
+                w_arr = akaike_weights(
+                    multi.summary[ic].to_numpy(dtype=float)
                 )
-                avg = AveragedSAR(multi=multi, ic="AICc", weights=weights)
+                weights = dict(zip(multi.summary["model"], w_arr))
+                avg = AveragedSAR(multi=multi, ic=ic, weights=weights)
             else:
-                avg = sar_average(boot_data, models=models)
+                avg = sar_average(boot_data, models=models, ic=ic)
                 n_converged = len(avg.multi.fits)
             pred = avg.predict(area_grid)
             if np.all(np.isfinite(pred)):

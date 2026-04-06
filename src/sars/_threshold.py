@@ -8,17 +8,26 @@ Three models are supported:
 - ZslopeOne: left-horizontal + right slope (small island effect)
 - Linear: simple linear baseline (no breakpoint)
 
-Breakpoints are found by grid search over log(area), selecting by AICc.
+Breakpoint selection is a two-level process: within each piecewise model
+class (ContOne, ZslopeOne), a grid search over log(area) selects the
+breakpoint that minimises RSS; then across model classes (including the
+no-breakpoint Linear baseline), AICc ranks the best candidate from each
+class to choose the overall winner.
+
+Meaningful threshold detection generally requires at least 7 observations
+(n >= 7). With fewer data points the grid search may find zero valid
+breakpoint candidates, leaving only the Linear baseline.
 """
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
 
-from sars._models import _compute_ic
+from sars._models import _compute_ic, _validate_data
 
 # ---------------------------------------------------------------------------
 # ThresholdFit dataclass
@@ -333,7 +342,22 @@ def sar_threshold(
     - **Linear**: simple linear model (no breakpoint, baseline)
 
     Area is log-transformed before fitting (consistent with R sars default).
-    Breakpoints are found by grid search over log(area).
+
+    Breakpoint selection uses a two-level procedure. Within each piecewise
+    model class (ContOne, ZslopeOne), a grid search over log(area) selects
+    the breakpoint that minimises residual sum of squares (RSS). Then,
+    across model classes — including the no-breakpoint Linear baseline —
+    the best candidate from each class is ranked by AICc to choose the
+    overall best model. Because the models differ in parameter count
+    (Linear: k=3, ZslopeOne: k=4, ContOne: k=5), AICc penalises
+    complexity appropriately at the cross-model level.
+
+    Meaningful threshold detection requires at least 7 observations. The
+    breakpoint grid search needs a minimum of 3 data points on each side
+    of a candidate breakpoint (``min_points=3``), so with fewer than 7
+    observations the piecewise models may find zero valid candidates and
+    only the Linear baseline will be returned. A ``UserWarning`` is
+    emitted when ``n < 7``.
 
     Parameters
     ----------
@@ -351,6 +375,11 @@ def sar_threshold(
     ThresholdFit
         Result with best model, breakpoint, segments, and comparison table.
 
+    Warns
+    -----
+    UserWarning
+        If the dataset has fewer than 7 observations.
+
     References
     ----------
     Matthews TJ & Rigal F (2021). Thresholds and the species-area
@@ -367,8 +396,22 @@ def sar_threshold(
                 f"Choose from {sorted(valid_models)}"
             )
 
+    _validate_data(data)
+
     area = np.asarray(data["area"], dtype=float)
     species = np.asarray(data["species"], dtype=float)
+    n = len(area)
+
+    if n < 7:
+        warnings.warn(
+            f"Dataset has {n} observations. Threshold detection generally "
+            f"requires n >= 7 (at least 3 points on each side of a "
+            f"breakpoint). Piecewise models may not be estimable and only "
+            f"the Linear baseline may be returned.",
+            UserWarning,
+            stacklevel=2,
+        )
+
     x = np.log(area)
     y = species
 

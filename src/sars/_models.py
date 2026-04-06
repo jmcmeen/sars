@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from itertools import product
+from typing import Protocol
 
 import numpy as np
 import pandas as pd
 from scipy.optimize import least_squares
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # SARFit dataclass
@@ -105,12 +109,18 @@ def _compute_ic(k: int, n: int, rss: float) -> tuple[float, float, float]:
 # Model specification registry
 # ---------------------------------------------------------------------------
 
+class _SARFunc(Protocol):
+    """Signature for SAR model functions: f(area, *params) -> predicted S."""
+
+    def __call__(self, area: np.ndarray, /, *params: float) -> np.ndarray: ...
+
+
 @dataclass
 class _ModelSpec:
     """Internal specification for a SAR model."""
 
     name: str
-    func: callable  # f(area, *params) -> predicted species
+    func: _SARFunc
     param_names: list[str]
     bounds_lower: list[float]
     bounds_upper: list[float]
@@ -123,6 +133,60 @@ _MODEL_REGISTRY: dict[str, _ModelSpec] = {}
 def _register(spec: _ModelSpec) -> _ModelSpec:
     _MODEL_REGISTRY[spec.name] = spec
     return spec
+
+
+# ---------------------------------------------------------------------------
+# Input validation
+# ---------------------------------------------------------------------------
+
+
+def _validate_data(data: pd.DataFrame) -> None:
+    """Validate a SAR input DataFrame.
+
+    Checks that *data* has the required ``area`` and ``species`` columns,
+    contains at least two rows, and that all values are positive and finite.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+
+    Raises
+    ------
+    TypeError
+        If *data* is not a DataFrame.
+    KeyError
+        If required columns are missing.
+    ValueError
+        If data is empty, contains non-positive values, or non-finite values.
+    """
+    if not isinstance(data, pd.DataFrame):
+        raise TypeError(
+            f"data must be a pandas DataFrame, got {type(data).__name__}"
+        )
+
+    missing = [c for c in ("area", "species") if c not in data.columns]
+    if missing:
+        raise KeyError(
+            f"Missing required column(s): {missing}. "
+            f"DataFrame has columns: {list(data.columns)}"
+        )
+
+    if len(data) < 2:
+        raise ValueError(
+            f"Need at least 2 observations, got {len(data)}"
+        )
+
+    area = data["area"]
+    species = data["species"]
+
+    if not np.isfinite(area.to_numpy(dtype=float)).all():
+        raise ValueError("'area' contains NaN or infinite values")
+    if not np.isfinite(species.to_numpy(dtype=float)).all():
+        raise ValueError("'species' contains NaN or infinite values")
+    if (area.to_numpy(dtype=float) <= 0).any():
+        raise ValueError("'area' must contain only positive values")
+    if (species.to_numpy(dtype=float) <= 0).any():
+        raise ValueError("'species' must contain only positive values")
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +215,7 @@ def _fit_nls(
     -------
     SARFit
     """
+    _validate_data(data)
     spec = _MODEL_REGISTRY[name]
     area = np.asarray(data["area"], dtype=float)
     species = np.asarray(data["species"], dtype=float)
@@ -184,7 +249,18 @@ def _fit_nls(
     else:
         starts = product(*spec.start_grid)
 
+    # Early-termination: stop after this many consecutive successful solver
+    # calls that don't improve the best cost.  For large grids this avoids
+    # hundreds of redundant solver calls once the optimum has stabilised.
+    # The limit is generous enough to avoid premature stopping.
+    n_params = len(spec.param_names)
+    stale_limit = 50 * n_params  # 100 for 2-p, 150 for 3-p, 200 for 4-p
+
+    n_starts = 0
+    n_errors = 0
+    stale_runs = 0
     for start in starts:
+        n_starts += 1
         try:
             result = least_squares(
                 residuals,
@@ -196,8 +272,35 @@ def _fit_nls(
             if result.cost < best_cost:
                 best_cost = result.cost
                 best_result = result
+                stale_runs = 0
+            else:
+                stale_runs += 1
         except Exception:
-            continue
+            n_errors += 1
+            logger.debug(
+                "Model '%s' NLS failed for start %s", name, list(start),
+                exc_info=True,
+            )
+
+        if stale_runs >= stale_limit and best_result is not None:
+            logger.debug(
+                "Model '%s': early stop after %d starts "
+                "(%d without improvement)",
+                name, n_starts, stale_limit,
+            )
+            break
+
+        if n_starts % 100 == 0:
+            logger.debug(
+                "Model '%s': %d starts evaluated (best cost=%.4g)",
+                name, n_starts, best_cost,
+            )
+
+    if n_errors:
+        logger.info(
+            "Model '%s': %d/%d starting points raised exceptions",
+            name, n_errors, n_starts,
+        )
 
     if best_result is None:
         return _failed_fit(name, spec.param_names, n, data)
@@ -541,14 +644,12 @@ _register(_ModelSpec(
     ],
 ))
 
-# 20. heleg: S = d / (1 + slope^log(c / A))
-#     R params: d (= "c" in R output?), slope (= "f"), c (= "z")
+# 20. heleg: S = c / (f + A^(-z))
+#     R sars params: c, f, z (all positive). Asymptote = c / f.
 #     R reference: c=4.95781, f=0.022238, z=0.988229
-#     Mapping: d -> c param in R output, slope -> f, c -> z
 def _heleg_func(a, c, f, z):
     with np.errstate(divide="ignore", invalid="ignore"):
-        log_ratio = np.log(z / a)
-        result = c / (1.0 + f**log_ratio)
+        result = c / (f + a**(-z))
     return np.where(np.isfinite(result), result, 0.0)
 
 _register(_ModelSpec(
@@ -558,7 +659,7 @@ _register(_ModelSpec(
     bounds_lower=[1e-10, 1e-10, 1e-10],
     bounds_upper=[1e6, 1e6, 1e6],
     start_grid=[
-        [100.0, 150.0, 200.0, 223.0, 300.0],
+        [1.0, 5.0, 10.0, 50.0, 100.0],
         [0.001, 0.01, 0.022, 0.05, 0.1],
         [0.1, 0.5, 0.99, 2.0, 5.0],
     ],
@@ -864,7 +965,7 @@ def sar_betap(data: pd.DataFrame) -> SARFit:
 
 
 def sar_heleg(data: pd.DataFrame) -> SARFit:
-    """Fit the Heleg model: S = d / (1 + slope^log(c / A))
+    """Fit the Heleg model: S = c / (f + A^(-z))
 
     Parameters
     ----------

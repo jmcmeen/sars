@@ -138,7 +138,27 @@ class TestSarAverage:
 
     def test_unsupported_ic(self, galap):
         with pytest.raises(ValueError, match="Unsupported IC"):
-            sars.sar_average(galap, ic="BIC")
+            sars.sar_average(galap, ic="WAIC")
+
+    def test_ic_aic(self, galap):
+        avg = sars.sar_average(galap, ic="AIC")
+        assert avg.ic == "AIC"
+        assert len(avg.weights) > 0
+        assert sum(avg.weights.values()) == pytest.approx(1.0)
+
+    def test_ic_bic(self, galap):
+        avg = sars.sar_average(galap, ic="BIC")
+        assert avg.ic == "BIC"
+        assert len(avg.weights) > 0
+        assert sum(avg.weights.values()) == pytest.approx(1.0)
+
+    def test_ic_weights_differ(self, galap):
+        """Different ICs should generally produce different weight vectors."""
+        avg_aicc = sars.sar_average(galap, ic="AICc")
+        avg_bic = sars.sar_average(galap, ic="BIC")
+        w_aicc = [avg_aicc.weights.get(m, 0) for m in sorted(avg_aicc.weights)]
+        w_bic = [avg_bic.weights.get(m, 0) for m in sorted(avg_bic.weights)]
+        assert w_aicc != w_bic
 
 
 # ---------------------------------------------------------------------------

@@ -4,6 +4,13 @@ Conceptual mirror of the R `sars` package (Matthews et al. 2019),
 native to the Python scientific stack.
 """
 
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("sars")
+except PackageNotFoundError:
+    __version__ = "0.0.0.dev0"
+
 from sars._inference import (
     AveragedSAR,
     BootstrappedCI,
@@ -14,7 +21,13 @@ from sars._inference import (
     sar_average,
     sar_multi,
 )
-from sars._io import from_csv, from_geodataframe, from_pyinaturalist, load_galap
+from sars._io import (
+    from_csv,
+    from_df,
+    from_geodataframe,
+    from_pyinaturalist,
+    load_galap,
+)
 from sars._models import (
     SARFit,
     sar_asymp,
@@ -42,6 +55,7 @@ from sars._plots import plot_average, plot_fit, plot_multi, plot_residuals
 from sars._threshold import ThresholdFit, sar_threshold
 
 __all__ = [
+    "__version__",
     "AveragedSAR",
     "BootstrappedCI",
     "MultiSARFit",
@@ -51,6 +65,7 @@ __all__ = [
     "akaike_weights",
     "bootstrap_ci",
     "from_csv",
+    "from_df",
     "from_geodataframe",
     "from_pyinaturalist",
     "load_galap",
