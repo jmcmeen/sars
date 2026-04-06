@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from itertools import product
 
 import numpy as np
 import pandas as pd
 from scipy.optimize import least_squares
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # SARFit dataclass
@@ -184,7 +187,10 @@ def _fit_nls(
     else:
         starts = product(*spec.start_grid)
 
+    n_starts = 0
+    n_errors = 0
     for start in starts:
+        n_starts += 1
         try:
             result = least_squares(
                 residuals,
@@ -197,7 +203,17 @@ def _fit_nls(
                 best_cost = result.cost
                 best_result = result
         except Exception:
-            continue
+            n_errors += 1
+            logger.debug(
+                "Model '%s' NLS failed for start %s", name, list(start),
+                exc_info=True,
+            )
+
+    if n_errors:
+        logger.info(
+            "Model '%s': %d/%d starting points raised exceptions",
+            name, n_errors, n_starts,
+        )
 
     if best_result is None:
         return _failed_fit(name, spec.param_names, n, data)
