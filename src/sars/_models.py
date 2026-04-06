@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from itertools import product
+from typing import Protocol
 
 import numpy as np
 import pandas as pd
@@ -108,12 +109,18 @@ def _compute_ic(k: int, n: int, rss: float) -> tuple[float, float, float]:
 # Model specification registry
 # ---------------------------------------------------------------------------
 
+class _SARFunc(Protocol):
+    """Signature for SAR model functions: f(area, *params) -> predicted S."""
+
+    def __call__(self, area: np.ndarray, /, *params: float) -> np.ndarray: ...
+
+
 @dataclass
 class _ModelSpec:
     """Internal specification for a SAR model."""
 
     name: str
-    func: callable  # f(area, *params) -> predicted species
+    func: _SARFunc
     param_names: list[str]
     bounds_lower: list[float]
     bounds_upper: list[float]
