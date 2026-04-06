@@ -8,7 +8,11 @@ Three models are supported:
 - ZslopeOne: left-horizontal + right slope (small island effect)
 - Linear: simple linear baseline (no breakpoint)
 
-Breakpoints are found by grid search over log(area), selecting by AICc.
+Breakpoint selection is a two-level process: within each piecewise model
+class (ContOne, ZslopeOne), a grid search over log(area) selects the
+breakpoint that minimises RSS; then across model classes (including the
+no-breakpoint Linear baseline), AICc ranks the best candidate from each
+class to choose the overall winner.
 """
 
 from __future__ import annotations
@@ -333,7 +337,15 @@ def sar_threshold(
     - **Linear**: simple linear model (no breakpoint, baseline)
 
     Area is log-transformed before fitting (consistent with R sars default).
-    Breakpoints are found by grid search over log(area).
+
+    Breakpoint selection uses a two-level procedure. Within each piecewise
+    model class (ContOne, ZslopeOne), a grid search over log(area) selects
+    the breakpoint that minimises residual sum of squares (RSS). Then,
+    across model classes — including the no-breakpoint Linear baseline —
+    the best candidate from each class is ranked by AICc to choose the
+    overall best model. Because the models differ in parameter count
+    (Linear: k=3, ZslopeOne: k=4, ContOne: k=5), AICc penalises
+    complexity appropriately at the cross-model level.
 
     Parameters
     ----------
