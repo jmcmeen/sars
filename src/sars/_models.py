@@ -644,14 +644,12 @@ _register(_ModelSpec(
     ],
 ))
 
-# 20. heleg: S = d / (1 + slope^log(c / A))
-#     R params: d (= "c" in R output?), slope (= "f"), c (= "z")
+# 20. heleg: S = c / (f + A^(-z))
+#     R sars params: c, f, z (all positive). Asymptote = c / f.
 #     R reference: c=4.95781, f=0.022238, z=0.988229
-#     Mapping: d -> c param in R output, slope -> f, c -> z
 def _heleg_func(a, c, f, z):
     with np.errstate(divide="ignore", invalid="ignore"):
-        log_ratio = np.log(z / a)
-        result = c / (1.0 + f**log_ratio)
+        result = c / (f + a**(-z))
     return np.where(np.isfinite(result), result, 0.0)
 
 _register(_ModelSpec(
@@ -661,7 +659,7 @@ _register(_ModelSpec(
     bounds_lower=[1e-10, 1e-10, 1e-10],
     bounds_upper=[1e6, 1e6, 1e6],
     start_grid=[
-        [100.0, 150.0, 200.0, 223.0, 300.0],
+        [1.0, 5.0, 10.0, 50.0, 100.0],
         [0.001, 0.01, 0.022, 0.05, 0.1],
         [0.1, 0.5, 0.99, 2.0, 5.0],
     ],
@@ -967,7 +965,7 @@ def sar_betap(data: pd.DataFrame) -> SARFit:
 
 
 def sar_heleg(data: pd.DataFrame) -> SARFit:
-    """Fit the Heleg model: S = d / (1 + slope^log(c / A))
+    """Fit the Heleg model: S = c / (f + A^(-z))
 
     Parameters
     ----------

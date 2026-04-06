@@ -49,9 +49,11 @@ def _get_asymptote(fit: SARFit) -> float | None:
         d = fit.params.get("d", 0.0)
         z = fit.params.get("z", 0.0)
         return z / d if d != 0 else np.inf
-    # For heleg, the asymptote parameter is 'c' (our naming)
+    # For heleg, asymptote is c/f (as A -> inf, A^(-z) -> 0)
     if fit.model == "heleg":
-        return fit.params.get("c", np.nan)
+        f = fit.params.get("f", 0.0)
+        c = fit.params.get("c", 0.0)
+        return c / f if f != 0 else np.inf
     # For all others, the asymptote is 'd'
     return fit.params.get("d", np.nan)
 
