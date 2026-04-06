@@ -129,6 +129,60 @@ def _register(spec: _ModelSpec) -> _ModelSpec:
 
 
 # ---------------------------------------------------------------------------
+# Input validation
+# ---------------------------------------------------------------------------
+
+
+def _validate_data(data: pd.DataFrame) -> None:
+    """Validate a SAR input DataFrame.
+
+    Checks that *data* has the required ``area`` and ``species`` columns,
+    contains at least two rows, and that all values are positive and finite.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+
+    Raises
+    ------
+    TypeError
+        If *data* is not a DataFrame.
+    KeyError
+        If required columns are missing.
+    ValueError
+        If data is empty, contains non-positive values, or non-finite values.
+    """
+    if not isinstance(data, pd.DataFrame):
+        raise TypeError(
+            f"data must be a pandas DataFrame, got {type(data).__name__}"
+        )
+
+    missing = [c for c in ("area", "species") if c not in data.columns]
+    if missing:
+        raise KeyError(
+            f"Missing required column(s): {missing}. "
+            f"DataFrame has columns: {list(data.columns)}"
+        )
+
+    if len(data) < 2:
+        raise ValueError(
+            f"Need at least 2 observations, got {len(data)}"
+        )
+
+    area = data["area"]
+    species = data["species"]
+
+    if not np.isfinite(area.to_numpy(dtype=float)).all():
+        raise ValueError("'area' contains NaN or infinite values")
+    if not np.isfinite(species.to_numpy(dtype=float)).all():
+        raise ValueError("'species' contains NaN or infinite values")
+    if (area.to_numpy(dtype=float) <= 0).any():
+        raise ValueError("'area' must contain only positive values")
+    if (species.to_numpy(dtype=float) <= 0).any():
+        raise ValueError("'species' must contain only positive values")
+
+
+# ---------------------------------------------------------------------------
 # Generic NLS fitter
 # ---------------------------------------------------------------------------
 
@@ -154,6 +208,7 @@ def _fit_nls(
     -------
     SARFit
     """
+    _validate_data(data)
     spec = _MODEL_REGISTRY[name]
     area = np.asarray(data["area"], dtype=float)
     species = np.asarray(data["species"], dtype=float)

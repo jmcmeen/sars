@@ -1,7 +1,74 @@
+import numpy as np
 import pandas as pd
 import pytest
 
-import sars
+import sars  # noqa: I001
+
+# ---------------------------------------------------------------------------
+# Input validation (applies to all sar_* functions via _fit_nls)
+# ---------------------------------------------------------------------------
+
+
+class TestInputValidation:
+    """Validation errors should be clear, not buried inside scipy."""
+
+    def test_not_a_dataframe(self):
+        with pytest.raises(TypeError, match="must be a pandas DataFrame"):
+            sars.sar_power({"area": [1, 2], "species": [3, 4]})
+
+    def test_missing_area_column(self):
+        df = pd.DataFrame({"A": [1, 2], "species": [3, 4]})
+        with pytest.raises(KeyError, match="area"):
+            sars.sar_power(df)
+
+    def test_missing_species_column(self):
+        df = pd.DataFrame({"area": [1, 2], "S": [3, 4]})
+        with pytest.raises(KeyError, match="species"):
+            sars.sar_power(df)
+
+    def test_missing_both_columns(self):
+        df = pd.DataFrame({"A": [1, 2], "S": [3, 4]})
+        with pytest.raises(KeyError, match="area.*species"):
+            sars.sar_power(df)
+
+    def test_too_few_observations(self):
+        df = pd.DataFrame({"area": [1.0], "species": [5]})
+        with pytest.raises(ValueError, match="at least 2"):
+            sars.sar_power(df)
+
+    def test_nan_in_area(self):
+        df = pd.DataFrame({"area": [1.0, np.nan, 3.0], "species": [5, 10, 15]})
+        with pytest.raises(ValueError, match="area.*NaN"):
+            sars.sar_power(df)
+
+    def test_nan_in_species(self):
+        df = pd.DataFrame({"area": [1.0, 2.0, 3.0], "species": [5, np.nan, 15]})
+        with pytest.raises(ValueError, match="species.*NaN"):
+            sars.sar_power(df)
+
+    def test_inf_in_area(self):
+        df = pd.DataFrame({"area": [1.0, np.inf], "species": [5, 10]})
+        with pytest.raises(ValueError, match="area.*infinite"):
+            sars.sar_power(df)
+
+    def test_zero_area(self):
+        df = pd.DataFrame({"area": [0.0, 1.0, 2.0], "species": [5, 10, 15]})
+        with pytest.raises(ValueError, match="area.*positive"):
+            sars.sar_power(df)
+
+    def test_negative_species(self):
+        df = pd.DataFrame({"area": [1.0, 2.0, 3.0], "species": [-1, 10, 15]})
+        with pytest.raises(ValueError, match="species.*positive"):
+            sars.sar_power(df)
+
+    def test_validation_applies_to_all_models(self):
+        """Every sar_* function should reject bad input identically."""
+        bad = pd.DataFrame({"wrong": [1, 2], "columns": [3, 4]})
+        for name in dir(sars):
+            if name.startswith("sar_") and name != "sar_threshold":
+                fn = getattr(sars, name)
+                with pytest.raises(KeyError):
+                    fn(bad)
 
 
 def test_power_law_spot_check():
