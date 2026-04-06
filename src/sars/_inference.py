@@ -21,7 +21,16 @@ ALL_MODEL_NAMES: list[str] = [
     "ratio", "gompertz", "weibull4", "betap", "heleg", "linear",
 ]
 
-# Shape classification for each model
+# Static shape classification for each model.
+#
+# NOTE: This is a simplification. The R sars package classifies shape
+# dynamically based on fitted parameter values — a model can exhibit
+# convex, sigmoid, or other curvature depending on the data. Here we
+# assign each model its *typical* shape class. In particular, several
+# asymptotic models listed as "convex" (koba, monod, negexpo, asymp,
+# ratio) can produce sigmoid curves for certain parameter combinations,
+# and some sigmoid models can appear convex. Users needing the dynamic
+# classification from R should inspect the fitted curve directly.
 _MODEL_SHAPE: dict[str, str] = {
     "power": "convex", "powerR": "convex", "loga": "convex",
     "linear": "linear", "epm1": "convex", "epm2": "convex",
@@ -133,7 +142,10 @@ class MultiSARFit:
         Original data.
     summary : pd.DataFrame
         Summary table with columns: model, R2, AIC, AICc, BIC, delta_AICc,
-        weight, shape, asymptote. Sorted by AICc ascending.
+        weight, shape, asymptote. Sorted by AICc ascending. The ``shape``
+        column is a static classification based on each model's typical
+        curvature (see ``_MODEL_SHAPE``), not a dynamic assessment of the
+        fitted curve.
     """
 
     fits: list[SARFit]
