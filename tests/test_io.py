@@ -1,5 +1,6 @@
 """Tests for I/O adapters."""
 
+import pandas as pd
 import pytest
 
 import sars
@@ -19,6 +20,45 @@ class TestLoadGalap:
         df = sars.load_galap()
         assert (df["area"] > 0).all()
         assert (df["species"] > 0).all()
+
+
+class TestFromDf:
+    def test_default_columns(self):
+        df = pd.DataFrame({"area": [1.0, 2.0], "species": [10, 20]})
+        result = sars.from_df(df)
+        assert list(result.columns) == ["area", "species"]
+        assert len(result) == 2
+
+    def test_custom_columns(self):
+        df = pd.DataFrame({"km2": [1.0, 5.0], "richness": [10, 30]})
+        result = sars.from_df(df, area_col="km2", species_col="richness")
+        assert list(result.columns) == ["area", "species"]
+        assert result["area"].iloc[1] == 5.0
+        assert result["species"].iloc[1] == 30
+
+    def test_extra_columns_dropped(self):
+        df = pd.DataFrame({"area": [1.0], "species": [10], "island": ["A"]})
+        result = sars.from_df(df)
+        assert list(result.columns) == ["area", "species"]
+
+    def test_missing_area_col(self):
+        df = pd.DataFrame({"x": [1.0], "species": [10]})
+        with pytest.raises(KeyError, match="area"):
+            sars.from_df(df)
+
+    def test_missing_species_col(self):
+        df = pd.DataFrame({"area": [1.0], "count": [10]})
+        with pytest.raises(KeyError, match="species"):
+            sars.from_df(df)
+
+    def test_usable_with_sar_power(self):
+        df = pd.DataFrame({
+            "A": [0.5, 1.0, 2.0, 5.0, 10.0],
+            "S": [10, 15, 22, 40, 55],
+        })
+        result = sars.from_df(df, area_col="A", species_col="S")
+        fit = sars.sar_power(result)
+        assert fit.converged
 
 
 class TestFromCsv:

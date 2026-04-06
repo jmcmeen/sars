@@ -14,7 +14,13 @@ from sars._inference import (
     sar_average,
     sar_multi,
 )
-from sars._io import from_csv, from_geodataframe, from_pyinaturalist, load_galap
+from sars._io import (
+    from_csv,
+    from_df,
+    from_geodataframe,
+    from_pyinaturalist,
+    load_galap,
+)
 from sars._models import (
     SARFit,
     sar_asymp,
@@ -51,6 +57,7 @@ __all__ = [
     "akaike_weights",
     "bootstrap_ci",
     "from_csv",
+    "from_df",
     "from_geodataframe",
     "from_pyinaturalist",
     "load_galap",

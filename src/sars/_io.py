@@ -29,6 +29,50 @@ def load_galap() -> pd.DataFrame:
     return df
 
 
+def from_df(
+    df: pd.DataFrame,
+    area_col: str = "area",
+    species_col: str = "species",
+) -> pd.DataFrame:
+    """Create SAR-formatted DataFrame from an existing DataFrame.
+
+    Selects and renames the specified columns to the standard 'area' and
+    'species' names expected by all ``sars`` model functions.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input DataFrame containing area and species richness columns.
+    area_col : str
+        Name of the column containing area values.
+    species_col : str
+        Name of the column containing species richness values.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns 'area' and 'species'.
+
+    Raises
+    ------
+    KeyError
+        If the specified columns are not found.
+    """
+    if area_col not in df.columns:
+        raise KeyError(
+            f"Column {area_col!r} not found. "
+            f"Available columns: {list(df.columns)}"
+        )
+    if species_col not in df.columns:
+        raise KeyError(
+            f"Column {species_col!r} not found. "
+            f"Available columns: {list(df.columns)}"
+        )
+    return df[[area_col, species_col]].rename(
+        columns={area_col: "area", species_col: "species"}
+    )
+
+
 def from_csv(
     path: str | Path,
     area_col: str = "area",
