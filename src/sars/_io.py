@@ -23,9 +23,16 @@ def load_galap() -> pd.DataFrame:
     pd.DataFrame
         DataFrame with columns 'area' and 'species'.
     """
-    ref = importlib.resources.files("sars") / "data" / "galap.csv"
-    with importlib.resources.as_file(ref) as path:
-        df = pd.read_csv(path)
+    try:
+        ref = importlib.resources.files("sars.data").joinpath("galap.csv")
+        with importlib.resources.as_file(ref) as path:
+            df = pd.read_csv(path)
+    except (TypeError, FileNotFoundError, ModuleNotFoundError) as exc:
+        raise FileNotFoundError(
+            "galap.csv is not available. The sars package data may not "
+            "have been installed correctly. Try reinstalling with: "
+            "pip install --force-reinstall sars"
+        ) from exc
     df = df.rename(columns={"a": "area", "s": "species"})
     return df
 
