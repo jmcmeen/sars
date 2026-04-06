@@ -249,8 +249,16 @@ def _fit_nls(
     else:
         starts = product(*spec.start_grid)
 
+    # Early-termination: stop after this many consecutive successful solver
+    # calls that don't improve the best cost.  For large grids this avoids
+    # hundreds of redundant solver calls once the optimum has stabilised.
+    # The limit is generous enough to avoid premature stopping.
+    n_params = len(spec.param_names)
+    stale_limit = 50 * n_params  # 100 for 2-p, 150 for 3-p, 200 for 4-p
+
     n_starts = 0
     n_errors = 0
+    stale_runs = 0
     for start in starts:
         n_starts += 1
         try:
@@ -264,11 +272,28 @@ def _fit_nls(
             if result.cost < best_cost:
                 best_cost = result.cost
                 best_result = result
+                stale_runs = 0
+            else:
+                stale_runs += 1
         except Exception:
             n_errors += 1
             logger.debug(
                 "Model '%s' NLS failed for start %s", name, list(start),
                 exc_info=True,
+            )
+
+        if stale_runs >= stale_limit and best_result is not None:
+            logger.debug(
+                "Model '%s': early stop after %d starts "
+                "(%d without improvement)",
+                name, n_starts, stale_limit,
+            )
+            break
+
+        if n_starts % 100 == 0:
+            logger.debug(
+                "Model '%s': %d starts evaluated (best cost=%.4g)",
+                name, n_starts, best_cost,
             )
 
     if n_errors:
