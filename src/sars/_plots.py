@@ -93,7 +93,8 @@ def plot_multi(
     top_models = multi_fit.summary.head(top_n)["model"].tolist()
     fits_by_name = {f.model: f for f in multi_fit.fits}
 
-    colors = plt.cm.tab10(np.linspace(0, 1, min(top_n, 10)))
+    cmap = plt.cm.tab20 if top_n > 10 else plt.cm.tab10
+    colors = cmap(np.linspace(0, 1, top_n))
 
     for i, name in enumerate(top_models):
         fit = fits_by_name.get(name)
