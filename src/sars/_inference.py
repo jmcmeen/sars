@@ -185,7 +185,10 @@ def sar_multi(
     for name in model_names:
         if name not in _MODEL_REGISTRY:
             raise ValueError(f"Unknown model: {name!r}")
-        fit = _fit_nls(name, data)
+        try:
+            fit = _fit_nls(name, data)
+        except ValueError:
+            continue
         if fit.converged:
             fits.append(fit)
 
