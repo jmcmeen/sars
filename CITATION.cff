@@ -6,8 +6,8 @@ authors:
   - family-names: McMeen
     given-names: John
     orcid: "https://orcid.org/0009-0003-8141-567X"
-version: 0.7.5
-date-released: 2026-04-07
+version: 0.7.6
+date-released: 2026-10-11
 doi: 10.5281/zenodo.19410393
 license: MIT
 repository-code: "https://github.com/jmcmeen/sars"

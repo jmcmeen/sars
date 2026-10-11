@@ -9,6 +9,8 @@ Versions up to 0.7.5 predate this file; their notes are on the
 
 ## [Unreleased]
 
+## [0.7.6] - 2026-10-11
+
 ### Changed
 
 - Requires Python 3.10 or newer (Python 3.9 reached end of life in October 2025).
@@ -40,7 +42,8 @@ Versions up to 0.7.5 predate this file; their notes are on the
 
 ## [0.1.0] - 2026-04-03
 
-[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.7.5...HEAD
+[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.7.6...HEAD
+[0.7.6]: https://github.com/jmcmeen/sars/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/jmcmeen/sars/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/jmcmeen/sars/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/jmcmeen/sars/compare/v0.7.2...v0.7.3
