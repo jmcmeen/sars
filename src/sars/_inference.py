@@ -311,7 +311,7 @@ def sar_average(
 
     multi = sar_multi(data, models=models)
     weights_arr = akaike_weights(multi.summary[ic].to_numpy(dtype=float))
-    weights = dict(zip(multi.summary["model"], weights_arr))
+    weights = dict(zip(multi.summary["model"], weights_arr, strict=True))
     return AveragedSAR(multi=multi, ic=ic, weights=weights)
 
 
@@ -493,7 +493,7 @@ def bootstrap_ci(
                 w_arr = akaike_weights(
                     multi.summary[ic].to_numpy(dtype=float)
                 )
-                weights = dict(zip(multi.summary["model"], w_arr))
+                weights = dict(zip(multi.summary["model"], w_arr, strict=True))
                 avg = AveragedSAR(multi=multi, ic=ic, weights=weights)
             else:
                 avg = sar_average(boot_data, models=models, ic=ic)

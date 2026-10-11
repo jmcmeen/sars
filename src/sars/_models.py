@@ -311,7 +311,7 @@ def _fit_nls(
 
     k = len(spec.param_names) + 1  # +1 for sigma
     aic, aicc, bic = _compute_ic(k, n, rss)
-    params = dict(zip(spec.param_names, best_result.x))
+    params = dict(zip(spec.param_names, best_result.x, strict=True))
 
     return SARFit(
         model=name,
@@ -331,7 +331,7 @@ def _failed_fit(
 ) -> SARFit:
     return SARFit(
         model=name,
-        params={k: np.nan for k in param_names},
+        params=dict.fromkeys(param_names, np.nan),
         r_squared=np.nan,
         aic=np.nan,
         aicc=np.nan,

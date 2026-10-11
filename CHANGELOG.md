@@ -9,6 +9,11 @@ Versions up to 0.7.5 predate this file; their notes are on the
 
 ## [Unreleased]
 
+### Changed
+
+- Requires Python 3.10 or newer (Python 3.9 reached end of life in October 2025).
+  CI now tests 3.10 through 3.13.
+
 ## [0.7.5] - 2026-04-07
 
 ## [0.7.4] - 2026-04-06

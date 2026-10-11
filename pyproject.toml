@@ -9,7 +9,7 @@ description = "Species-area relationship curve fitting in Python"
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "John McMeen" }]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 keywords = ["species-area relationship", "SAR", "macroecology",
             "biodiversity", "ecology", "biogeography"]
 classifiers = [
@@ -46,11 +46,31 @@ source = "vcs"
 packages = ["src/sars"]
 
 [tool.ruff]
-line-length = 88
-target-version = "py39"
+target-version = "py310"
+line-length = 100
+src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "UP", "B"]
+select = [
+  "E",      # pycodestyle errors
+  "W",      # pycodestyle warnings
+  "F",      # Pyflakes
+  "I",      # isort
+  "B",      # flake8-bugbear
+  "C4",     # flake8-comprehensions
+  "UP",     # pyupgrade
+]
+ignore = [
+  "E501",   # line too long (handled by formatter)
+  "B008",   # do not perform function calls in argument defaults
+  "C901",   # too complex
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011", "E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["sars"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
