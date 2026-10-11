@@ -67,18 +67,10 @@ def from_df(
         If the specified columns are not found.
     """
     if area_col not in df.columns:
-        raise KeyError(
-            f"Column {area_col!r} not found. "
-            f"Available columns: {list(df.columns)}"
-        )
+        raise KeyError(f"Column {area_col!r} not found. Available columns: {list(df.columns)}")
     if species_col not in df.columns:
-        raise KeyError(
-            f"Column {species_col!r} not found. "
-            f"Available columns: {list(df.columns)}"
-        )
-    return df[[area_col, species_col]].rename(
-        columns={area_col: "area", species_col: "species"}
-    )
+        raise KeyError(f"Column {species_col!r} not found. Available columns: {list(df.columns)}")
+    return df[[area_col, species_col]].rename(columns={area_col: "area", species_col: "species"})
 
 
 def from_csv(
@@ -114,18 +106,10 @@ def from_csv(
         raise FileNotFoundError(f"File not found: {path}")
     df = pd.read_csv(path)
     if area_col not in df.columns:
-        raise KeyError(
-            f"Column {area_col!r} not found. "
-            f"Available columns: {list(df.columns)}"
-        )
+        raise KeyError(f"Column {area_col!r} not found. Available columns: {list(df.columns)}")
     if species_col not in df.columns:
-        raise KeyError(
-            f"Column {species_col!r} not found. "
-            f"Available columns: {list(df.columns)}"
-        )
-    return df[[area_col, species_col]].rename(
-        columns={area_col: "area", species_col: "species"}
-    )
+        raise KeyError(f"Column {species_col!r} not found. Available columns: {list(df.columns)}")
+    return df[[area_col, species_col]].rename(columns={area_col: "area", species_col: "species"})
 
 
 def from_pyinaturalist(
@@ -166,8 +150,7 @@ def from_pyinaturalist(
     for i, obs in enumerate(observations):
         if area_key not in obs:
             raise KeyError(
-                f"Key {area_key!r} not found in observation {i}. "
-                f"Available keys: {list(obs.keys())}"
+                f"Key {area_key!r} not found in observation {i}. Available keys: {list(obs.keys())}"
             )
         if species_key not in obs:
             raise KeyError(
@@ -221,34 +204,28 @@ def from_geodataframe(
         import geopandas as gpd  # noqa: F401
     except ImportError as e:
         raise ImportError(
-            "geopandas is required for from_geodataframe(). "
-            "Install with: pip install sars[geo]"
+            "geopandas is required for from_geodataframe(). Install with: pip install sars[geo]"
         ) from e
 
     if species_col not in gdf.columns:
-        raise KeyError(
-            f"Column {species_col!r} not found. "
-            f"Available columns: {list(gdf.columns)}"
-        )
+        raise KeyError(f"Column {species_col!r} not found. Available columns: {list(gdf.columns)}")
 
     if area_col is not None:
         if area_col not in gdf.columns:
-            raise KeyError(
-                f"Column {area_col!r} not found. "
-                f"Available columns: {list(gdf.columns)}"
-            )
+            raise KeyError(f"Column {area_col!r} not found. Available columns: {list(gdf.columns)}")
         areas = gdf[area_col].values
     else:
         raw_area = gdf.geometry.area
         unit_divisors = {"km2": 1e6, "m2": 1.0, "ha": 1e4}
         if crs_units not in unit_divisors:
             raise ValueError(
-                f"Unknown crs_units {crs_units!r}. "
-                f"Choose from {list(unit_divisors.keys())}"
+                f"Unknown crs_units {crs_units!r}. Choose from {list(unit_divisors.keys())}"
             )
         areas = raw_area / unit_divisors[crs_units]
 
-    return pd.DataFrame({
-        "area": areas,
-        "species": gdf[species_col].values,
-    })
+    return pd.DataFrame(
+        {
+            "area": areas,
+            "species": gdf[species_col].values,
+        }
+    )

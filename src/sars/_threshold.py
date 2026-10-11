@@ -33,6 +33,7 @@ from sars._models import _compute_ic, _validate_data
 # ThresholdFit dataclass
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ThresholdFit:
     """Result of fitting threshold / piecewise SAR models.
@@ -82,14 +83,11 @@ class ThresholdFit:
         return _predict_segments(x, self.best_segments)
 
     def __repr__(self) -> str:
-        bp = (f", breakpoint={self.best_breakpoint:.3f}"
-              if self.best_breakpoint is not None else "")
+        bp = f", breakpoint={self.best_breakpoint:.3f}" if self.best_breakpoint is not None else ""
         return f"ThresholdFit(best='{self.best_model}'{bp})"
 
 
-def _predict_segments(
-    x: np.ndarray, segments: list[dict]
-) -> np.ndarray:
+def _predict_segments(x: np.ndarray, segments: list[dict]) -> np.ndarray:
     """Predict from piecewise linear segments."""
     pred = np.zeros_like(x, dtype=float)
     for seg in segments:
@@ -101,6 +99,7 @@ def _predict_segments(
 # ---------------------------------------------------------------------------
 # Individual piecewise model fits
 # ---------------------------------------------------------------------------
+
 
 def _fit_linear(x: np.ndarray, y: np.ndarray) -> dict:
     """Fit simple linear model y = c + m*x (no breakpoint).
@@ -120,12 +119,14 @@ def _fit_linear(x: np.ndarray, y: np.ndarray) -> dict:
     k = 3  # intercept + slope + sigma
     aic, aicc, bic = _compute_ic(k, n, rss)
 
-    segments = [{
-        "intercept": float(c),
-        "slope": float(m),
-        "x_min": float(np.min(x)),
-        "x_max": float(np.max(x)),
-    }]
+    segments = [
+        {
+            "intercept": float(c),
+            "slope": float(m),
+            "x_min": float(np.min(x)),
+            "x_max": float(np.max(x)),
+        }
+    ]
 
     return {
         "model": "Linear",
@@ -142,9 +143,7 @@ def _fit_linear(x: np.ndarray, y: np.ndarray) -> dict:
     }
 
 
-def _fit_cont_one(
-    x: np.ndarray, y: np.ndarray, threshold: float
-) -> dict:
+def _fit_cont_one(x: np.ndarray, y: np.ndarray, threshold: float) -> dict:
     """Fit continuous one-threshold model.
 
     y = c1 + z1*x + z_delta * (x - T) * I(x > T)
@@ -190,7 +189,9 @@ def _fit_cont_one(
         "model": "ContOne",
         "breakpoint": float(threshold),
         "coeffs": {
-            "c1": float(c1), "z1": float(z1), "z_delta": float(z_delta),
+            "c1": float(c1),
+            "z1": float(z1),
+            "z_delta": float(z_delta),
         },
         "segments": segments,
         "rss": rss,
@@ -203,9 +204,7 @@ def _fit_cont_one(
     }
 
 
-def _fit_zslope_one(
-    x: np.ndarray, y: np.ndarray, threshold: float
-) -> dict:
+def _fit_zslope_one(x: np.ndarray, y: np.ndarray, threshold: float) -> dict:
     """Fit left-horizontal one-threshold model (small island effect).
 
     y = c1 + z2 * (x - T) * I(x > T)
@@ -263,6 +262,7 @@ def _fit_zslope_one(
 # ---------------------------------------------------------------------------
 # Grid search for optimal breakpoint
 # ---------------------------------------------------------------------------
+
 
 def _grid_search_breakpoint(
     x: np.ndarray,
@@ -326,6 +326,7 @@ def _grid_search_breakpoint(
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def sar_threshold(
     data: pd.DataFrame,
@@ -391,10 +392,7 @@ def sar_threshold(
     valid_models = {"ContOne", "ZslopeOne", "Linear"}
     for m in models:
         if m not in valid_models:
-            raise ValueError(
-                f"Unknown threshold model: {m!r}. "
-                f"Choose from {sorted(valid_models)}"
-            )
+            raise ValueError(f"Unknown threshold model: {m!r}. Choose from {sorted(valid_models)}")
 
     _validate_data(data)
 
@@ -436,14 +434,16 @@ def sar_threshold(
     # Build summary table
     rows = []
     for name, fit in all_fits.items():
-        rows.append({
-            "model": name,
-            "breakpoint": fit["breakpoint"],
-            "AIC": fit["aic"],
-            "AICc": fit["aicc"],
-            "BIC": fit["bic"],
-            "R2": fit["r2"],
-        })
+        rows.append(
+            {
+                "model": name,
+                "breakpoint": fit["breakpoint"],
+                "AIC": fit["aic"],
+                "AICc": fit["aicc"],
+                "BIC": fit["bic"],
+                "R2": fit["r2"],
+            }
+        )
     summary = pd.DataFrame(rows).sort_values("AICc").reset_index(drop=True)
 
     # Select best by AICc

@@ -1,6 +1,7 @@
 """Tests for SAR plotting functions."""
 
 import matplotlib  # noqa: I001
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np

@@ -53,8 +53,11 @@ def plot_fit(
 
     a_grid = np.linspace(area.min(), area.max(), 200)
     pred = fit.predict(a_grid)
-    l_defaults = {"color": "dodgerblue", "linewidth": 2,
-                      "label": f"{fit.model} (R²={fit.r_squared:.3f})"}
+    l_defaults = {
+        "color": "dodgerblue",
+        "linewidth": 2,
+        "label": f"{fit.model} (R²={fit.r_squared:.3f})",
+    }
     ax.plot(a_grid, pred, **{**l_defaults, **(line_kw or {})})
 
     if log:
@@ -122,11 +125,8 @@ def plot_multi(
         if fit is None:
             continue
         pred = fit.predict(a_grid)
-        w = multi_fit.summary.loc[
-            multi_fit.summary["model"] == name, "weight"
-        ].iloc[0]
-        l_defaults = {"color": colors[i], "linewidth": 1.5,
-                          "label": f"{name} (w={w:.3f})"}
+        w = multi_fit.summary.loc[multi_fit.summary["model"] == name, "weight"].iloc[0]
+        l_defaults = {"color": colors[i], "linewidth": 1.5, "label": f"{name} (w={w:.3f})"}
         ax.plot(a_grid, pred, **{**l_defaults, **extra_line})
 
     ax.set_xlabel("Area")
@@ -187,10 +187,11 @@ def plot_average(
     ax.plot(a_grid, pred, **{**l_defaults, **(line_kw or {})})
 
     if ci and boot is not None and np.any(np.isfinite(boot.lower)):
-        f_defaults = {"alpha": 0.2, "color": "dodgerblue",
-                          "label": f"{boot.conf:.0%} CI"}
+        f_defaults = {"alpha": 0.2, "color": "dodgerblue", "label": f"{boot.conf:.0%} CI"}
         ax.fill_between(
-            boot.area_grid, boot.lower, boot.upper,
+            boot.area_grid,
+            boot.lower,
+            boot.upper,
             **{**f_defaults, **(fill_kw or {})},
         )
 

@@ -77,7 +77,9 @@ class TestAveragedSARRepr:
 class TestBootstrappedCIRepr:
     def test_repr(self, galap):
         ci = sars.bootstrap_ci(
-            galap, models=["power"], n_boot=5,
+            galap,
+            models=["power"],
+            n_boot=5,
             rng=np.random.default_rng(42),
         )
         r = repr(ci)

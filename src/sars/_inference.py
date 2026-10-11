@@ -16,9 +16,26 @@ from sars._models import (
 
 # All 20 model names in canonical order
 ALL_MODEL_NAMES: list[str] = [
-    "power", "powerR", "epm1", "epm2", "p1", "p2", "loga", "koba",
-    "mmf", "monod", "negexpo", "chapman", "weibull3", "asymp",
-    "ratio", "gompertz", "weibull4", "betap", "heleg", "linear",
+    "power",
+    "powerR",
+    "epm1",
+    "epm2",
+    "p1",
+    "p2",
+    "loga",
+    "koba",
+    "mmf",
+    "monod",
+    "negexpo",
+    "chapman",
+    "weibull3",
+    "asymp",
+    "ratio",
+    "gompertz",
+    "weibull4",
+    "betap",
+    "heleg",
+    "linear",
 ]
 
 # Static shape classification for each model.
@@ -32,20 +49,41 @@ ALL_MODEL_NAMES: list[str] = [
 # and some sigmoid models can appear convex. Users needing the dynamic
 # classification from R should inspect the fitted curve directly.
 _MODEL_SHAPE: dict[str, str] = {
-    "power": "convex", "powerR": "convex", "loga": "convex",
-    "linear": "linear", "epm1": "convex", "epm2": "convex",
-    "p1": "convex", "p2": "convex",
-    "koba": "convex", "monod": "convex", "negexpo": "convex",
-    "asymp": "convex", "ratio": "convex",
-    "mmf": "sigmoid", "gompertz": "sigmoid", "weibull3": "sigmoid",
-    "weibull4": "sigmoid", "chapman": "sigmoid", "betap": "sigmoid",
+    "power": "convex",
+    "powerR": "convex",
+    "loga": "convex",
+    "linear": "linear",
+    "epm1": "convex",
+    "epm2": "convex",
+    "p1": "convex",
+    "p2": "convex",
+    "koba": "convex",
+    "monod": "convex",
+    "negexpo": "convex",
+    "asymp": "convex",
+    "ratio": "convex",
+    "mmf": "sigmoid",
+    "gompertz": "sigmoid",
+    "weibull3": "sigmoid",
+    "weibull4": "sigmoid",
+    "chapman": "sigmoid",
+    "betap": "sigmoid",
     "heleg": "sigmoid",
 }
 
 # Models that have an asymptote parameter (d)
 _ASYMPTOTE_MODELS: set[str] = {
-    "monod", "negexpo", "asymp", "ratio", "mmf", "gompertz",
-    "weibull3", "weibull4", "chapman", "betap", "heleg",
+    "monod",
+    "negexpo",
+    "asymp",
+    "ratio",
+    "mmf",
+    "gompertz",
+    "weibull3",
+    "weibull4",
+    "chapman",
+    "betap",
+    "heleg",
 }
 
 
@@ -70,6 +108,7 @@ def _get_asymptote(fit: SARFit) -> float | None:
 # ---------------------------------------------------------------------------
 # Public helper functions
 # ---------------------------------------------------------------------------
+
 
 def aicc(k: int, n: int, rss: float) -> float:
     """Compute AICc from residual sum of squares.
@@ -129,6 +168,7 @@ def akaike_weights(ic_values: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # MultiSARFit
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class MultiSARFit:
@@ -200,23 +240,34 @@ def _build_summary(fits: list[SARFit]) -> pd.DataFrame:
     """Build summary DataFrame from a list of SARFit objects."""
     if not fits:
         return pd.DataFrame(
-            columns=["model", "R2", "AIC", "AICc", "BIC",
-                     "delta_AICc", "weight", "shape", "asymptote"]
+            columns=[
+                "model",
+                "R2",
+                "AIC",
+                "AICc",
+                "BIC",
+                "delta_AICc",
+                "weight",
+                "shape",
+                "asymptote",
+            ]
         )
 
     rows = []
     aicc_vals = []
     for fit in fits:
         asym = _get_asymptote(fit)
-        rows.append({
-            "model": fit.model,
-            "R2": fit.r_squared,
-            "AIC": fit.aic,
-            "AICc": fit.aicc,
-            "BIC": fit.bic,
-            "shape": _MODEL_SHAPE.get(fit.model, "unknown"),
-            "asymptote": asym,
-        })
+        rows.append(
+            {
+                "model": fit.model,
+                "R2": fit.r_squared,
+                "AIC": fit.aic,
+                "AICc": fit.aicc,
+                "BIC": fit.bic,
+                "shape": _MODEL_SHAPE.get(fit.model, "unknown"),
+                "asymptote": asym,
+            }
+        )
         aicc_vals.append(fit.aicc)
 
     df = pd.DataFrame(rows)
@@ -225,13 +276,13 @@ def _build_summary(fits: list[SARFit]) -> pd.DataFrame:
     df["delta_AICc"] = df["AICc"] - min_aicc
     df["weight"] = weights
     df = df.sort_values("AICc").reset_index(drop=True)
-    return df[["model", "R2", "AIC", "AICc", "BIC",
-               "delta_AICc", "weight", "shape", "asymptote"]]
+    return df[["model", "R2", "AIC", "AICc", "BIC", "delta_AICc", "weight", "shape", "asymptote"]]
 
 
 # ---------------------------------------------------------------------------
 # AveragedSAR
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class AveragedSAR:
@@ -305,9 +356,7 @@ def sar_average(
         Model-averaged SAR with weighted predictions.
     """
     if ic not in _VALID_ICS:
-        raise ValueError(
-            f"Unsupported IC: {ic!r}. Choose from {sorted(_VALID_ICS)}."
-        )
+        raise ValueError(f"Unsupported IC: {ic!r}. Choose from {sorted(_VALID_ICS)}.")
 
     multi = sar_multi(data, models=models)
     weights_arr = akaike_weights(multi.summary[ic].to_numpy(dtype=float))
@@ -318,6 +367,7 @@ def sar_average(
 # ---------------------------------------------------------------------------
 # Bootstrap CI
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class BootstrappedCI:
@@ -446,9 +496,7 @@ def bootstrap_ci(
     if method not in ("fast", "full"):
         raise ValueError(f"method must be 'fast' or 'full', got {method!r}")
     if ic not in _VALID_ICS:
-        raise ValueError(
-            f"Unsupported IC: {ic!r}. Choose from {sorted(_VALID_ICS)}."
-        )
+        raise ValueError(f"Unsupported IC: {ic!r}. Choose from {sorted(_VALID_ICS)}.")
 
     if rng is None:
         rng = np.random.default_rng()
@@ -462,14 +510,16 @@ def bootstrap_ci(
     warm_starts: dict[str, dict[str, float]] | None = None
     if method == "fast":
         base_multi = sar_multi(data, models=models)
-        warm_starts = {
-            fit.model: dict(fit.params) for fit in base_multi.fits
-        }
+        warm_starts = {fit.model: dict(fit.params) for fit in base_multi.fits}
         if not warm_starts:
             nan_arr = np.full_like(area_grid, np.nan)
             return BootstrappedCI(
-                area_grid=area_grid, mean=nan_arr, lower=nan_arr,
-                upper=nan_arr, conf=conf, n_boot=0,
+                area_grid=area_grid,
+                mean=nan_arr,
+                lower=nan_arr,
+                upper=nan_arr,
+                conf=conf,
+                n_boot=0,
             )
 
     if warm_starts is not None:
@@ -490,9 +540,7 @@ def bootstrap_ci(
                 n_converged = len(multi.fits)
                 if not multi.fits:
                     continue
-                w_arr = akaike_weights(
-                    multi.summary[ic].to_numpy(dtype=float)
-                )
+                w_arr = akaike_weights(multi.summary[ic].to_numpy(dtype=float))
                 weights = dict(zip(multi.summary["model"], w_arr, strict=True))
                 avg = AveragedSAR(multi=multi, ic=ic, weights=weights)
             else:
@@ -508,9 +556,14 @@ def bootstrap_ci(
     if not preds:
         nan_arr = np.full_like(area_grid, np.nan)
         return BootstrappedCI(
-            area_grid=area_grid, mean=nan_arr, lower=nan_arr,
-            upper=nan_arr, conf=conf, n_boot=0,
-            convergence_counts=[], n_models_attempted=n_attempted,
+            area_grid=area_grid,
+            mean=nan_arr,
+            lower=nan_arr,
+            upper=nan_arr,
+            conf=conf,
+            n_boot=0,
+            convergence_counts=[],
+            n_models_attempted=n_attempted,
         )
 
     # Warn if convergence rate across resamples was poor

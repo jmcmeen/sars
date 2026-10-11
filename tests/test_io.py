@@ -52,10 +52,12 @@ class TestFromDf:
             sars.from_df(df)
 
     def test_usable_with_sar_power(self):
-        df = pd.DataFrame({
-            "A": [0.5, 1.0, 2.0, 5.0, 10.0],
-            "S": [10, 15, 22, 40, 55],
-        })
+        df = pd.DataFrame(
+            {
+                "A": [0.5, 1.0, 2.0, 5.0, 10.0],
+                "S": [10, 15, 22, 40, 55],
+            }
+        )
         result = sars.from_df(df, area_col="A", species_col="S")
         fit = sars.sar_power(result)
         assert fit.converged
@@ -95,9 +97,7 @@ class TestFromCsv:
     def test_usable_with_sar_power(self, tmp_path):
         """from_csv output should be directly usable with model functions."""
         csv = tmp_path / "data.csv"
-        csv.write_text(
-            "area,species\n0.5,10\n1.0,15\n2.0,22\n5.0,40\n10.0,55\n"
-        )
+        csv.write_text("area,species\n0.5,10\n1.0,15\n2.0,22\n5.0,40\n10.0,55\n")
         df = sars.from_csv(csv)
         fit = sars.sar_power(df)
         assert fit.converged
@@ -119,9 +119,7 @@ class TestFromPyinaturalist:
             {"island_km2": 1.0, "n_species": 10},
             {"island_km2": 5.0, "n_species": 30},
         ]
-        df = sars.from_pyinaturalist(
-            obs, area_key="island_km2", species_key="n_species"
-        )
+        df = sars.from_pyinaturalist(obs, area_key="island_km2", species_key="n_species")
         assert df["area"].iloc[0] == 1.0
         assert df["species"].iloc[1] == 30
 
@@ -192,6 +190,7 @@ class TestFromGeoDataFrame:
     def test_import_error(self, monkeypatch):
         """Should raise ImportError if geopandas not available."""
         import builtins
+
         real_import = builtins.__import__
 
         def mock_import(name, *args, **kwargs):
