@@ -2,6 +2,11 @@
 
 Species-area relationship curve fitting in Python. A conceptual mirror of the R [`sars`](https://cran.r-project.org/package=sars) package (Matthews et al. 2019), native to the Python scientific stack.
 
+[![PyPI](https://img.shields.io/pypi/v/sars)](https://pypi.org/project/sars/)
+[![Python](https://img.shields.io/pypi/pyversions/sars)](https://pypi.org/project/sars/)
+[![CI](https://github.com/jmcmeen/sars/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jmcmeen/sars/actions/workflows/ci.yml)
+[![Docs](https://github.com/jmcmeen/sars/actions/workflows/docs.yml/badge.svg?branch=main)](https://jmcmeen.github.io/sars/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![DOI](https://zenodo.org/badge/1200249864.svg)](https://doi.org/10.5281/zenodo.19410393)
 
 ## Installation
