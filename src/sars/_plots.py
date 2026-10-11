@@ -48,13 +48,16 @@ def plot_fit(
     area = fit.data["area"].values
     species = fit.data["species"].values
 
-    s_defaults = dict(color="black", zorder=3, label="Observed")
+    s_defaults = {"color": "black", "zorder": 3, "label": "Observed"}
     ax.scatter(area, species, **{**s_defaults, **(scatter_kw or {})})
 
     a_grid = np.linspace(area.min(), area.max(), 200)
     pred = fit.predict(a_grid)
-    l_defaults = dict(color="dodgerblue", linewidth=2,
-                      label=f"{fit.model} (R²={fit.r_squared:.3f})")
+    l_defaults = {
+        "color": "dodgerblue",
+        "linewidth": 2,
+        "label": f"{fit.model} (R²={fit.r_squared:.3f})",
+    }
     ax.plot(a_grid, pred, **{**l_defaults, **(line_kw or {})})
 
     if log:
@@ -104,7 +107,7 @@ def plot_multi(
     area = data["area"].values
     species = data["species"].values
 
-    s_defaults = dict(color="black", zorder=3, label="Observed")
+    s_defaults = {"color": "black", "zorder": 3, "label": "Observed"}
     ax.scatter(area, species, **{**s_defaults, **(scatter_kw or {})})
 
     a_grid = np.linspace(area.min(), area.max(), 200)
@@ -122,11 +125,8 @@ def plot_multi(
         if fit is None:
             continue
         pred = fit.predict(a_grid)
-        w = multi_fit.summary.loc[
-            multi_fit.summary["model"] == name, "weight"
-        ].iloc[0]
-        l_defaults = dict(color=colors[i], linewidth=1.5,
-                          label=f"{name} (w={w:.3f})")
+        w = multi_fit.summary.loc[multi_fit.summary["model"] == name, "weight"].iloc[0]
+        l_defaults = {"color": colors[i], "linewidth": 1.5, "label": f"{name} (w={w:.3f})"}
         ax.plot(a_grid, pred, **{**l_defaults, **extra_line})
 
     ax.set_xlabel("Area")
@@ -178,19 +178,20 @@ def plot_average(
     area = data["area"].values
     species = data["species"].values
 
-    s_defaults = dict(color="black", zorder=3, label="Observed")
+    s_defaults = {"color": "black", "zorder": 3, "label": "Observed"}
     ax.scatter(area, species, **{**s_defaults, **(scatter_kw or {})})
 
     a_grid = np.linspace(area.min(), area.max(), 200)
     pred = averaged.predict(a_grid)
-    l_defaults = dict(color="dodgerblue", linewidth=2, label="Model-averaged")
+    l_defaults = {"color": "dodgerblue", "linewidth": 2, "label": "Model-averaged"}
     ax.plot(a_grid, pred, **{**l_defaults, **(line_kw or {})})
 
     if ci and boot is not None and np.any(np.isfinite(boot.lower)):
-        f_defaults = dict(alpha=0.2, color="dodgerblue",
-                          label=f"{boot.conf:.0%} CI")
+        f_defaults = {"alpha": 0.2, "color": "dodgerblue", "label": f"{boot.conf:.0%} CI"}
         ax.fill_between(
-            boot.area_grid, boot.lower, boot.upper,
+            boot.area_grid,
+            boot.lower,
+            boot.upper,
             **{**f_defaults, **(fill_kw or {})},
         )
 
@@ -230,7 +231,7 @@ def plot_residuals(
     fitted = fit.predict(area)
     residuals = observed - fitted
 
-    s_defaults = dict(color="black")
+    s_defaults = {"color": "black"}
     ax.scatter(fitted, residuals, **{**s_defaults, **(scatter_kw or {})})
     ax.axhline(0, color="red", linestyle="--", linewidth=1)
     ax.set_xlabel("Fitted values")

@@ -73,12 +73,12 @@ class TestInputValidation:
 
 def test_power_law_spot_check():
     """Quick sanity check using confirmed R values (no R script needed)."""
-    partial = pd.DataFrame({
-        "area":    [0.20, 0.90, 1.00, 1.80, 1.87, 4.40, 7.10,
-                    7.50, 18.00, 20.00],
-        "species": [  48,    7,   52,   14,   42,   22,  103,
-                        48,    79,   119],
-    })
+    partial = pd.DataFrame(
+        {
+            "area": [0.20, 0.90, 1.00, 1.80, 1.87, 4.40, 7.10, 7.50, 18.00, 20.00],
+            "species": [48, 7, 52, 14, 42, 22, 103, 48, 79, 119],
+        }
+    )
     fit = sars.sar_power(partial)
     assert fit.converged is True
     assert 0.0 < fit.params["z"] < 1.0
@@ -101,9 +101,26 @@ def test_power_law_matches_r(galap, r_reference):
 # ---------------------------------------------------------------------------
 
 ALL_MODELS = [
-    "power", "powerR", "epm1", "epm2", "p1", "p2", "loga", "koba",
-    "mmf", "monod", "negexpo", "chapman", "weibull3", "asymp",
-    "ratio", "gompertz", "weibull4", "betap", "heleg", "linear",
+    "power",
+    "powerR",
+    "epm1",
+    "epm2",
+    "p1",
+    "p2",
+    "loga",
+    "koba",
+    "mmf",
+    "monod",
+    "negexpo",
+    "chapman",
+    "weibull3",
+    "asymp",
+    "ratio",
+    "gompertz",
+    "weibull4",
+    "betap",
+    "heleg",
+    "linear",
 ]
 
 
@@ -130,9 +147,7 @@ def test_model_converges(model_name, galap_fits):
     """Every model should converge on the galap dataset."""
     fit = galap_fits[model_name]
     assert fit.converged is True, f"{model_name} did not converge"
-    assert 0.0 < fit.r_squared <= 1.0, (
-        f"{model_name} R² out of range: {fit.r_squared}"
-    )
+    assert 0.0 < fit.r_squared <= 1.0, f"{model_name} R² out of range: {fit.r_squared}"
 
 
 @pytest.mark.parametrize("model_name", ALL_MODELS)

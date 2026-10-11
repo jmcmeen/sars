@@ -86,9 +86,7 @@ class TestSarThreshold:
     def test_r2_between_0_and_1(self, galap):
         result = sars.sar_threshold(galap)
         for _, row in result.summary.iterrows():
-            assert 0.0 <= row["R2"] <= 1.0, (
-                f"{row['model']} R2 out of range: {row['R2']}"
-            )
+            assert 0.0 <= row["R2"] <= 1.0, f"{row['model']} R2 out of range: {row['R2']}"
 
     def test_custom_interval(self, galap):
         """Smaller interval should still work."""

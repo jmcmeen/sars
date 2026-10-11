@@ -9,6 +9,7 @@ import sars
 # aicc and akaike_weights
 # ---------------------------------------------------------------------------
 
+
 class TestAicc:
     def test_basic(self):
         """AICc should return a finite value for reasonable inputs."""
@@ -62,6 +63,7 @@ class TestAkaikeWeights:
 # sar_multi
 # ---------------------------------------------------------------------------
 
+
 class TestSarMulti:
     def test_all_models(self, galap_multi):
         """sar_multi with all models should produce a summary table."""
@@ -98,7 +100,11 @@ class TestSarMulti:
         """Asymptotic models should have finite asymptote values."""
         for _, row in galap_multi.summary.iterrows():
             if row["shape"] == "sigmoid" or row["model"] in {
-                "monod", "negexpo", "asymp", "ratio", "koba"
+                "monod",
+                "negexpo",
+                "asymp",
+                "ratio",
+                "koba",
             }:
                 if row["model"] != "koba":
                     assert row["asymptote"] is not None
@@ -111,6 +117,7 @@ class TestSarMulti:
 # ---------------------------------------------------------------------------
 # sar_average
 # ---------------------------------------------------------------------------
+
 
 class TestSarAverage:
     def test_basic(self, galap_average):
@@ -165,11 +172,14 @@ class TestSarAverage:
 # bootstrap_ci
 # ---------------------------------------------------------------------------
 
+
 class TestBootstrapCI:
     def test_basic(self, galap):
         """Bootstrap with small n_boot should complete and return CI."""
         ci = sars.bootstrap_ci(
-            galap, models=["power", "loga"], n_boot=10,
+            galap,
+            models=["power", "loga"],
+            n_boot=10,
             rng=np.random.default_rng(42),
         )
         assert isinstance(ci, sars.BootstrappedCI)
@@ -182,7 +192,9 @@ class TestBootstrapCI:
     def test_ci_ordering(self, galap):
         """Lower bound should be <= mean <= upper bound."""
         ci = sars.bootstrap_ci(
-            galap, models=["power", "loga"], n_boot=10,
+            galap,
+            models=["power", "loga"],
+            n_boot=10,
             rng=np.random.default_rng(42),
         )
         assert np.all(ci.lower <= ci.mean + 1e-10)
@@ -191,23 +203,32 @@ class TestBootstrapCI:
     def test_custom_area_grid(self, galap):
         grid = np.array([1.0, 5.0, 10.0, 50.0])
         ci = sars.bootstrap_ci(
-            galap, models=["power"], n_boot=5,
-            area_grid=grid, rng=np.random.default_rng(42),
+            galap,
+            models=["power"],
+            n_boot=5,
+            area_grid=grid,
+            rng=np.random.default_rng(42),
         )
         assert len(ci.area_grid) == 4
 
     def test_conf_level(self, galap):
         ci = sars.bootstrap_ci(
-            galap, models=["power"], n_boot=10,
-            conf=0.90, rng=np.random.default_rng(42),
+            galap,
+            models=["power"],
+            n_boot=10,
+            conf=0.90,
+            rng=np.random.default_rng(42),
         )
         assert ci.conf == 0.90
 
     def test_method_full(self, galap):
         """method='full' uses complete grid search per resample."""
         ci = sars.bootstrap_ci(
-            galap, models=["power", "loga"], n_boot=3,
-            rng=np.random.default_rng(42), method="full",
+            galap,
+            models=["power", "loga"],
+            n_boot=3,
+            rng=np.random.default_rng(42),
+            method="full",
         )
         assert isinstance(ci, sars.BootstrappedCI)
         assert ci.n_boot > 0
@@ -219,7 +240,9 @@ class TestBootstrapCI:
     def test_convergence_diagnostics(self, galap):
         """BootstrappedCI should expose per-replicate convergence counts."""
         ci = sars.bootstrap_ci(
-            galap, models=["power", "loga"], n_boot=5,
+            galap,
+            models=["power", "loga"],
+            n_boot=5,
             rng=np.random.default_rng(42),
         )
         assert len(ci.convergence_counts) == ci.n_boot
@@ -229,8 +252,11 @@ class TestBootstrapCI:
     def test_convergence_diagnostics_fast(self, galap):
         """BootstrappedCI should expose convergence counts in fast mode."""
         ci = sars.bootstrap_ci(
-            galap, models=["power", "loga"], n_boot=5,
-            rng=np.random.default_rng(42), method="fast",
+            galap,
+            models=["power", "loga"],
+            n_boot=5,
+            rng=np.random.default_rng(42),
+            method="fast",
         )
         assert len(ci.convergence_counts) == ci.n_boot
         assert ci.n_models_attempted == 2
