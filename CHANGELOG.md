@@ -9,6 +9,14 @@ Versions up to 0.7.5 predate this file; their notes are on the
 
 ## [Unreleased]
 
+### Fixed
+
+- Model averaging no longer predicts zero everywhere when every information
+  criterion value is non-finite (e.g. AICc on four or fewer islands).
+  `akaike_weights` returns NaN weights in that case, `sar_average` raises a
+  `ValueError` suggesting `ic="AIC"` or `"BIC"`, and `bootstrap_ci` reports a
+  NaN interval instead of a confident interval of zero (#50).
+
 ## [0.7.6] - 2026-10-11
 
 ### Changed

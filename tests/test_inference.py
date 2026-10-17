@@ -53,10 +53,47 @@ class TestAkaikeWeights:
         assert w[1] == 0.0
         assert w.sum() == pytest.approx(1.0)
 
-    def test_all_nan(self):
-        vals = np.array([np.nan, np.nan])
-        w = sars.akaike_weights(vals)
-        assert np.all(w == 0.0)
+    def test_all_non_finite_is_undefined(self):
+        """No finite IC means no weights, not zero weights (issue #50)."""
+        for vals in (np.array([np.nan, np.nan]), np.array([np.inf, np.inf])):
+            w = sars.akaike_weights(vals)
+            assert w.shape == vals.shape
+            assert np.all(np.isnan(w))
+
+
+# Four islands: AICc is infinite for every model (n - k - 1 <= 0), while AIC
+# and BIC are finite. Used to check that undefined weights fail loudly.
+@pytest.fixture
+def tiny():
+    import pandas as pd
+
+    return pd.DataFrame({"area": [1.0, 4.0, 16.0, 64.0], "species": [5.0, 9.0, 15.0, 24.0]})
+
+
+TINY_MODELS = ["power", "loga", "koba"]
+
+
+class TestUndefinedWeights:
+    def test_summary_shows_nan_weights(self, tiny):
+        multi = sars.sar_multi(tiny, models=TINY_MODELS)
+        assert np.all(np.isinf(multi.summary["AICc"]))
+        assert multi.summary["weight"].isna().all()
+
+    def test_sar_average_raises(self, tiny):
+        with pytest.raises(ValueError, match="no model has a finite AICc"):
+            sars.sar_average(tiny, models=TINY_MODELS)
+
+    def test_sar_average_works_with_finite_ic(self, tiny):
+        avg = sars.sar_average(tiny, models=TINY_MODELS, ic="AIC")
+        assert sum(avg.weights.values()) == pytest.approx(1.0)
+        pred = avg.predict(np.array([2.0, 8.0, 32.0]))
+        assert np.all(pred > 0)
+
+    def test_bootstrap_ci_reports_nan_not_zero(self, tiny):
+        ci = sars.bootstrap_ci(tiny, models=TINY_MODELS, n_boot=5, rng=np.random.default_rng(0))
+        assert np.all(np.isnan(ci.mean))
+        assert np.all(np.isnan(ci.lower))
+        assert np.all(np.isnan(ci.upper))
 
 
 # ---------------------------------------------------------------------------
