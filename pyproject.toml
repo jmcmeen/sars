@@ -27,7 +27,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "pytest-cov", "pytest-xdist", "ruff", "mypy"]
+dev = ["pytest>=7", "pytest-cov", "pytest-xdist", "ruff>=0.17,<0.18", "mypy"]
 docs = ["mkdocs-material", "mkdocstrings[python]"]
 interactive = ["plotly>=5"]
 geo = ["geopandas>=0.12", "shapely>=2.0"]
