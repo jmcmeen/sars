@@ -9,6 +9,8 @@ Versions up to 0.7.5 predate this file; their notes are on the
 
 ## [Unreleased]
 
+## [0.7.8] - 2026-10-17
+
 ### Fixed
 
 - Model averaging no longer predicts zero everywhere when every information
@@ -50,7 +52,8 @@ Versions up to 0.7.5 predate this file; their notes are on the
 
 ## [0.1.0] - 2026-04-03
 
-[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.7.6...HEAD
+[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.7.8...HEAD
+[0.7.8]: https://github.com/jmcmeen/sars/compare/v0.7.7...v0.7.8
 [0.7.6]: https://github.com/jmcmeen/sars/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/jmcmeen/sars/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/jmcmeen/sars/compare/v0.7.3...v0.7.4
