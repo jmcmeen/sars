@@ -6,6 +6,29 @@ on:
     branches: [main]
   workflow_dispatch:
 jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      # Ruff only, no project install, at the exact version in uv.lock so CI
+      # and local `uv sync` lint with the same release.
+      - name: Resolve locked ruff version
+        run: |
+          version=$(awk '/^name = "ruff"$/{f=1} f && /^version = /{gsub(/"/,"",$3); print $3; exit}' uv.lock)
+          test -n "$version" || { echo "ruff not found in uv.lock" >&2; exit 1; }
+          echo "RUFF_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Lint
+        run: uvx "ruff@$RUFF_VERSION" check src tests
+
+      - name: Format check
+        run: uvx "ruff@$RUFF_VERSION" format --check src tests
+
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -20,5 +43,3 @@ jobs:
           python-version: "${{ matrix.python-version }}"
       - run: pip install -e ".[dev]"
       - run: pytest
-      - run: ruff check src tests
-      - run: ruff format --check src tests
