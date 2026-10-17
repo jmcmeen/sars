@@ -149,20 +149,18 @@ def akaike_weights(ic_values: np.ndarray) -> np.ndarray:
     Returns
     -------
     np.ndarray
-        Model weights (sum to 1). Non-finite inputs produce 0 weight.
+        Model weights (sum to 1). A non-finite input gets 0 weight. If no
+        input is finite the weights are undefined and every entry is NaN,
+        so a downstream average fails loudly instead of predicting zero.
     """
     vals = np.asarray(ic_values, dtype=float)
     finite = np.isfinite(vals)
     if not np.any(finite):
-        return np.zeros_like(vals)
-    min_ic = np.min(vals[finite])
-    delta = vals - min_ic
-    # Non-finite entries get zero weight
+        return np.full_like(vals, np.nan)
+    delta = vals - np.min(vals[finite])
+    # The best model contributes exp(0) = 1, so the total is never zero.
     raw = np.where(finite, np.exp(-0.5 * delta), 0.0)
-    total = np.sum(raw)
-    if total == 0:
-        return np.zeros_like(vals)
-    return raw / total
+    return raw / np.sum(raw)
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +300,16 @@ class AveragedSAR:
     ic: str
     weights: dict[str, float]
 
+    def __post_init__(self) -> None:
+        # akaike_weights returns all-NaN when no IC value is finite; averaging
+        # with those would silently predict zero everywhere.
+        if not all(np.isfinite(w) for w in self.weights.values()):
+            raise ValueError(
+                f"Model weights are undefined: no model has a finite {self.ic}. "
+                f"For small samples AICc is infinite when n - k - 1 <= 0; try "
+                f'ic="AIC" or ic="BIC", or more data points.'
+            )
+
     def predict(self, area: float | np.ndarray) -> np.ndarray:
         """Weighted-average prediction across models.
 
@@ -354,6 +362,12 @@ def sar_average(
     -------
     AveragedSAR
         Model-averaged SAR with weighted predictions.
+
+    Raises
+    ------
+    ValueError
+        If ``ic`` is unsupported, or if no fitted model has a finite ``ic``
+        value, so the weights are undefined.
     """
     if ic not in _VALID_ICS:
         raise ValueError(f"Unsupported IC: {ic!r}. Choose from {sorted(_VALID_ICS)}.")
