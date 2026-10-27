@@ -13,7 +13,7 @@ authors:
     orcid: 0009-0003-8141-567X
     affiliation: 1
 affiliations:
-  - name: Independent Researcher
+  - name: Steele Creek Park, Bristol, Tennessee, United States
     index: 1
 date: 26 October 2026
 bibliography: paper.bib
