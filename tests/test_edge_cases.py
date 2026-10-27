@@ -103,19 +103,23 @@ class TestSolverSuccessFlag:
     """A start that stops without solver success must not be reported as converged."""
 
     def _patch_solver(self, monkeypatch, success):
+        """Wrap least_squares to force the success flag; return the list of x0s seen."""
         import scipy.optimize
 
         from sars import _models
 
         real = scipy.optimize.least_squares
+        calls: list[list[float]] = []
 
         def fake(*args, **kwargs):
+            calls.append(list(kwargs["x0"]))
             result = real(*args, **kwargs)
             result.success = success
             result.status = 2 if success else 0
             return result
 
         monkeypatch.setattr(_models, "least_squares", fake)
+        return calls
 
     def test_unsuccessful_solver_gives_failed_fit(self, galap, monkeypatch):
         self._patch_solver(monkeypatch, success=False)
@@ -126,9 +130,11 @@ class TestSolverSuccessFlag:
     def test_unsuccessful_start_from_gives_failed_fit(self, galap, monkeypatch):
         from sars._models import _fit_nls
 
-        self._patch_solver(monkeypatch, success=False)
+        calls = self._patch_solver(monkeypatch, success=False)
         fit = _fit_nls("power", galap, start_from={"c": 30.0, "z": 0.3})
         assert fit.converged is False
+        # The warm start must be the only solver call, not the grid.
+        assert calls == [[30.0, 0.3]]
 
     def test_successful_solver_still_converges(self, galap, monkeypatch):
         self._patch_solver(monkeypatch, success=True)
