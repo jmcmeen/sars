@@ -13,7 +13,7 @@ authors:
     orcid: 0009-0003-8141-567X
     affiliation: 1
 affiliations:
-  - name: Independent Researcher
+  - name: Steele Creek Park, Bristol, Tennessee, United States
     index: 1
 date: 26 October 2026
 bibliography: paper.bib
@@ -159,7 +159,7 @@ least squares fits reported in those papers with nonlinear least squares,
 multi-model comparison across all twenty models, and threshold analysis. A
 manuscript reporting that reanalysis for Southern Appalachian amphibians and
 reptiles is in preparation. `sars` is also the fitting engine for
-`genetic-sar`, a package in development that constructs nested SARs from
+`geneticsar`, a package in development that constructs nested SARs from
 biodiversity occurrence records and applies a genetic algorithm to optimise
 the nesting sequence; its associated papers will cite this software directly.
 The Zenodo archive of `sars` provides a citable DOI for these dependencies.

@@ -14,6 +14,7 @@ reconstructed from the commit history and the
 
 ### Added
 
+- CI tests and PyPI classifiers cover Python 3.14 and 3.15 (#64).
 - `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), and a
   support section in the README and docs.
 - JOSS paper source under `paper/`, compiled to PDF by a GitHub Actions

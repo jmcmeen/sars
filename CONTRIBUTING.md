@@ -22,12 +22,16 @@ opinion, and otherwise aim for the smallest API that solves the problem.
 
 ## Development setup
 
-The project uses [uv](https://docs.astral.sh/uv/) for environments and
-`make` as a thin front end.
+Only the maintainer can push to this repository, so contributions come in
+as pull requests from a fork. Fork
+[jmcmeen/sars](https://github.com/jmcmeen/sars) on GitHub, then clone your
+fork. The project uses [uv](https://docs.astral.sh/uv/) for environments
+and `make` as a thin front end.
 
 ```bash
-git clone https://github.com/jmcmeen/sars.git
+git clone https://github.com/YOUR-USERNAME/sars.git   # your fork
 cd sars
+git remote add upstream https://github.com/jmcmeen/sars.git
 make install        # uv sync --extra dev
 make test           # full test suite (coverage is on by default via pyproject)
 make lint           # ruff check
@@ -45,7 +49,7 @@ uv run --extra dev ruff format src tests
 ```
 
 CI runs ruff at the version pinned in `uv.lock` and the test suite on
-Python 3.10 through 3.13. The dev extra includes the `geo` extra so the
+Python 3.10 through 3.15. The dev extra includes the `geo` extra so the
 GeoDataFrame tests run locally too.
 
 ## Layout
@@ -72,13 +76,16 @@ Public names are re-exported from `sars/__init__.py` and listed in
 
 1. Open an issue first for anything larger than a typo, so the design can be
    discussed before code is written.
-2. Branch from `main`, make the change, and add or update tests. New
-   behaviour needs a test; a bug fix needs a test that fails without the fix.
+2. In your fork, branch from an up-to-date `main` (`git fetch upstream &&
+   git checkout -b my-change --no-track upstream/main`), make the change,
+   and add or update tests. New behaviour needs a test; a bug fix needs a
+   test that fails without the fix.
 3. Add a line under `[Unreleased]` in `CHANGELOG.md` (Keep a Changelog
    format: Added, Changed, Fixed, Removed).
 4. Run `make check`.
-5. Open a pull request against `main`. Describe what changed and why, and
-   reference the issue.
+5. Push the branch to your fork (`git push -u origin my-change`) and open a
+   pull request against `main` in this repository. Describe what changed and
+   why, and reference the issue.
 
 Merges to `main` that pass CI are released automatically and published to
 PyPI, normally as one patch version per merge; merges that land close
