@@ -57,13 +57,14 @@ class TestMultiSARFitRepr:
         assert "MultiSARFit" in r
         assert "2 models" in r
 
-    def test_empty_multi(self):
-        """sar_multi with data that causes all models to fail."""
-        # A single data point can't fit any model
-        tiny = pd.DataFrame({"area": [1.0], "species": [10]})
-        result = sars.sar_multi(tiny, models=["power"])
+    def test_empty_multi(self, galap):
+        """A MultiSARFit with no converged fits still has a sane repr."""
+        from sars._inference import _build_summary
+
+        result = sars.MultiSARFit(fits=[], data=galap, summary=_build_summary([]))
         r = repr(result)
         assert "MultiSARFit" in r
+        assert "0 models" in r
 
 
 class TestAveragedSARRepr:

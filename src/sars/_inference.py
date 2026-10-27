@@ -12,6 +12,7 @@ from sars._models import (
     _MODEL_REGISTRY,
     SARFit,
     _fit_nls,
+    _validate_data,
 )
 
 # All 20 model names in canonical order
@@ -214,6 +215,10 @@ def sar_multi(
     MultiSARFit
         Container with all converged fits and a summary table.
     """
+    # Validate once up front so bad input raises here. The per-model
+    # except below is only for errors raised while fitting.
+    _validate_data(data)
+
     if models == "all":
         model_names = ALL_MODEL_NAMES
     else:
