@@ -29,7 +29,7 @@ fork. The project uses [uv](https://docs.astral.sh/uv/) for environments
 and `make` as a thin front end.
 
 ```bash
-git clone https://github.com/<your-username>/sars.git
+git clone https://github.com/YOUR-USERNAME/sars.git   # your fork
 cd sars
 git remote add upstream https://github.com/jmcmeen/sars.git
 make install        # uv sync --extra dev
@@ -77,14 +77,15 @@ Public names are re-exported from `sars/__init__.py` and listed in
 1. Open an issue first for anything larger than a typo, so the design can be
    discussed before code is written.
 2. In your fork, branch from an up-to-date `main` (`git fetch upstream &&
-   git checkout -b my-change upstream/main`), make the change, and add or
-   update tests. New behaviour needs a test; a bug fix needs a test that
-   fails without the fix.
+   git checkout -b my-change --no-track upstream/main`), make the change,
+   and add or update tests. New behaviour needs a test; a bug fix needs a
+   test that fails without the fix.
 3. Add a line under `[Unreleased]` in `CHANGELOG.md` (Keep a Changelog
    format: Added, Changed, Fixed, Removed).
 4. Run `make check`.
-5. Push the branch to your fork and open a pull request against `main` in
-   this repository. Describe what changed and why, and reference the issue.
+5. Push the branch to your fork (`git push -u origin my-change`) and open a
+   pull request against `main` in this repository. Describe what changed and
+   why, and reference the issue.
 
 Merges to `main` that pass CI are released automatically and published to
 PyPI, normally as one patch version per merge; merges that land close
