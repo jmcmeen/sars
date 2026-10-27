@@ -1,6 +1,7 @@
 """Tests for multi-model inference, averaging, and bootstrap CI."""
 
 import numpy as np
+import pandas as pd
 import pytest
 
 import sars
@@ -298,3 +299,27 @@ class TestBootstrapCI:
         assert len(ci.convergence_counts) == ci.n_boot
         assert ci.n_models_attempted == 2
         assert all(0 < c <= 2 for c in ci.convergence_counts)
+
+
+class TestMultiInputValidation:
+    """sar_multi must surface input errors instead of returning zero fits."""
+
+    def test_too_few_rows_raises(self):
+        df = pd.DataFrame({"area": [1.0], "species": [5]})
+        with pytest.raises(ValueError, match="at least 2"):
+            sars.sar_multi(df)
+
+    def test_nan_raises(self):
+        df = pd.DataFrame({"area": [1.0, 2.0, np.nan], "species": [5, 6, 7]})
+        with pytest.raises(ValueError, match="area.*NaN"):
+            sars.sar_multi(df)
+
+    def test_missing_column_raises(self):
+        df = pd.DataFrame({"a": [1.0, 2.0, 3.0], "species": [5, 6, 7]})
+        with pytest.raises(KeyError, match="area"):
+            sars.sar_multi(df)
+
+    def test_average_inherits_validation(self):
+        df = pd.DataFrame({"area": [1.0], "species": [5]})
+        with pytest.raises(ValueError, match="at least 2"):
+            sars.sar_average(df)
