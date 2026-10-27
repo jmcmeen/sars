@@ -252,6 +252,7 @@ def _fit_nls(
 
     n_starts = 0
     n_errors = 0
+    n_unsuccessful = 0
     stale_runs = 0
     for start in starts:
         n_starts += 1
@@ -263,6 +264,11 @@ def _fit_nls(
                 method="trf",
                 max_nfev=5000,
             )
+            if not result.success:
+                # Stopped on max_nfev or similar: not a converged solution,
+                # so it may neither win on cost nor count as a stale run.
+                n_unsuccessful += 1
+                continue
             if result.cost < best_cost:
                 best_cost = result.cost
                 best_result = result
@@ -300,6 +306,13 @@ def _fit_nls(
             "Model '%s': %d/%d starting points raised exceptions",
             name,
             n_errors,
+            n_starts,
+        )
+    if n_unsuccessful:
+        logger.info(
+            "Model '%s': %d/%d starting points stopped without converging",
+            name,
+            n_unsuccessful,
             n_starts,
         )
 

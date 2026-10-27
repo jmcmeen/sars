@@ -97,3 +97,40 @@ class TestAICcEdge:
 class TestPlotsImport:
     def test_plots_module_importable(self):
         from sars import _plots  # noqa: F401
+
+
+class TestSolverSuccessFlag:
+    """A start that stops without solver success must not be reported as converged."""
+
+    def _patch_solver(self, monkeypatch, success):
+        import scipy.optimize
+
+        from sars import _models
+
+        real = scipy.optimize.least_squares
+
+        def fake(*args, **kwargs):
+            result = real(*args, **kwargs)
+            result.success = success
+            result.status = 2 if success else 0
+            return result
+
+        monkeypatch.setattr(_models, "least_squares", fake)
+
+    def test_unsuccessful_solver_gives_failed_fit(self, galap, monkeypatch):
+        self._patch_solver(monkeypatch, success=False)
+        fit = sars.sar_power(galap)
+        assert fit.converged is False
+        assert all(np.isnan(v) for v in fit.params.values())
+
+    def test_unsuccessful_start_from_gives_failed_fit(self, galap, monkeypatch):
+        from sars._models import _fit_nls
+
+        self._patch_solver(monkeypatch, success=False)
+        fit = _fit_nls("power", galap, start_from={"c": 30.0, "z": 0.3})
+        assert fit.converged is False
+
+    def test_successful_solver_still_converges(self, galap, monkeypatch):
+        self._patch_solver(monkeypatch, success=True)
+        fit = sars.sar_power(galap)
+        assert fit.converged is True
