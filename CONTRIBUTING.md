@@ -29,7 +29,7 @@ The project uses [uv](https://docs.astral.sh/uv/) for environments and
 git clone https://github.com/jmcmeen/sars.git
 cd sars
 make install        # uv sync --extra dev
-make test           # full test suite with coverage
+make test           # full test suite (coverage is on by default via pyproject)
 make lint           # ruff check
 make fmt            # ruff format + autofix
 make check          # lint, format check, and tests, as CI runs them
@@ -80,10 +80,11 @@ Public names are re-exported from `sars/__init__.py` and listed in
 5. Open a pull request against `main`. Describe what changed and why, and
    reference the issue.
 
-Every merge to `main` that passes CI is released automatically as a patch
-version and published to PyPI; the changelog entry becomes the release
-notes. Minor and major bumps are triggered by hand. You do not need to
-touch version numbers.
+Merges to `main` that pass CI are released automatically and published to
+PyPI, normally as one patch version per merge; merges that land close
+together can share a release, and a minor or major bump is triggered by
+hand when the maintainer decides one is due. The `[Unreleased]` changelog
+entries become the release notes. You do not need to touch version numbers.
 
 ## Adding a SAR model
 
@@ -96,14 +97,15 @@ Models are declared, not subclassed. To add one:
    list short and spread across the plausible range.
 2. Add the public wrapper `sar_<name>()` next to the others and export it
    from `__init__.py`.
-3. Add the model to the `models` vector in
-   `tests/r_reference/generate_r_reference.R`, rerun the script with the R
-   `sars` package installed, and commit the regenerated
-   `all_models_galap.csv`. If the model has no R counterpart, say so in the
-   pull request and add a test that checks against a known analytic or
-   published fit instead.
-4. Add the name to `ALL_MODELS` in `tests/test_models.py` so the R
+3. If the R `sars` package has the same model, add it to the `models`
+   vector in `tests/r_reference/generate_r_reference.R`, rerun the script
+   with R `sars` installed, commit the regenerated `all_models_galap.csv`,
+   and add the name to `ALL_MODELS` in `tests/test_models.py` so the R
    validation, convergence, and predict tests pick it up.
+4. If there is no R counterpart, leave it out of `ALL_MODELS` (the R
+   comparison would fail on the missing reference row). Say so in the pull
+   request and add a dedicated test that checks convergence and compares
+   the fit against a known analytic or published result instead.
 5. Document the formula in `docs/models.md` and add the function to
    `docs/api/models.md`.
 
