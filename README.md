@@ -58,6 +58,15 @@ ci = sars.bootstrap_ci(galap, n_boot=100)
 
 Each model has a dedicated function (e.g. `sars.sar_power()`, `sars.sar_negexpo()`) and returns a `SARFit` object with parameters, R², AIC, AICc, and BIC.
 
+## Support and contributing
+
+Bug reports, questions, and feature requests go in the
+[issue tracker](https://github.com/jmcmeen/sars/issues). The project has a
+single maintainer; expect a reply within a week. See
+[CONTRIBUTING.md](https://github.com/jmcmeen/sars/blob/main/CONTRIBUTING.md) for the development setup, how to add a
+model, and the release process, and [CODE_OF_CONDUCT.md](https://github.com/jmcmeen/sars/blob/main/CODE_OF_CONDUCT.md)
+for community expectations.
+
 ## Citation
 
 If you use this software, please cite it:
