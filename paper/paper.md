@@ -39,8 +39,8 @@ model-averaged prediction that propagates uncertainty across the candidate set
 
 `sars` is an open-source Python package providing a production-ready
 implementation of this workflow. All twenty SAR models catalogued by
-@Triantis2012 are fitted using robust nonlinear least squares with
-multiple random starting values, ranked by AICc with Akaike weights, and
+@Triantis2012 are fitted using bounded nonlinear least squares from a
+grid of starting values, ranked by AICc with Akaike weights, and
 combined into a model-averaged SAR curve with bootstrapped confidence
 intervals. A piecewise threshold module implements the small-island effect
 detection framework of @Matthews2021. Data can be supplied as `pandas`
