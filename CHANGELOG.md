@@ -10,6 +10,8 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+## [0.7.10] - 2026-10-27
+
 ### Added
 
 - `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), and a
@@ -181,7 +183,8 @@ reconstructed from the commit history and the
 - Project skeleton: package layout, CI, publishing workflow, license, and
   citation file.
 
-[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.7.9...HEAD
+[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.7.10...HEAD
+[0.7.10]: https://github.com/jmcmeen/sars/compare/v0.7.9...v0.7.10
 [0.7.9]: https://github.com/jmcmeen/sars/compare/v0.7.8...v0.7.9
 [0.7.8]: https://github.com/jmcmeen/sars/compare/v0.7.7...v0.7.8
 [0.7.7]: https://github.com/jmcmeen/sars/compare/v0.7.6...v0.7.7
