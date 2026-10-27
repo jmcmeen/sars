@@ -21,6 +21,15 @@ reconstructed from the commit history and the
 
 - PyPI development status classifier raised from Alpha to Beta.
 
+### Fixed
+
+- `sar_multi`, and therefore `sar_average` and `bootstrap_ci`, raise input
+  validation errors again instead of returning an empty result; the
+  per-model `ValueError` skip added in 0.7.5 had swallowed them (#66).
+- A fit whose best start stopped on the solver's iteration limit is no
+  longer reported as converged; only successful solver results are
+  candidates for the best fit (#65).
+
 ## [0.7.9] - 2026-10-17
 
 ### Changed
@@ -57,7 +66,8 @@ reconstructed from the commit history and the
 ### Fixed
 
 - `sar_multi` skips a model whose fit raises a `ValueError` instead of
-  aborting the whole run.
+  aborting the whole run. This also swallowed input validation errors; see
+  #66 under Unreleased.
 
 ## [0.7.4] - 2026-04-06
 
