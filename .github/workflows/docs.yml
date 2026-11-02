@@ -1,7 +1,7 @@
 name: Deploy docs
 on:
-  push:
-    branches: [main]
+  # Run by release.yml on the new tag, so the site matches the latest release
+  # (a merge to main alone doesn't redeploy it). Also by hand, on any ref.
   workflow_dispatch:
 
 permissions:
