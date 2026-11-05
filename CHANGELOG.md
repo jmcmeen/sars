@@ -10,6 +10,13 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- A worked example, `docs/examples/galapagos.ipynb`, rendered in the documentation under
+  Examples: the Galápagos plant data through one model, all twenty, model averaging,
+  bootstrap confidence intervals and threshold models, with plots. The test suite runs it
+  (#81)
+
 ### Fixed
 
 - Fitting no longer floods the console with numpy `RuntimeWarning`s (overflow, invalid

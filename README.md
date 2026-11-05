@@ -48,6 +48,9 @@ predictions = avg.predict([1.0, 10.0, 100.0])
 ci = sars.bootstrap_ci(galap, n_boot=100)
 ```
 
+For a complete analysis of these data, see the
+[worked example](https://jmcmeen.github.io/sars/examples/galapagos/) in the documentation.
+
 ## Available models
 
 | Type | Models |

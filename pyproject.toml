@@ -33,8 +33,21 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "pytest-cov", "pytest-xdist", "ruff>=0.17,<0.18", "mypy", "sars[geo]"]
-docs = ["mkdocs-material", "mkdocstrings[python]"]
+dev = [
+    "pytest>=7",
+    "pytest-cov",
+    "pytest-xdist",
+    "ruff>=0.17,<0.18",
+    "mypy",
+    "sars[geo]",
+    "nbclient>=0.11.0",
+    "ipykernel>=7.3.0",
+]
+docs = [
+    "mkdocs-jupyter>=0.25",
+    "mkdocs-material",
+    "mkdocstrings[python]",
+]
 interactive = ["plotly>=5"]
 geo = ["geopandas>=0.12", "shapely>=2.0"]
 all = ["sars[interactive,geo]"]

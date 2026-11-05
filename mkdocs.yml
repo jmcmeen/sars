@@ -34,6 +34,11 @@ markdown_extensions:
 
 plugins:
   - search
+  - mkdocs-jupyter:
+      # Notebooks are committed executed; the build renders their stored outputs.
+      execute: false
+      include_source: true
+      ignore_h1_titles: true
   - mkdocstrings:
       handlers:
         python:
@@ -51,6 +56,8 @@ nav:
   - Home: index.md
   - Getting Started: getting-started.md
   - Models: models.md
+  - Examples:
+      - Galápagos plants: examples/galapagos.ipynb
   - API Reference:
       - Models: api/models.md
       - Multi-model Inference: api/inference.md
