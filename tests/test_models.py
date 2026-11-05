@@ -150,6 +150,18 @@ def test_model_converges(model_name, galap_fits):
     assert 0.0 < fit.r_squared <= 1.0, f"{model_name} R² out of range: {fit.r_squared}"
 
 
+def test_fitting_is_quiet(galap):
+    """The multi-start search visits parameters where a model overflows; those are
+    penalised, not worth a numpy warning each (#82). epm2 is the worst offender."""
+    import warnings
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        fit = sars.sar_epm2(galap)
+    assert fit.converged
+    assert not [w for w in caught if issubclass(w.category, RuntimeWarning)]
+
+
 @pytest.mark.parametrize("model_name", ALL_MODELS)
 def test_model_predict(model_name, galap, galap_fits):
     """Predict should return values for all models."""

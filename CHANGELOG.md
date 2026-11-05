@@ -10,6 +10,12 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Fixed
+
+- Fitting no longer floods the console with numpy `RuntimeWarning`s (overflow, invalid
+  value) from parameter combinations the multi-start search tries and rejects; `epm2`
+  alone emitted hundreds (#82)
+
 ## [0.7.10] - 2026-10-27
 
 ### Added
