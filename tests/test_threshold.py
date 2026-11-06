@@ -146,6 +146,7 @@ class TestSarThreshold:
         assert result.best_model == "ZslopeOne"
         assert result.breakpoint_area == pytest.approx(30.0, abs=0.2)
         assert result.predict([10.0, 90.0]) == pytest.approx([10.0, 40.0], abs=0.1)
+        assert "breakpoint_area=" in repr(result) and "ln area" not in repr(result)
 
     @pytest.mark.parametrize("bad", [0, -0.1, float("nan"), float("inf")])
     def test_interval_must_be_positive_and_finite(self, galap, bad):

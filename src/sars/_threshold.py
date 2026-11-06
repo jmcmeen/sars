@@ -95,8 +95,8 @@ class ThresholdFit:
     def __repr__(self) -> str:
         if self.best_breakpoint is None:
             return f"ThresholdFit(best='{self.best_model}')"
-        if not self.log_area:
-            return f"ThresholdFit(best='{self.best_model}', breakpoint={self.best_breakpoint:.4g} (area))"
+        if not self.log_area:  # the fitted scale is area: one number says it all
+            return f"ThresholdFit(best='{self.best_model}', breakpoint_area={self.breakpoint_area:.4g})"
         return (
             f"ThresholdFit(best='{self.best_model}', "
             f"breakpoint={self.best_breakpoint:.3f} (ln area), "
@@ -403,7 +403,7 @@ def sar_threshold(
         ["ContOne", "ZslopeOne", "Linear"].
     interval : float, optional
         Grid spacing for the breakpoint search, on the fitted scale. Default:
-        0.1 on the log scale, and a thousandth of the breakpoint window (from
+        0.1 on the natural-log scale, and a thousandth of the breakpoint window (from
         the third-smallest to the third-largest area) when ``log_area`` is
         False. Island areas are right-skewed, so on the area scale even that
         grid is coarse among the small islands, where a threshold would be;
