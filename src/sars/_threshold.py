@@ -292,7 +292,7 @@ def _grid_search_breakpoint(
     x: np.ndarray,
     y: np.ndarray,
     fit_func: callable,
-    interval: float,
+    interval: float | None,
     min_points: int = 3,
 ) -> dict | None:
     """Search for the breakpoint that minimises RSS.
@@ -305,8 +305,9 @@ def _grid_search_breakpoint(
         Response values (species).
     fit_func : callable
         One of _fit_cont_one or _fit_zslope_one.
-    interval : float
+    interval : float or None
         Grid spacing for breakpoint candidates, on the same scale as ``x``.
+        None: a thousandth of the window the candidates can lie in.
     min_points : int
         Minimum number of data points required on each side.
 
@@ -322,6 +323,10 @@ def _grid_search_breakpoint(
 
     if x_min_bp >= x_max_bp:
         return None
+    if interval is None:
+        interval = (x_max_bp - x_min_bp) / 1000
+        if not interval > 0:  # a window too narrow for float steps: no breakpoint
+            return None
 
     candidates = np.arange(x_min_bp, x_max_bp + interval / 2, interval)
     if len(candidates) == 0:
@@ -398,9 +403,11 @@ def sar_threshold(
         ["ContOne", "ZslopeOne", "Linear"].
     interval : float, optional
         Grid spacing for the breakpoint search, on the fitted scale. Default:
-        0.1 on the log scale, and a thousandth of the area range when
-        ``log_area`` is False (island areas are right-skewed, so the grid has
-        to be fine to reach the small islands where a threshold would be).
+        0.1 on the log scale, and a thousandth of the breakpoint window (from
+        the third-smallest to the third-largest area) when ``log_area`` is
+        False. Island areas are right-skewed, so on the area scale even that
+        grid is coarse among the small islands, where a threshold would be;
+        the log scale is the default for that reason.
     log_area : bool
         Fit on the natural log of area (True, the default) or on area itself.
 
@@ -443,13 +450,13 @@ def sar_threshold(
             stacklevel=2,
         )
 
-    if interval is not None and not interval > 0:  # also rejects NaN
-        raise ValueError(f"interval must be positive, got {interval!r}")
+    if interval is not None and not (np.isfinite(interval) and interval > 0):
+        raise ValueError(f"interval must be positive and finite, got {interval!r}")
 
     x = np.log(area) if log_area else area
     y = species
-    if interval is None:
-        interval = 0.1 if log_area else float(np.ptp(x)) / 1000
+    if interval is None and log_area:
+        interval = 0.1  # on the area scale the grid search sizes it from its window
 
     all_fits: dict[str, dict] = {}
 

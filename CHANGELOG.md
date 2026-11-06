@@ -16,7 +16,7 @@ reconstructed from the commit history and the
   and a `breakpoint_area` column in `summary` next to `breakpoint`, which stays on the fitted
   scale (the natural log of area by default). The repr shows both. `sar_threshold()` gains
   `log_area`: with `False` the piecewise models are fitted on area itself, and `interval`
-  (now optional) defaults to a thousandth of the area range on that scale (#87)
+  (now optional) defaults to a thousandth of the breakpoint window on that scale (#87)
 
 - A worked example, `docs/examples/galapagos.ipynb`, rendered in the documentation under
   Examples: the Galápagos plant data through one model, all twenty, model averaging,

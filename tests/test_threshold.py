@@ -147,10 +147,22 @@ class TestSarThreshold:
         assert result.breakpoint_area == pytest.approx(30.0, abs=0.2)
         assert result.predict([10.0, 90.0]) == pytest.approx([10.0, 40.0], abs=0.1)
 
-    @pytest.mark.parametrize("bad", [0, -0.1, float("nan")])
-    def test_interval_must_be_positive(self, galap, bad):
-        with pytest.raises(ValueError, match="interval must be positive"):
+    @pytest.mark.parametrize("bad", [0, -0.1, float("nan"), float("inf")])
+    def test_interval_must_be_positive_and_finite(self, galap, bad):
+        with pytest.raises(ValueError, match="interval must be positive and finite"):
             sars.sar_threshold(galap, interval=bad)
+
+    def test_area_scale_grid_covers_the_small_islands_despite_huge_ones(self):
+        """The default grid on the area scale is sized from the breakpoint window, not
+        the full range, so a few huge areas don't push every candidate past the knee."""
+        import pandas as pd
+
+        small = np.linspace(1.0, 20.0, 12)
+        area = np.concatenate([small, [2000.0, 5000.0, 9000.0]])
+        species = 10.0 + np.where(area > 8.0, 0.8 * (area - 8.0), 0.0)
+        result = sars.sar_threshold(pd.DataFrame({"area": area, "species": species}),
+                                    models=["ZslopeOne"], log_area=False)  # fmt: skip
+        assert result.breakpoint_area == pytest.approx(8.0, abs=2.0)
 
     def test_equal_areas_fall_back_to_the_linear_baseline_on_either_scale(self):
         import pandas as pd
