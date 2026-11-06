@@ -9,8 +9,9 @@ Three models are supported:
 - Linear: simple linear baseline (no breakpoint)
 
 Breakpoint selection is a two-level process: within each piecewise model
-class (ContOne, ZslopeOne), a grid search over log(area) selects the
-breakpoint that minimises RSS; then across model classes (including the
+class (ContOne, ZslopeOne), a grid search over the natural log of area (or
+over area itself with ``log_area=False``) selects the breakpoint that
+minimises RSS; then across model classes (including the
 no-breakpoint Linear baseline), AICc ranks the best candidate from each
 class to choose the overall winner.
 
@@ -43,18 +44,22 @@ class ThresholdFit:
     best_model : str
         Name of the best model by AICc ("ContOne", "ZslopeOne", or "Linear").
     best_breakpoint : float | None
-        Breakpoint in log(area) space, or None for the linear model.
+        Breakpoint on the fitted scale: the natural log of area when ``log_area``
+        is True (the default), area itself otherwise. None for the linear model.
+        ``breakpoint_area`` is the same point in area units.
     best_segments : list[dict]
         Segment parameters as list of dicts with keys 'intercept', 'slope',
-        'x_min', 'x_max' (in log-area space).
+        'x_min', 'x_max', on the fitted scale.
     summary : pd.DataFrame
-        Comparison table with columns: model, breakpoint, AIC, AICc, BIC, R2.
+        Comparison table with columns: model, breakpoint (fitted scale),
+        breakpoint_area (area units), AIC, AICc, BIC, R2.
     all_fits : dict[str, dict]
         Detailed fit results keyed by model name.
     data : pd.DataFrame
         Original data (columns: area, species).
     log_area : bool
-        Whether area was log-transformed (always True currently).
+        Whether the models were fitted on the natural log of area (True) or on
+        area itself (False).
     """
 
     best_model: str
@@ -82,9 +87,28 @@ class ThresholdFit:
         x = np.log(area) if self.log_area else area
         return _predict_segments(x, self.best_segments)
 
+    @property
+    def breakpoint_area(self) -> float | None:
+        """The best model's breakpoint in area units (None for the linear model)."""
+        return _to_area(self.best_breakpoint, self.log_area)
+
     def __repr__(self) -> str:
-        bp = f", breakpoint={self.best_breakpoint:.3f}" if self.best_breakpoint is not None else ""
-        return f"ThresholdFit(best='{self.best_model}'{bp})"
+        if self.best_breakpoint is None:
+            return f"ThresholdFit(best='{self.best_model}')"
+        if not self.log_area:
+            return f"ThresholdFit(best='{self.best_model}', breakpoint={self.best_breakpoint:.4g} (area))"
+        return (
+            f"ThresholdFit(best='{self.best_model}', "
+            f"breakpoint={self.best_breakpoint:.3f} (ln area), "
+            f"breakpoint_area={self.breakpoint_area:.4g})"
+        )
+
+
+def _to_area(x: float | None, log_area: bool) -> float | None:
+    """A value on the fitted scale back in area units."""
+    if x is None:
+        return None
+    return float(np.exp(x)) if log_area else float(x)
 
 
 def _predict_segments(x: np.ndarray, segments: list[dict]) -> np.ndarray:
@@ -268,7 +292,7 @@ def _grid_search_breakpoint(
     x: np.ndarray,
     y: np.ndarray,
     fit_func: callable,
-    interval: float = 0.1,
+    interval: float,
     min_points: int = 3,
 ) -> dict | None:
     """Search for the breakpoint that minimises RSS.
@@ -276,13 +300,13 @@ def _grid_search_breakpoint(
     Parameters
     ----------
     x : np.ndarray
-        Predictor values (log-area).
+        Predictor values on the fitted scale (log-area, or area).
     y : np.ndarray
         Response values (species).
     fit_func : callable
         One of _fit_cont_one or _fit_zslope_one.
     interval : float
-        Grid spacing for breakpoint candidates.
+        Grid spacing for breakpoint candidates, on the same scale as ``x``.
     min_points : int
         Minimum number of data points required on each side.
 
@@ -331,7 +355,8 @@ def _grid_search_breakpoint(
 def sar_threshold(
     data: pd.DataFrame,
     models: list[str] | None = None,
-    interval: float = 0.1,
+    interval: float | None = None,
+    log_area: bool = True,
 ) -> ThresholdFit:
     """Fit threshold / piecewise SAR models.
 
@@ -342,11 +367,15 @@ def sar_threshold(
     - **ZslopeOne**: left-horizontal + right slope (small island effect)
     - **Linear**: simple linear model (no breakpoint, baseline)
 
-    Area is log-transformed before fitting (consistent with R sars default).
+    By default the models are fitted on the natural log of area, as R sars
+    does (``logAreaT = TRUE``); ``log_area=False`` fits them on area itself.
+    The breakpoint is reported on the fitted scale (``best_breakpoint`` and
+    the ``breakpoint`` column of ``summary``) and in area units
+    (``breakpoint_area``).
 
     Breakpoint selection uses a two-level procedure. Within each piecewise
-    model class (ContOne, ZslopeOne), a grid search over log(area) selects
-    the breakpoint that minimises residual sum of squares (RSS). Then,
+    model class (ContOne, ZslopeOne), a grid search over the fitted scale
+    selects the breakpoint that minimises residual sum of squares (RSS). Then,
     across model classes — including the no-breakpoint Linear baseline —
     the best candidate from each class is ranked by AICc to choose the
     overall best model. Because the models differ in parameter count
@@ -367,9 +396,13 @@ def sar_threshold(
     models : list[str], optional
         Which models to fit. Default is all three:
         ["ContOne", "ZslopeOne", "Linear"].
-    interval : float
-        Grid spacing for breakpoint search in log(area) space.
-        Default 0.1.
+    interval : float, optional
+        Grid spacing for the breakpoint search, on the fitted scale. Default:
+        0.1 on the log scale, and a thousandth of the area range when
+        ``log_area`` is False (island areas are right-skewed, so the grid has
+        to be fine to reach the small islands where a threshold would be).
+    log_area : bool
+        Fit on the natural log of area (True, the default) or on area itself.
 
     Returns
     -------
@@ -410,8 +443,13 @@ def sar_threshold(
             stacklevel=2,
         )
 
-    x = np.log(area)
+    if interval is not None and not interval > 0:  # also rejects NaN
+        raise ValueError(f"interval must be positive, got {interval!r}")
+
+    x = np.log(area) if log_area else area
     y = species
+    if interval is None:
+        interval = 0.1 if log_area else float(np.ptp(x)) / 1000
 
     all_fits: dict[str, dict] = {}
 
@@ -438,6 +476,7 @@ def sar_threshold(
             {
                 "model": name,
                 "breakpoint": fit["breakpoint"],
+                "breakpoint_area": _to_area(fit["breakpoint"], log_area),
                 "AIC": fit["aic"],
                 "AICc": fit["aicc"],
                 "BIC": fit["bic"],
@@ -457,5 +496,5 @@ def sar_threshold(
         summary=summary,
         all_fits=all_fits,
         data=data,
-        log_area=True,
+        log_area=log_area,
     )

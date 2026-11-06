@@ -102,6 +102,63 @@ class TestSarThreshold:
         assert len(result.summary) == 2
         assert set(result.summary["model"]) == {"Linear", "ContOne"}
 
+    def test_breakpoint_is_reported_in_area_units_too(self, galap):
+        """The fit is on the natural log of area; breakpoint_area undoes that (#87)."""
+        result = sars.sar_threshold(galap, models=["ZslopeOne"])
+        assert result.log_area is True
+        assert result.breakpoint_area == pytest.approx(np.exp(result.best_breakpoint))
+        row = result.summary.set_index("model").loc["ZslopeOne"]
+        assert row["breakpoint_area"] == pytest.approx(np.exp(row["breakpoint"]))
+        assert "breakpoint_area" in repr(result)
+
+    def test_linear_has_no_breakpoint_area(self, galap):
+        result = sars.sar_threshold(galap, models=["Linear"])
+        assert result.breakpoint_area is None
+        assert result.summary["breakpoint_area"].isna().all()
+
+    def test_log_area_false_fits_on_area_itself(self, galap):
+        result = sars.sar_threshold(galap, log_area=False)
+        assert result.log_area is False
+        assert set(result.summary["model"]) == {"ContOne", "ZslopeOne", "Linear"}
+        bps = result.summary.dropna(subset=["breakpoint"])
+        # On the untransformed scale the breakpoint already is an area, inside the data.
+        assert (bps["breakpoint_area"] == bps["breakpoint"]).all()
+        assert bps["breakpoint"].between(galap["area"].min(), galap["area"].max()).all()
+        # The linear baseline is then a straight line in area, not in log(area).
+        linear = result.all_fits["Linear"]["segments"][0]
+        areas = np.array([5.0, 500.0])
+        expected = linear["intercept"] + linear["slope"] * areas
+        assert sars.sar_threshold(galap, models=["Linear"], log_area=False).predict(
+            areas
+        ) == pytest.approx(expected)
+        on_log = sars.sar_threshold(galap, models=["Linear"]).all_fits["Linear"]["r2"]
+        assert result.all_fits["Linear"]["r2"] != pytest.approx(on_log)
+
+    def test_log_area_false_recovers_a_breakpoint_in_area_units(self):
+        """A flat-then-rising relationship in area: the default grid on that scale has to
+        be fine enough to find the knee, not just the first candidate."""
+        import pandas as pd
+
+        area = np.linspace(1.0, 100.0, 40)
+        species = 10.0 + np.where(area > 30.0, 0.5 * (area - 30.0), 0.0)
+        result = sars.sar_threshold(pd.DataFrame({"area": area, "species": species}),
+                                    models=["ZslopeOne", "Linear"], log_area=False)  # fmt: skip
+        assert result.best_model == "ZslopeOne"
+        assert result.breakpoint_area == pytest.approx(30.0, abs=0.2)
+        assert result.predict([10.0, 90.0]) == pytest.approx([10.0, 40.0], abs=0.1)
+
+    @pytest.mark.parametrize("bad", [0, -0.1, float("nan")])
+    def test_interval_must_be_positive(self, galap, bad):
+        with pytest.raises(ValueError, match="interval must be positive"):
+            sars.sar_threshold(galap, interval=bad)
+
+    def test_equal_areas_fall_back_to_the_linear_baseline_on_either_scale(self):
+        import pandas as pd
+
+        data = pd.DataFrame({"area": [10.0] * 8, "species": range(1, 9)})
+        for log_area in (True, False):
+            assert sars.sar_threshold(data, log_area=log_area).best_model == "Linear"
+
     def test_repr(self, galap):
         result = sars.sar_threshold(galap)
         r = repr(result)
