@@ -90,6 +90,11 @@ print(th)
 print(th.summary)
 ```
 
+The models are fitted on the natural log of area, as in R `sars`, so `best_breakpoint`
+and the summary's `breakpoint` column are on that scale. `breakpoint_area` (the attribute
+and the column next to it) gives the same point in your area units. Pass `log_area=False`
+to fit on area itself.
+
 ## Bringing your own data
 
 `sars` expects a DataFrame with `area` and `species` columns:
