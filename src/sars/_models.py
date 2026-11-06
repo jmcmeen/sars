@@ -257,13 +257,17 @@ def _fit_nls(
     for start in starts:
         n_starts += 1
         try:
-            result = least_squares(
-                residuals,
-                x0=list(start),
-                bounds=(spec.bounds_lower, spec.bounds_upper),
-                method="trf",
-                max_nfev=5000,
-            )
+            # The search visits parameters where the model overflows; residuals()
+            # turns the non-finite values into a penalty, so numpy's warnings about
+            # them carry nothing and would flood an interactive session.
+            with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+                result = least_squares(
+                    residuals,
+                    x0=list(start),
+                    bounds=(spec.bounds_lower, spec.bounds_upper),
+                    method="trf",
+                    max_nfev=5000,
+                )
             if not result.success:
                 # Stopped on max_nfev or similar: not a converged solution,
                 # so it may neither win on cost nor count as a stale run.

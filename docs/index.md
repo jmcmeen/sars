@@ -44,6 +44,12 @@ predictions = avg.predict([1.0, 10.0, 100.0])
 ci = sars.bootstrap_ci(galap, n_boot=100)
 ```
 
+## Worked example
+
+[The Galápagos plant species–area relationship](examples/galapagos.ipynb) takes the
+bundled dataset through the whole workflow: one model, all twenty, model averaging,
+bootstrap confidence intervals and threshold models, with the plots for each step.
+
 ## Support and contributing
 
 Bug reports, questions, and feature requests go in the
