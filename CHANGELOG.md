@@ -10,6 +10,8 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+## [0.7.15] - 2026-11-06
+
 ### Added
 
 - A worked example, `docs/examples/galapagos.ipynb`, rendered in the documentation under
@@ -197,7 +199,8 @@ reconstructed from the commit history and the
 - Project skeleton: package layout, CI, publishing workflow, license, and
   citation file.
 
-[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.7.10...HEAD
+[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.7.15...HEAD
+[0.7.15]: https://github.com/jmcmeen/sars/compare/v0.7.14...v0.7.15
 [0.7.10]: https://github.com/jmcmeen/sars/compare/v0.7.9...v0.7.10
 [0.7.9]: https://github.com/jmcmeen/sars/compare/v0.7.8...v0.7.9
 [0.7.8]: https://github.com/jmcmeen/sars/compare/v0.7.7...v0.7.8
