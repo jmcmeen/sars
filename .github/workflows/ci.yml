@@ -5,6 +5,13 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+
+concurrency:
+  # A new push to a PR cancels its older run. Every other run gets its own group,
+  # so each push to main finishes CI and can be released.
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lint:
     name: lint
@@ -41,5 +48,14 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "${{ matrix.python-version }}"
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - run: pip install -e ".[dev]"
-      - run: pytest
+      # Coverage's sys.monitoring core is much faster than its C tracer on 3.12+;
+      # older Pythons don't have sys.monitoring, and coverage warns if asked.
+      - name: pytest
+        run: |
+          if python -c 'import sys; sys.exit(sys.version_info < (3, 12))'; then
+            export COVERAGE_CORE=sysmon
+          fi
+          pytest

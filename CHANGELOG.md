@@ -10,6 +10,12 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Changed
+
+- Tests run on every logical core (`-n logical`; `-n auto` counted 2 of CI's 4), CI traces
+  coverage with sys.monitoring on Python 3.12+, caches pip downloads, and cancels a PR's
+  superseded runs (#90)
+
 ## [0.7.15] - 2026-11-06
 
 ### Added

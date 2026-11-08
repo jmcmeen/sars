@@ -93,7 +93,8 @@ known-first-party = ["sars"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-n auto --cov=sars --cov-report=term-missing"
+# -n logical, not auto: auto counts physical cores, 2 on CI's 4-vCPU runners.
+addopts = "-n logical --cov=sars --cov-report=term-missing"
 filterwarnings = [
     "ignore::scipy.optimize.OptimizeWarning",
     "ignore:invalid value encountered:RuntimeWarning",
