@@ -12,6 +12,11 @@ reconstructed from the commit history and the
 
 ### Changed
 
+- CI gives each test worker one math-library thread (`OMP_NUM_THREADS` and friends), so
+  four workers don't run sixteen BLAS threads on four vCPUs, and lists the slowest tests (#92)
+
+### Changed
+
 - Tests run on every logical core (`-n logical`; `-n auto` counted 2 of CI's 4), CI traces
   coverage with sys.monitoring on Python 3.12+, caches pip downloads, and cancels a PR's
   superseded runs (#90)

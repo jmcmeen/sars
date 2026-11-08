@@ -53,9 +53,16 @@ jobs:
       - run: pip install -e ".[dev]"
       # Coverage's sys.monitoring core is much faster than its C tracer on 3.12+;
       # older Pythons don't have sys.monitoring, and coverage warns if asked.
+      # One math-library thread per test worker: xdist already runs a worker per
+      # vCPU, and each BLAS pool sized to the whole runner would oversubscribe it.
+      # --durations lists the slowest tests, to see where the time goes.
       - name: pytest
+        env:
+          OMP_NUM_THREADS: "1"
+          OPENBLAS_NUM_THREADS: "1"
+          MKL_NUM_THREADS: "1"
         run: |
           if python -c 'import sys; sys.exit(sys.version_info < (3, 12))'; then
             export COVERAGE_CORE=sysmon
           fi
-          pytest
+          pytest --durations=15
