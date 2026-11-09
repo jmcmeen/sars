@@ -555,6 +555,7 @@ def bootstrap_ci(
         boot_data = data.iloc[idx].reset_index(drop=True)
         try:
             if method == "fast":
+                assert warm_starts is not None  # set above for the fast method
                 multi = _sar_multi_fast(boot_data, warm_starts)
                 n_converged = len(multi.fits)
                 if not multi.fits:

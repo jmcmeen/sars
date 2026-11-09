@@ -36,7 +36,8 @@ make install        # uv sync --extra dev
 make test           # full test suite (coverage is on by default via pyproject)
 make lint           # ruff check
 make fmt            # ruff format + autofix
-make check          # lint, format check, and tests, as CI runs them
+make typecheck      # mypy
+make check          # lint, format check, type check, and tests, as CI runs them
 ```
 
 Without `make`:
@@ -46,6 +47,7 @@ uv sync --extra dev
 uv run --extra dev pytest
 uv run --extra dev ruff check src tests
 uv run --extra dev ruff format src tests
+uv run --extra dev mypy
 ```
 
 CI runs ruff at the version pinned in `uv.lock` and the test suite on

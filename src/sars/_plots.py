@@ -45,8 +45,8 @@ def plot_fit(
     if ax is None:
         _, ax = plt.subplots()
 
-    area = fit.data["area"].values
-    species = fit.data["species"].values
+    area = fit.data["area"].to_numpy(dtype=float)
+    species = fit.data["species"].to_numpy(dtype=float)
 
     s_defaults = {"color": "black", "zorder": 3, "label": "Observed"}
     ax.scatter(area, species, **{**s_defaults, **(scatter_kw or {})})
@@ -104,8 +104,8 @@ def plot_multi(
         _, ax = plt.subplots()
 
     data = multi_fit.data
-    area = data["area"].values
-    species = data["species"].values
+    area = data["area"].to_numpy(dtype=float)
+    species = data["species"].to_numpy(dtype=float)
 
     s_defaults = {"color": "black", "zorder": 3, "label": "Observed"}
     ax.scatter(area, species, **{**s_defaults, **(scatter_kw or {})})
@@ -175,8 +175,8 @@ def plot_average(
         _, ax = plt.subplots()
 
     data = averaged.multi.data
-    area = data["area"].values
-    species = data["species"].values
+    area = data["area"].to_numpy(dtype=float)
+    species = data["species"].to_numpy(dtype=float)
 
     s_defaults = {"color": "black", "zorder": 3, "label": "Observed"}
     ax.scatter(area, species, **{**s_defaults, **(scatter_kw or {})})
@@ -226,8 +226,8 @@ def plot_residuals(
     if ax is None:
         _, ax = plt.subplots()
 
-    area = fit.data["area"].values
-    observed = fit.data["species"].values
+    area = fit.data["area"].to_numpy(dtype=float)
+    observed = fit.data["species"].to_numpy(dtype=float)
     fitted = fit.predict(area)
     residuals = observed - fitted
 
