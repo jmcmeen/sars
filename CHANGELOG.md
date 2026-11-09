@@ -10,6 +10,13 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- `BootstrappedCI.median`, the median prediction over resamples: the centre of the percentile
+  interval. `mean` is unchanged, but a few resamples whose prediction runs away can dominate
+  it, so `bootstrap_ci` now warns when the mean falls outside the central 95% of the resample
+  predictions (#83)
+
 ### Changed
 
 - The package type-checks with mypy (with pandas-stubs), and CI and `make check` run it

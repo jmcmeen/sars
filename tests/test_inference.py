@@ -93,6 +93,7 @@ class TestUndefinedWeights:
     def test_bootstrap_ci_reports_nan_not_zero(self, tiny):
         ci = sars.bootstrap_ci(tiny, models=TINY_MODELS, n_boot=5, rng=np.random.default_rng(0))
         assert np.all(np.isnan(ci.mean))
+        assert np.all(np.isnan(ci.median))
         assert np.all(np.isnan(ci.lower))
         assert np.all(np.isnan(ci.upper))
 
@@ -212,6 +213,24 @@ class TestSarAverage:
 
 
 class TestBootstrapCI:
+    def test_median_resists_runaway_resamples_and_the_mean_warns(self, galap, monkeypatch):
+        """bootstrap_ci calls AveragedSAR.predict once per resample."""
+        real = sars.AveragedSAR.predict
+        calls = {"n": 0}
+
+        def predict(self, area):
+            calls["n"] += 1
+            pred = real(self, area)
+            return pred * 1e9 if calls["n"] == 50 else pred  # one call per resample: one runs away
+
+        monkeypatch.setattr(sars.AveragedSAR, "predict", predict)
+        with pytest.warns(UserWarning, match="mean is outside the central 95%"):
+            ci = sars.bootstrap_ci(
+                galap, models=["power", "loga"], n_boot=80, rng=np.random.default_rng(0)
+            )
+        assert np.all((ci.median >= ci.lower) & (ci.median <= ci.upper))
+        assert np.any((ci.mean < ci.lower) | (ci.mean > ci.upper))
+
     def test_basic(self, galap):
         """Bootstrap with small n_boot should complete and return CI."""
         ci = sars.bootstrap_ci(
@@ -227,16 +246,25 @@ class TestBootstrapCI:
         assert len(ci.lower) == 100
         assert len(ci.upper) == 100
 
+    def test_a_narrow_interval_alone_does_not_warn(self, galap):
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            sars.bootstrap_ci(
+                galap, models=["power"], n_boot=20, conf=0.1, rng=np.random.default_rng(3)
+            )
+
     def test_ci_ordering(self, galap):
-        """Lower bound should be <= mean <= upper bound."""
+        """Lower bound should be <= median <= upper bound."""
         ci = sars.bootstrap_ci(
             galap,
             models=["power", "loga"],
             n_boot=10,
             rng=np.random.default_rng(42),
         )
-        assert np.all(ci.lower <= ci.mean + 1e-10)
-        assert np.all(ci.mean <= ci.upper + 1e-10)
+        assert np.all(ci.lower <= ci.median + 1e-10)
+        assert np.all(ci.median <= ci.upper + 1e-10)
 
     def test_custom_area_grid(self, galap):
         grid = np.array([1.0, 5.0, 10.0, 50.0])
