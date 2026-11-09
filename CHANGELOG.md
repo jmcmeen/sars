@@ -21,7 +21,8 @@ reconstructed from the commit history and the
 
 - `ThresholdFit.predict` no longer returns 0 for areas outside the fitted range: below it the
   first segment's line continues, above it the last one's, as the SAR models' `predict`
-  extrapolates. A NaN area gives NaN (#88)
+  extrapolates. A NaN area gives NaN, and on a fit on ln(area) an area of zero or less raises
+  `ValueError` (#88)
 
 ## [0.7.17] - 2026-11-08
 

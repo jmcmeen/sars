@@ -1,6 +1,7 @@
 """Tests for threshold / piecewise SAR models."""
 
 import numpy as np
+import pandas as pd
 import pytest
 
 import sars
@@ -45,25 +46,42 @@ class TestSarThreshold:
         assert np.isfinite(pred)
 
     @pytest.mark.parametrize("model", ["ContOne", "ZslopeOne", "Linear"])
-    def test_predict_extends_the_end_segments_outside_the_fitted_range(self, galap, model):
+    def test_predict_is_never_zero_outside_the_fitted_range(self, galap, model):
         result = sars.sar_threshold(galap, models=[model])
-        segments = sorted(result.best_segments, key=lambda seg: seg["x_min"])
-        first, last = segments[0], segments[-1]
         below, above = galap["area"].min() / 10, galap["area"].max() * 10
         pred = result.predict([below, above])
-        assert pred[0] == pytest.approx(first["intercept"] + first["slope"] * np.log(below))
-        assert pred[1] == pytest.approx(last["intercept"] + last["slope"] * np.log(above))
+        assert np.all(np.isfinite(pred)) and np.all(pred != 0)
 
-    def test_predict_on_the_area_scale_extends_too(self, galap):
-        result = sars.sar_threshold(galap, models=["ContOne"], log_area=False)
-        segments = sorted(result.best_segments, key=lambda seg: seg["x_min"])
-        above = galap["area"].max() * 2
-        assert result.predict(above) == pytest.approx(
-            segments[-1]["intercept"] + segments[-1]["slope"] * above
-        )
+    def test_predict_continues_the_fitted_line_outside_the_range(self):
+        area = np.geomspace(1, 1000, 12)
+        data = pd.DataFrame({"area": area, "species": 2.0 + 3.0 * np.log(area)})
+        result = sars.sar_threshold(data, models=["Linear"])
+        out = np.array([0.01, 1e6])
+        np.testing.assert_allclose(result.predict(out), 2.0 + 3.0 * np.log(out))
+
+    def test_predict_extends_each_end_segment(self):
+        # Flat at 5 up to ln(area) = 3, then rising with slope 2.
+        area = np.geomspace(1, np.exp(6), 30)
+        x = np.log(area)
+        data = pd.DataFrame({"area": area, "species": np.where(x <= 3, 5.0, 5.0 + 2 * (x - 3))})
+        result = sars.sar_threshold(data, models=["ZslopeOne"])
+        assert result.breakpoint_area == pytest.approx(np.exp(3), rel=0.05)
+        below, above = np.exp(-4), np.exp(10)
+        np.testing.assert_allclose(result.predict([below, above]), [5.0, 19.0], atol=0.2)
+
+    def test_predict_on_the_area_scale_extends_too(self):
+        area = np.linspace(1, 100, 12)
+        data = pd.DataFrame({"area": area, "species": 4.0 + 0.5 * area})
+        result = sars.sar_threshold(data, models=["Linear"], log_area=False)
+        np.testing.assert_allclose(result.predict([0.0, 300.0]), [4.0, 154.0])
 
     def test_predict_nan_gives_nan(self, galap):
         assert np.isnan(sars.sar_threshold(galap).predict([np.nan]))[0]
+
+    @pytest.mark.parametrize("area", [0.0, -1.0])
+    def test_predict_refuses_non_positive_areas_on_the_log_scale(self, galap, area):
+        with pytest.raises(ValueError, match="positive"):
+            sars.sar_threshold(galap).predict([area])
 
     def test_linear_baseline(self, galap):
         """Linear model should have one segment, no breakpoint."""

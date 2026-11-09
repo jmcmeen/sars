@@ -83,9 +83,17 @@ class ThresholdFit:
         -------
         np.ndarray
             Predicted species richness. Outside the fitted area range the first
-            segment (below) or the last (above) is extended.
+            segment (below) or the last (above) is extended, so a falling line
+            can predict fewer than zero species far below the range.
+
+        Raises
+        ------
+        ValueError
+            If the fit is on ln(area) and an area is zero or negative.
         """
         area = np.asarray(area, dtype=float)
+        if self.log_area and np.any(area <= 0):
+            raise ValueError("Areas must be positive: this fit is on ln(area).")
         x = np.log(area) if self.log_area else area
         return _predict_segments(x, self.best_segments)
 
@@ -116,18 +124,16 @@ def _to_area(x: float | None, log_area: bool) -> float | None:
 def _predict_segments(x: np.ndarray, segments: list[dict]) -> np.ndarray:
     """Predict from piecewise linear segments, extending the end segments.
 
-    Below the fitted range the first segment's line continues, above it the last
-    one's, as the SAR models' ``predict`` extrapolates their curves. A NaN input
-    gives NaN.
+    ``segments`` are in order along x, as the fitters build them. Each segment
+    applies from its ``x_min`` on, so the first one's line continues below the
+    fitted range and the last one's above it, as the SAR models' ``predict``
+    extrapolates their curves. A NaN input gives NaN.
     """
-    segments = sorted(segments, key=lambda seg: seg["x_min"])
-    pred = np.full_like(x, np.nan, dtype=float)
-    for i, seg in enumerate(segments):
-        lo = -np.inf if i == 0 else seg["x_min"]
-        hi = np.inf if i == len(segments) - 1 else seg["x_max"]
-        mask = (x >= lo) & (x <= hi)
-        pred[mask] = seg["intercept"] + seg["slope"] * x[mask]
-    return pred
+    first = segments[0]
+    pred = first["intercept"] + first["slope"] * x
+    for seg in segments[1:]:
+        pred = np.where(x >= seg["x_min"], seg["intercept"] + seg["slope"] * x, pred)
+    return np.asarray(pred, dtype=float)
 
 
 # ---------------------------------------------------------------------------
