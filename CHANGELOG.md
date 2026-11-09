@@ -10,6 +10,8 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+## [0.7.19] - 2026-11-09
+
 ### Added
 
 - `BootstrappedCI.median`, the median prediction over resamples: the centre of the percentile
@@ -239,7 +241,8 @@ reconstructed from the commit history and the
 - Project skeleton: package layout, CI, publishing workflow, license, and
   citation file.
 
-[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.7.17...HEAD
+[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.7.19...HEAD
+[0.7.19]: https://github.com/jmcmeen/sars/compare/v0.7.18...v0.7.19
 [0.7.17]: https://github.com/jmcmeen/sars/compare/v0.7.16...v0.7.17
 [0.7.15]: https://github.com/jmcmeen/sars/compare/v0.7.14...v0.7.15
 [0.7.10]: https://github.com/jmcmeen/sars/compare/v0.7.9...v0.7.10
