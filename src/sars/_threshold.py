@@ -23,6 +23,7 @@ breakpoint candidates, leaving only the Linear baseline.
 from __future__ import annotations
 
 import warnings
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -291,7 +292,7 @@ def _fit_zslope_one(x: np.ndarray, y: np.ndarray, threshold: float) -> dict:
 def _grid_search_breakpoint(
     x: np.ndarray,
     y: np.ndarray,
-    fit_func: callable,
+    fit_func: Callable[[np.ndarray, np.ndarray, float], dict],
     interval: float | None,
     min_points: int = 3,
 ) -> dict | None:

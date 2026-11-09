@@ -10,6 +10,13 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Changed
+
+- The package type-checks with mypy (with pandas-stubs), and CI and `make check` run it
+  (`make typecheck`). Model functions are typed as plain callables, the threshold search's
+  `fit_func` has a real signature, and the plots read their data with
+  `to_numpy(dtype=float)` (#94)
+
 ## [0.7.17] - 2026-11-08
 
 ### Changed

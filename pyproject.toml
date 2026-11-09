@@ -39,6 +39,7 @@ dev = [
     "pytest-xdist",
     "ruff>=0.17,<0.18",
     "mypy",
+    "pandas-stubs",
     "sars[geo]",
     "nbclient>=0.11.0",
     "ipykernel>=7.3.0",
@@ -101,3 +102,13 @@ filterwarnings = [
     "ignore:overflow encountered:RuntimeWarning",
     "ignore:divide by zero:RuntimeWarning",
 ]
+
+[tool.mypy]
+files = ["src"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+# No type information published for these.
+module = ["scipy.*", "geopandas.*", "shapely.*", "matplotlib.*"]
+ignore_missing_imports = true

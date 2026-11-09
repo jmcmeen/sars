@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from itertools import product
-from typing import Protocol
 
 import numpy as np
 import pandas as pd
@@ -107,10 +107,10 @@ def _compute_ic(k: int, n: int, rss: float) -> tuple[float, float, float]:
 # ---------------------------------------------------------------------------
 
 
-class _SARFunc(Protocol):
-    """Signature for SAR model functions: f(area, *params) -> predicted S."""
-
-    def __call__(self, area: np.ndarray, /, *params: float) -> np.ndarray: ...
+# A SAR model function, f(area, p1, p2, ...) -> predicted S. Each model takes a
+# fixed number of parameters, named by its spec's ``param_names``, which a
+# Callable type can't express for every arity at once.
+_SARFunc = Callable[..., np.ndarray]
 
 
 @dataclass
@@ -239,7 +239,7 @@ def _fit_nls(
                 f"start_from keys don't match model '{name}' "
                 f"params {spec.param_names}: {', '.join(parts)}"
             )
-        starts = [[start_from[k] for k in spec.param_names]]
+        starts: Iterable[Sequence[float]] = [[start_from[k] for k in spec.param_names]]
     else:
         starts = product(*spec.start_grid)
 

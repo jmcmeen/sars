@@ -9,7 +9,7 @@ TESTS := tests
 
 .PHONY: help install dev sync lock upgrade shell \
         test test-fast cov \
-        lint fmt fmt-check check \
+        lint fmt fmt-check typecheck check \
         clean
 
 help: ## Show this help
@@ -58,7 +58,12 @@ fmt: ## Auto-format and apply lint fixes
 fmt-check: ## Check formatting without modifying files
 	$(UV) run --extra dev ruff format --check $(SRC) $(TESTS)
 
-check: lint fmt-check test ## Run lint, format check, and tests
+## --- Type checking (mypy) ---
+
+typecheck: ## Type-check src with mypy (settings in pyproject.toml)
+	$(UV) run --extra dev mypy
+
+check: lint fmt-check typecheck test ## Run lint, format check, type check, and tests
 
 ## --- Housekeeping ---
 
