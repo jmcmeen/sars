@@ -397,7 +397,12 @@ class BootstrappedCI:
     area_grid : np.ndarray
         Area values at which predictions were made.
     mean : np.ndarray
-        Mean prediction across bootstrap replicates.
+        Mean prediction across bootstrap replicates. A few resamples whose
+        prediction runs away can dominate it; ``median`` is the robust centre.
+    median : np.ndarray
+        Median prediction across bootstrap replicates: the centre of the
+        percentile interval, and the curve to plot between ``lower`` and
+        ``upper``.
     lower : np.ndarray
         Lower confidence bound.
     upper : np.ndarray
@@ -416,6 +421,7 @@ class BootstrappedCI:
 
     area_grid: np.ndarray
     mean: np.ndarray
+    median: np.ndarray
     lower: np.ndarray
     upper: np.ndarray
     conf: float
@@ -535,6 +541,7 @@ def bootstrap_ci(
             return BootstrappedCI(
                 area_grid=area_grid,
                 mean=nan_arr,
+                median=nan_arr,
                 lower=nan_arr,
                 upper=nan_arr,
                 conf=conf,
@@ -578,6 +585,7 @@ def bootstrap_ci(
         return BootstrappedCI(
             area_grid=area_grid,
             mean=nan_arr,
+            median=nan_arr,
             lower=nan_arr,
             upper=nan_arr,
             conf=conf,
@@ -608,11 +616,23 @@ def bootstrap_ci(
             )
 
     preds_arr = np.array(preds)
+    mean = np.mean(preds_arr, axis=0)
+    lower = np.percentile(preds_arr, 100 * alpha / 2, axis=0)
+    upper = np.percentile(preds_arr, 100 * (1 - alpha / 2), axis=0)
+    outside = int(np.sum((mean < lower) | (mean > upper)))
+    if outside:
+        warnings.warn(
+            f"The bootstrap mean is outside the {conf:.0%} interval at {outside} of "
+            f"{len(area_grid)} areas: a few resamples' predictions run away there. "
+            f"Use the median as the central curve.",
+            stacklevel=2,
+        )
     return BootstrappedCI(
         area_grid=area_grid,
-        mean=np.mean(preds_arr, axis=0),
-        lower=np.percentile(preds_arr, 100 * alpha / 2, axis=0),
-        upper=np.percentile(preds_arr, 100 * (1 - alpha / 2), axis=0),
+        mean=mean,
+        median=np.median(preds_arr, axis=0),
+        lower=lower,
+        upper=upper,
         conf=conf,
         n_boot=len(preds),
         convergence_counts=convergence_counts,

@@ -93,6 +93,7 @@ class TestUndefinedWeights:
     def test_bootstrap_ci_reports_nan_not_zero(self, tiny):
         ci = sars.bootstrap_ci(tiny, models=TINY_MODELS, n_boot=5, rng=np.random.default_rng(0))
         assert np.all(np.isnan(ci.mean))
+        assert np.all(np.isnan(ci.median))
         assert np.all(np.isnan(ci.lower))
         assert np.all(np.isnan(ci.upper))
 
@@ -212,6 +213,23 @@ class TestSarAverage:
 
 
 class TestBootstrapCI:
+    def test_median_resists_runaway_resamples_and_the_mean_warns(self, galap, monkeypatch):
+        real = sars.AveragedSAR.predict
+        calls = {"n": 0}
+
+        def predict(self, area):
+            calls["n"] += 1
+            pred = real(self, area)
+            return pred * 1e9 if calls["n"] == 50 else pred  # one resample runs away
+
+        monkeypatch.setattr(sars.AveragedSAR, "predict", predict)
+        with pytest.warns(UserWarning, match="mean is outside the 95% interval"):
+            ci = sars.bootstrap_ci(
+                galap, models=["power", "loga"], n_boot=80, rng=np.random.default_rng(0)
+            )
+        assert np.all((ci.median >= ci.lower) & (ci.median <= ci.upper))
+        assert np.all((ci.mean < ci.lower) | (ci.mean > ci.upper))
+
     def test_basic(self, galap):
         """Bootstrap with small n_boot should complete and return CI."""
         ci = sars.bootstrap_ci(

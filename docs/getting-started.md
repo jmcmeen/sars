@@ -67,7 +67,7 @@ avg.predict([1.0, 10.0, 100.0, 1000.0])
 
 ```python
 ci = sars.bootstrap_ci(galap, n_boot=100)
-# ci.mean, ci.lower, ci.upper are arrays over ci.area_grid
+# ci.median (the central curve), ci.lower and ci.upper are arrays over ci.area_grid
 ```
 
 By default, `bootstrap_ci` uses `method="fast"`, which fits all models once on
