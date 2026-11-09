@@ -44,6 +44,27 @@ class TestSarThreshold:
         pred = result.predict(5.0)
         assert np.isfinite(pred)
 
+    @pytest.mark.parametrize("model", ["ContOne", "ZslopeOne", "Linear"])
+    def test_predict_extends_the_end_segments_outside_the_fitted_range(self, galap, model):
+        result = sars.sar_threshold(galap, models=[model])
+        segments = sorted(result.best_segments, key=lambda seg: seg["x_min"])
+        first, last = segments[0], segments[-1]
+        below, above = galap["area"].min() / 10, galap["area"].max() * 10
+        pred = result.predict([below, above])
+        assert pred[0] == pytest.approx(first["intercept"] + first["slope"] * np.log(below))
+        assert pred[1] == pytest.approx(last["intercept"] + last["slope"] * np.log(above))
+
+    def test_predict_on_the_area_scale_extends_too(self, galap):
+        result = sars.sar_threshold(galap, models=["ContOne"], log_area=False)
+        segments = sorted(result.best_segments, key=lambda seg: seg["x_min"])
+        above = galap["area"].max() * 2
+        assert result.predict(above) == pytest.approx(
+            segments[-1]["intercept"] + segments[-1]["slope"] * above
+        )
+
+    def test_predict_nan_gives_nan(self, galap):
+        assert np.isnan(sars.sar_threshold(galap).predict([np.nan]))[0]
+
     def test_linear_baseline(self, galap):
         """Linear model should have one segment, no breakpoint."""
         result = sars.sar_threshold(galap, models=["Linear"])
