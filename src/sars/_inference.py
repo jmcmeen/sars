@@ -399,10 +399,6 @@ class BootstrappedCI:
     mean : np.ndarray
         Mean prediction across bootstrap replicates. A few resamples whose
         prediction runs away can dominate it; ``median`` is the robust centre.
-    median : np.ndarray
-        Median prediction across bootstrap replicates: the centre of the
-        percentile interval, and the curve to plot between ``lower`` and
-        ``upper``.
     lower : np.ndarray
         Lower confidence bound.
     upper : np.ndarray
@@ -417,17 +413,20 @@ class BootstrappedCI:
     n_models_attempted : int
         Number of models attempted per replicate (i.e. the number that
         converged on the original data).
+    median : np.ndarray
+        Median prediction across bootstrap replicates: the centre of the
+        percentile interval, and unlike ``mean`` always inside it.
     """
 
     area_grid: np.ndarray
     mean: np.ndarray
-    median: np.ndarray
     lower: np.ndarray
     upper: np.ndarray
     conf: float
     n_boot: int
     convergence_counts: list[int] = field(default_factory=list, repr=False)
     n_models_attempted: int = 0
+    median: np.ndarray = field(default_factory=lambda: np.empty(0), repr=False)
 
     def __repr__(self) -> str:
         parts = [
@@ -541,9 +540,9 @@ def bootstrap_ci(
             return BootstrappedCI(
                 area_grid=area_grid,
                 mean=nan_arr,
-                median=nan_arr,
-                lower=nan_arr,
-                upper=nan_arr,
+                median=nan_arr.copy(),
+                lower=nan_arr.copy(),
+                upper=nan_arr.copy(),
                 conf=conf,
                 n_boot=0,
             )
@@ -585,9 +584,9 @@ def bootstrap_ci(
         return BootstrappedCI(
             area_grid=area_grid,
             mean=nan_arr,
-            median=nan_arr,
-            lower=nan_arr,
-            upper=nan_arr,
+            median=nan_arr.copy(),
+            lower=nan_arr.copy(),
+            upper=nan_arr.copy(),
             conf=conf,
             n_boot=0,
             convergence_counts=[],
@@ -617,20 +616,25 @@ def bootstrap_ci(
 
     preds_arr = np.array(preds)
     mean = np.mean(preds_arr, axis=0)
-    lower = np.percentile(preds_arr, 100 * alpha / 2, axis=0)
-    upper = np.percentile(preds_arr, 100 * (1 - alpha / 2), axis=0)
-    outside = int(np.sum((mean < lower) | (mean > upper)))
+    lower, median, upper = np.percentile(
+        preds_arr, [100 * alpha / 2, 50, 100 * (1 - alpha / 2)], axis=0
+    )
+    # A runaway check that doesn't depend on ``conf``: a mean outside the central
+    # 95% of the resample predictions is pulled there by a few extreme ones.
+    lo95, hi95 = np.percentile(preds_arr, [2.5, 97.5], axis=0)
+    slack = 1e-9 * np.maximum(np.abs(hi95 - lo95), np.abs(median))
+    outside = int(np.sum((mean < lo95 - slack) | (mean > hi95 + slack)))
     if outside:
         warnings.warn(
-            f"The bootstrap mean is outside the {conf:.0%} interval at {outside} of "
-            f"{len(area_grid)} areas: a few resamples' predictions run away there. "
-            f"Use the median as the central curve.",
+            f"The bootstrap mean is outside the central 95% of the resample "
+            f"predictions at {outside} of {len(area_grid)} areas: a few resamples' "
+            f"predictions run away there. Use the median as the central curve.",
             stacklevel=2,
         )
     return BootstrappedCI(
         area_grid=area_grid,
         mean=mean,
-        median=np.median(preds_arr, axis=0),
+        median=median,
         lower=lower,
         upper=upper,
         conf=conf,

@@ -13,9 +13,9 @@ reconstructed from the commit history and the
 ### Added
 
 - `BootstrappedCI.median`, the median prediction over resamples: the centre of the percentile
-  interval and the curve to show between `lower` and `upper`. `mean` is unchanged, but a few
-  resamples whose prediction runs away can dominate it, so `bootstrap_ci` now warns when the
-  mean falls outside the interval (#83)
+  interval. `mean` is unchanged, but a few resamples whose prediction runs away can dominate
+  it, so `bootstrap_ci` now warns when the mean falls outside the central 95% of the resample
+  predictions (#83)
 
 ### Changed
 
