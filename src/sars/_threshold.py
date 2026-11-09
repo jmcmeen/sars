@@ -82,9 +82,18 @@ class ThresholdFit:
         Returns
         -------
         np.ndarray
-            Predicted species richness.
+            Predicted species richness. Outside the fitted area range the first
+            segment (below) or the last (above) is extended, so a falling line
+            can predict fewer than zero species far below the range.
+
+        Raises
+        ------
+        ValueError
+            If the fit is on ln(area) and an area is zero or negative.
         """
         area = np.asarray(area, dtype=float)
+        if self.log_area and np.any(area <= 0):
+            raise ValueError("Areas must be positive: this fit is on ln(area).")
         x = np.log(area) if self.log_area else area
         return _predict_segments(x, self.best_segments)
 
@@ -113,12 +122,18 @@ def _to_area(x: float | None, log_area: bool) -> float | None:
 
 
 def _predict_segments(x: np.ndarray, segments: list[dict]) -> np.ndarray:
-    """Predict from piecewise linear segments."""
-    pred = np.zeros_like(x, dtype=float)
-    for seg in segments:
-        mask = (x >= seg["x_min"]) & (x <= seg["x_max"])
-        pred[mask] = seg["intercept"] + seg["slope"] * x[mask]
-    return pred
+    """Predict from piecewise linear segments, extending the end segments.
+
+    ``segments`` are in order along x, as the fitters build them. Each segment
+    applies from its ``x_min`` on, so the first one's line continues below the
+    fitted range and the last one's above it, as the SAR models' ``predict``
+    extrapolates their curves. A NaN input gives NaN.
+    """
+    first = segments[0]
+    pred = first["intercept"] + first["slope"] * x
+    for seg in segments[1:]:
+        pred = np.where(x >= seg["x_min"], seg["intercept"] + seg["slope"] * x, pred)
+    return np.asarray(pred, dtype=float)
 
 
 # ---------------------------------------------------------------------------
