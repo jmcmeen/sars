@@ -10,6 +10,14 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- Tests against R `sars` 2.1.1 for model-averaging weights and curves (on the models that match), threshold models, and
+  a seven-island sample, alongside the per-model fits. Models that reach R's optimum must agree
+  to 1e-4 in AICc, 1e-6 in R² and 0.5% in each parameter, replacing the old check (no more than
+  0.5 AICc worse than R). Each known difference from R is listed with its issue (#99, #100,
+  #101) (#98)
+
 ## [0.7.19] - 2026-11-09
 
 ### Added

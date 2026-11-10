@@ -108,13 +108,17 @@ Models are declared, not subclassed. To add one:
    from `__init__.py`.
 3. If the R `sars` package has the same model, add it to the `models`
    vector in `tests/r_reference/generate_r_reference.R`, rerun the script
-   with R `sars` installed, commit the regenerated `all_models_galap.csv`,
-   and add the name to `ALL_MODELS` in `tests/test_models.py` so the R
-   validation, convergence, and predict tests pick it up.
-4. If there is no R counterpart, leave it out of `ALL_MODELS` (the R
-   comparison would fail on the missing reference row). Say so in the pull
-   request and add a dedicated test that checks convergence and compares
-   the fit against a known analytic or published result instead.
+   from the repository root with R `sars` installed, and commit the
+   regenerated tables. Add the name to `ALL_MODELS` in
+   `tests/test_models.py` (convergence and predict tests) and give it an
+   expected outcome on each dataset in `EXPECTED` in
+   `tests/test_r_reference.py`: `MATCH` when it reaches R's optimum,
+   `BETTER` when R stops short, or an issue reference for a known
+   difference.
+4. If there is no R counterpart, leave it out of the R script and
+   `ALL_MODELS`. Say so in the pull request and add a dedicated test that
+   checks convergence and compares the fit against a known analytic or
+   published result instead.
 5. Document the formula in `docs/models.md` and add the function to
    `docs/api/models.md`.
 
