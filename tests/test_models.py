@@ -123,14 +123,16 @@ def test_model_converges(model_name, galap_fits):
     assert 0.0 < fit.r_squared <= 1.0, f"{model_name} R² out of range: {fit.r_squared}"
 
 
-def test_fitting_is_quiet(galap):
+@pytest.mark.parametrize("model", ["epm1", "epm2"])
+def test_fitting_is_quiet(galap, model):
     """The multi-start search visits parameters where a model overflows; those are
-    penalised, not worth a numpy warning each (#82). epm2 is the worst offender."""
+    penalised, not worth a numpy warning each (#82). The extended power models
+    overflow most."""
     import warnings
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        fit = sars.sar_epm2(galap)
+        fit = getattr(sars, f"sar_{model}")(galap)
     assert fit.converged
     assert not [w for w in caught if issubclass(w.category, RuntimeWarning)]
 
