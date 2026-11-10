@@ -19,6 +19,9 @@ reconstructed from the commit history and the
   parameter names. Both now match R on the Galápagos data, so `sar_multi` and `sar_average`
   results that include them change, and epm2's parameters are `c, z, d` instead of
   `c, z1, z2`. epm2's shape is listed as sigmoid, as in R (#99)
+- **Behavior change:** `sar_threshold` steps its breakpoint grid by 0.01 on ln(area) by default,
+  as R `sars` does, instead of 0.1. The coarser grid could miss the RSS minimum; default
+  breakpoints can move by up to 0.1 (#101)
 
 ### Fixed
 

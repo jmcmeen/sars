@@ -41,7 +41,6 @@ MATCH = "match"
 BETTER = "better"
 UNBOUNDED = "R's fit grows without bound"
 LIMITS = "#100: narrower parameter limits than R"
-GRID = "#101: default threshold grid is coarser than R's"
 
 EXPECTED = {
     "galap": {
@@ -231,7 +230,6 @@ def test_threshold_models_match_r_on_rs_grid():
     assert fit.best_model == ref.drop("Intercept")["aicc"].idxmin()
 
 
-@pytest.mark.xfail(strict=True, reason=GRID)
 def test_threshold_default_grid_matches_r():
     fit = sars.sar_threshold(_data("galap"))
     ref = _threshold_ref()

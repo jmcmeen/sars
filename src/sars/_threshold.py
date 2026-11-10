@@ -419,7 +419,7 @@ def sar_threshold(
         ["ContOne", "ZslopeOne", "Linear"].
     interval : float, optional
         Grid spacing for the breakpoint search, on the fitted scale. Default:
-        0.1 on the natural-log scale, and a thousandth of the breakpoint window (from
+        0.01 on the natural-log scale (R sars's default), and a thousandth of the breakpoint window (from
         the third-smallest to the third-largest area) when ``log_area`` is
         False. Island areas are right-skewed, so on the area scale even that
         grid is coarse among the small islands, where a threshold would be;
@@ -472,7 +472,7 @@ def sar_threshold(
     x = np.log(area) if log_area else area
     y = species
     if interval is None and log_area:
-        interval = 0.1  # on the area scale the grid search sizes it from its window
+        interval = 0.01  # as R sars; on the area scale the grid search sizes it from its window
 
     all_fits: dict[str, dict] = {}
 
