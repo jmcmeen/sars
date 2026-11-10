@@ -10,6 +10,18 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Fixed
+
+- Fits that stopped short of R `sars` because of narrower parameter limits or a start grid tied
+  to the area units now reach R's optimum or better: p2's `d` may be negative, the asymptote
+  `d` (and mmf's `c`) is no longer capped at 1e6, and weibull3's `c` may approach 0. Parameters
+  whose optimum can lie many orders of magnitude from the start values (weibull4's `c`, epm1's
+  `c`, mmf's and weibull3's `d` and `c`) are searched on a log scale, so epm1 now fits areas in
+  m² as well as in km². A final tight solve pins down parameters left loose along flat
+  ridges. Fitting all 20 models on the R reference datasets is about 25% faster, and
+  `bootstrap_ci` on Galápagos about twice as fast (#100)
+- `sar_asymp`'s docstring and the model docs say how its `z` relates to R's (#100)
+
 ## [0.8.0] - 2026-11-10
 
 ### Changed

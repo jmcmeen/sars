@@ -31,6 +31,8 @@ These models approach a finite asymptote with a convex (decelerating) curve.
 | `sar_asymp` | S = d - c &middot; exp(-z &middot; A) | d, c, z |
 | `sar_ratio` | S = (c + z &middot; A) / (1 + d &middot; A) | c, z, d |
 
+R `sars` writes asymp as S = d - c &middot; z^A, so R's z is exp(-z) here.
+
 ## Asymptotic sigmoid models
 
 These models have an S-shaped curve, approaching an asymptote via an
