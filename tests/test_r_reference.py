@@ -10,6 +10,10 @@ Every model on each dataset has an expected outcome:
   and every parameter to ``PARAM_RTOL`` (flat directions in the likelihood
   leave the last digits loose).
 - ``BETTER``: a lower AICc than R's, where R stopped short of the optimum.
+- ``SAME_FIT``: R's AICc (this package's is no worse), but the likelihood is flat
+  along a ridge, so the parameters aren't identified and aren't compared: mmf's d
+  and c growing together toward a power law on the small sample, or weibull4
+  trading c toward 0 against a growing z.
 - ``UNBOUNDED``: R's asymp fit has ``z > 1`` in ``d - c * z^A``, a curve that grows
   exponentially, which this package's form (``z > 0`` in ``d - c * exp(-z * A)``)
   deliberately can't reach. Its fit must keep an asymptote.
@@ -39,8 +43,8 @@ PARAM_ATOL = 1e-5
 
 MATCH = "match"
 BETTER = "better"
+SAME_FIT = "same fit, parameters along a flat ridge"
 UNBOUNDED = "R's fit grows without bound"
-LIMITS = "#100: narrower parameter limits than R"
 
 EXPECTED = {
     "galap": {
@@ -67,7 +71,7 @@ EXPECTED = {
             ],
             MATCH,
         ),
-        "weibull4": LIMITS,
+        "weibull4": SAME_FIT,
         "betap": BETTER,
     },
     "galap7": {
@@ -76,6 +80,7 @@ EXPECTED = {
                 "power",
                 "epm2",
                 "p1",
+                "p2",
                 "loga",
                 "koba",
                 "monod",
@@ -86,9 +91,9 @@ EXPECTED = {
             ],
             MATCH,
         ),
-        **dict.fromkeys(["powerR", "epm1", "chapman", "betap"], BETTER),
+        **dict.fromkeys(["powerR", "epm1", "chapman", "weibull3", "gompertz", "betap"], BETTER),
+        **dict.fromkeys(["mmf", "weibull4"], SAME_FIT),
         "asymp": UNBOUNDED,
-        **dict.fromkeys(["p2", "gompertz", "mmf", "weibull3", "weibull4"], LIMITS),
     },
 }
 
@@ -128,14 +133,14 @@ def _is_issue(outcome: str) -> bool:
     return outcome.startswith("#")
 
 
-def _cases(select, xfail: bool = True):
+def _cases(select):
     """One pytest param per (dataset, model) whose outcome ``select`` accepts;
-    known differences are strict xfails unless ``xfail`` is False."""
+    known differences are strict xfails."""
     for stem, models in EXPECTED.items():
         for model, outcome in models.items():
             if select(outcome):
                 marks = []
-                if xfail and _is_issue(outcome):
+                if _is_issue(outcome):
                     marks = [pytest.mark.xfail(strict=True, reason=outcome)]
                 yield pytest.param(stem, model, marks=marks, id=f"{stem}-{model}")
 
@@ -164,6 +169,15 @@ def test_fit_matches_r(stem, model, fits):
 def test_fit_beats_r_where_r_stops_short(stem, model, fits):
     ref = _read(f"all_models_{stem}.csv").set_index("model").loc[model]
     assert fits[stem][model].aicc < ref["aicc"] - AICC_TOL
+
+
+@pytest.mark.parametrize(("stem", "model"), list(_cases(lambda o: o == SAME_FIT)))
+def test_fit_is_no_worse_than_r_on_a_flat_ridge(stem, model, fits):
+    ref = _read(f"all_models_{stem}.csv").set_index("model").loc[model]
+    fit = fits[stem][model]
+    assert fit.aicc <= ref["aicc"] + AICC_TOL
+    area = np.geomspace(1e-3, 1e5, 50)
+    assert np.all(np.isfinite(fit.predict(area)))
 
 
 @pytest.mark.parametrize(("stem", "model"), list(_cases(lambda o: o == UNBOUNDED)))
@@ -228,11 +242,3 @@ def test_threshold_models_match_r():
         if model != "Linear":
             assert mine["breakpoint"] == pytest.approx(r["threshold"], abs=1e-9), model
     assert fit.best_model == ref.drop("Intercept")["aicc"].idxmin()
-
-
-@pytest.mark.parametrize(("stem", "model"), list(_cases(_is_issue, xfail=False)))
-def test_known_differences_stay_small(stem, model, fits):
-    """Until the issues are fixed, the fits that differ from R stay no more than
-    2 AICc units worse than R's, so they can't quietly get worse."""
-    ref = _read(f"all_models_{stem}.csv").set_index("model").loc[model]
-    assert fits[stem][model].aicc <= ref["aicc"] + 2.0

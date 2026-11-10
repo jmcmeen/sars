@@ -146,3 +146,44 @@ def test_model_predict(model_name, galap, galap_fits):
     pred = fit.predict(galap["area"].values)
     assert len(pred) == len(galap)
     assert all(pd.notna(pred)), f"{model_name} predict returned NaN"
+
+
+# ---------------------------------------------------------------------------
+# Parameters searched on a log scale
+# ---------------------------------------------------------------------------
+
+
+def test_a_log_scale_parameter_reaches_tiny_values(galap_fits):
+    """R's weibull4 optimum on galap has c around 4e-15; a linear search stops
+    short of it."""
+    assert 0 < galap_fits["weibull4"].params["c"] < 1e-10
+
+
+def test_a_warm_start_takes_natural_scale_values(galap, galap_fits):
+    from sars._models import _fit_nls
+
+    fit = galap_fits["weibull4"]
+    warm = _fit_nls("weibull4", galap, start_from=fit.params)
+    assert warm.aicc == pytest.approx(fit.aicc, abs=1e-6)
+
+
+def test_a_zero_lower_bound_becomes_the_log_floor():
+    from sars._models import _LOG_FLOOR, _to_natural_scale, _to_search_scale
+
+    assert _to_search_scale([0.0, 2.0, 1.0], [0, 2]) == [_LOG_FLOOR, 2.0, 0.0]
+    np.testing.assert_allclose(_to_natural_scale([0.0, 2.0], [0]), [1.0, 2.0])
+
+
+def test_epm1_fits_areas_in_square_metres(galap):
+    """With areas in m², epm1's c falls to about 1e-49. R sars 2.1.1 (seeded as in
+    tests/r_reference) reaches AICc 190.356 there."""
+    fit = sars.sar_epm1(galap.assign(area=galap["area"] * 1e6))
+    assert fit.aicc <= 190.356 + 1e-3
+    assert fit.params["c"] < 1e-40
+
+
+def test_a_warm_start_must_be_positive_for_a_log_scale_parameter(galap):
+    from sars._models import _fit_nls
+
+    with pytest.raises(ValueError, match="must be positive"):
+        _fit_nls("epm1", galap, start_from={"c": -1.0, "z": 0.3, "d": 0.1})

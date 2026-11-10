@@ -123,6 +123,29 @@ class _ModelSpec:
     bounds_lower: list[float]
     bounds_upper: list[float]
     start_grid: list[list[float]]  # one list of starting values per param
+    # Parameters the solver searches on the natural-log scale, for ones whose
+    # optimum can sit many orders of magnitude from the start values (weibull4's
+    # c reaches 1e-15). Their bounds and start values are still given, and their
+    # fitted values reported, on the natural scale; a lower bound of 0 becomes
+    # exp(_LOG_FLOOR).
+    log_params: tuple[str, ...] = ()
+
+
+# Smallest log value a log-scale parameter can take (exp(-700) is about 1e-304).
+_LOG_FLOOR = -700.0
+
+
+def _to_search_scale(values: Sequence[float] | np.ndarray, log_idx: list[int]) -> list[float]:
+    out = [float(v) for v in values]
+    for i in log_idx:
+        out[i] = max(float(np.log(out[i])) if out[i] > 0 else -np.inf, _LOG_FLOOR)
+    return out
+
+
+def _to_natural_scale(values: Sequence[float] | np.ndarray, log_idx: list[int]) -> np.ndarray:
+    out = np.array(values, dtype=float)
+    out[log_idx] = np.exp(out[log_idx])
+    return out
 
 
 _MODEL_REGISTRY: dict[str, _ModelSpec] = {}
@@ -215,8 +238,12 @@ def _fit_nls(
     species = np.asarray(data["species"], dtype=float)
     n = len(area)
 
+    log_idx = [spec.param_names.index(p) for p in spec.log_params]
+    lower = _to_search_scale(spec.bounds_lower, log_idx)
+    upper = _to_search_scale(spec.bounds_upper, log_idx)
+
     def residuals(p: np.ndarray) -> np.ndarray:
-        pred = spec.func(area, *p)
+        pred = spec.func(area, *(_to_natural_scale(p, log_idx) if log_idx else p))
         res = species - pred
         # Replace any NaN/Inf with a large penalty
         return np.where(np.isfinite(res), res, 1e10)
@@ -238,6 +265,12 @@ def _fit_nls(
             raise ValueError(
                 f"start_from keys don't match model '{name}' "
                 f"params {spec.param_names}: {', '.join(parts)}"
+            )
+        bad = [k for k in spec.log_params if not start_from[k] > 0]
+        if bad:
+            raise ValueError(
+                f"start_from values for {bad} must be positive: model '{name}' "
+                f"searches them on a log scale"
             )
         starts: Iterable[Sequence[float]] = [[start_from[k] for k in spec.param_names]]
     else:
@@ -263,8 +296,8 @@ def _fit_nls(
             with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
                 result = least_squares(
                     residuals,
-                    x0=list(start),
-                    bounds=(spec.bounds_lower, spec.bounds_upper),
+                    x0=np.clip(_to_search_scale(start, log_idx), lower, upper),
+                    bounds=(lower, upper),
                     method="trf",
                     max_nfev=5000,
                 )
@@ -323,13 +356,37 @@ def _fit_nls(
     if best_result is None:
         return _failed_fit(name, spec.param_names, n, data)
 
+    if start_from is None:
+        # The default tolerances stop early along flat ridges of the likelihood,
+        # leaving parameters loose in the third digit; one tight solve from the best
+        # grid start pins them down. A warm start (the bootstrap's) skips it: its
+        # resamples need the fit, not the last digits.
+        try:
+            with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+                polished = least_squares(
+                    residuals,
+                    x0=best_result.x,
+                    bounds=(lower, upper),
+                    method="trf",
+                    max_nfev=5000,
+                    ftol=1e-14,
+                    xtol=1e-14,
+                    gtol=1e-14,
+                )
+            if polished.success and polished.cost <= best_result.cost:
+                best_result = polished
+        except Exception:
+            logger.debug("Model '%s': polishing the best fit failed", name, exc_info=True)
+
     rss = 2.0 * best_result.cost
     ss_tot = np.sum((species - np.mean(species)) ** 2)
     r_squared = 1.0 - rss / ss_tot
 
     k = len(spec.param_names) + 1  # +1 for sigma
     aic, aicc, bic = _compute_ic(k, n, rss)
-    params = dict(zip(spec.param_names, best_result.x, strict=True))
+    params = dict(
+        zip(spec.param_names, _to_natural_scale(best_result.x, log_idx).tolist(), strict=True)
+    )
 
     return SARFit(
         model=name,
@@ -436,13 +493,15 @@ _register(
         name="epm1",
         func=_epm1_func,
         param_names=["c", "z", "d"],
-        bounds_lower=[0.0, -10.0, -10.0],
-        bounds_upper=[np.inf, 10.0, 10.0],
+        bounds_lower=[0.0, -50.0, -50.0],
+        bounds_upper=[np.inf, 50.0, 50.0],
         start_grid=[
-            [0.1, 1.0, 10.0, 36.0, 100.0],
-            [0.05, 0.1, 0.27, 0.5, 1.0, 3.5],
-            [-1.0, -0.5, 0.0, 0.15, 0.5, 1.0],
+            [1e-6, 1e-3, 0.1, 10.0, 100.0],
+            [0.05, 0.27, 1.0, 3.5, 8.0],
+            [-1.0, -0.3, 0.0, 0.15, 0.5, 1.0],
         ],
+        # c spans dozens of orders of magnitude with the area units (1e-49 in m²).
+        log_params=("c",),
     )
 )
 
@@ -501,8 +560,8 @@ _register(
         name="p2",
         func=_p2_func,
         param_names=["c", "z", "d"],
-        bounds_lower=[1e-10, -5.0, 0.0],
-        bounds_upper=[1e6, 5.0, 1e4],
+        bounds_lower=[1e-10, -5.0, -np.inf],
+        bounds_upper=[1e6, 5.0, np.inf],
         start_grid=[
             [10.0, 50.0, 100.0, 195.0, 500.0],
             [0.001, 0.01, 0.05, 0.1, 0.5],
@@ -599,12 +658,14 @@ _register(
         func=lambda a, d, c, z: d / (1.0 + c * a ** (-z)),
         param_names=["d", "c", "z"],
         bounds_lower=[1e-10, 1e-10, 1e-10],
-        bounds_upper=[1e6, 1e6, 10.0],
+        bounds_upper=[np.inf, np.inf, 10.0],
         start_grid=[
             [100.0, 150.0, 223.0, 300.0, 500.0],
             [10.0, 30.0, 45.0, 80.0, 150.0],
             [0.1, 0.5, 0.99, 1.5, 2.0],
         ],
+        # On small samples d and c grow together toward a power-law limit.
+        log_params=("d", "c"),
     )
 )
 
@@ -615,7 +676,7 @@ _register(
         func=lambda a, d, z, c: d * np.exp(-np.exp(-z * (a - c))),
         param_names=["d", "z", "c"],
         bounds_lower=[1e-10, 1e-10, -1e6],
-        bounds_upper=[1e6, 100.0, 1e6],
+        bounds_upper=[np.inf, 100.0, 1e6],
         start_grid=[
             [150.0, 200.0, 211.0, 300.0, 500.0],
             [0.001, 0.005, 0.01, 0.017, 0.05, 0.1],
@@ -635,13 +696,15 @@ _register(
         name="weibull3",
         func=_weibull3_func,
         param_names=["d", "c", "z"],
-        bounds_lower=[1e-10, 1e-10, 1e-10],
-        bounds_upper=[1e6, 100.0, 10.0],
+        bounds_lower=[1e-10, 0.0, 1e-10],
+        bounds_upper=[np.inf, 100.0, 10.0],
         start_grid=[
             [150.0, 200.0, 208.0, 300.0, 500.0],
             [0.001, 0.01, 0.029, 0.1, 0.5],
             [0.1, 0.5, 0.83, 1.0, 1.5],
         ],
+        # On small samples d runs off toward a power-law limit, with c shrinking.
+        log_params=("d", "c"),
     )
 )
 
@@ -658,13 +721,14 @@ _register(
         func=_weibull4_func,
         param_names=["d", "c", "z", "f"],
         bounds_lower=[1e-10, 0.0, 1e-10, 1e-10],
-        bounds_upper=[1e6, 100.0, 10.0, 100.0],
+        bounds_upper=[np.inf, 100.0, 10.0, 100.0],
         start_grid=[
-            [150.0, 200.0, 210.0, 300.0],
-            [0.0, 0.001, 0.01, 0.1, 0.5],
-            [0.5, 1.0, 3.0, 6.4, 8.0],
-            [0.01, 0.05, 0.089, 0.5, 1.0, 2.0],
+            [150.0, 200.0, 300.0],
+            [1e-15, 1e-9, 5e-5, 0.007, 0.14, 1.0],
+            [0.5, 1.0, 3.0, 6.0, 9.0],
+            [0.05, 0.1, 0.5, 1.0, 2.0],
         ],
+        log_params=("c",),
     )
 )
 
@@ -860,6 +924,9 @@ def sar_p1(data: pd.DataFrame) -> SARFit:
 def sar_p2(data: pd.DataFrame) -> SARFit:
     """Fit persistence function 2: S = c * A^z * exp(-d / A)
 
+    ``d`` may be negative, as in R ``sars``; the curve then rises steeply toward
+    the smallest areas, so predictions below the data's range can be very large.
+
     Parameters
     ----------
     data : pd.DataFrame
@@ -919,6 +986,10 @@ def sar_negexpo(data: pd.DataFrame) -> SARFit:
 
 def sar_asymp(data: pd.DataFrame) -> SARFit:
     """Fit the asymptotic model: S = d - c * exp(-z * A)
+
+    R ``sars`` writes the same curve as ``d - c * z^A``, so its ``z`` is
+    ``exp(-z)`` here. ``z`` is kept positive, which keeps the asymptote; R can
+    also reach ``z > 1`` in its form, a curve that grows without bound.
 
     Parameters
     ----------
