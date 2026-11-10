@@ -10,6 +10,21 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Changed
+
+- **Behavior change:** `sar_epm1` and `sar_epm2` now fit the extended power models R `sars`
+  fits under those names (Tjørve 2009): epm1 is `S = c * A^(z * A^-d)` and epm2 is
+  `S = c * A^(z - d/A)`, with `z` between 0 and 1. The old epm1 was a log-quadratic power model
+  (`c * A^z * exp(d * log(A)^2)`) that R doesn't have, and the old epm2 was R's epm1 under other
+  parameter names. Both now match R on the Galápagos data, so `sar_multi` and `sar_average`
+  results that include them change, and epm2's parameters are `c, z, d` instead of
+  `c, z1, z2`. epm2's shape is listed as sigmoid, as in R (#99)
+
+### Fixed
+
+- The R reference tables are reproducible: R's default fits use random starting values, so
+  `generate_r_reference.R` now seeds each fit (#103)
+
 ## [0.7.20] - 2026-11-10
 
 ### Added

@@ -426,13 +426,9 @@ _register(
 )
 
 
-# 5. epm1: log(S) = log(c) + z1*log(A) + z2*(log(A))^2
-#    => S = c * A^z1 * exp(z2 * (log(A))^2)
-#    But R fits in log-space: we fit in arithmetic space for consistency
-#    with R sars output (R² and AIC are computed in arithmetic space).
+# 5. epm1: S = c * A^(z * A^-d)  (Extended power model 1, Tjørve 2009)
 def _epm1_func(a, c, z, d):
-    log_a = np.log(a)
-    return c * a**z * np.exp(d * log_a**2)
+    return c * a ** (z * a ** (-d))
 
 
 _register(
@@ -440,33 +436,35 @@ _register(
         name="epm1",
         func=_epm1_func,
         param_names=["c", "z", "d"],
-        bounds_lower=[1e-10, -10.0, -5.0],
-        bounds_upper=[1e6, 10.0, 5.0],
+        bounds_lower=[0.0, -10.0, -10.0],
+        bounds_upper=[np.inf, 10.0, 10.0],
         start_grid=[
-            [0.01, 0.1, 1.0, 10.0],
-            [0.5, 1.0, 2.0, 3.5, 5.0],
-            [-0.5, -0.1, 0.0, 0.1, 0.17, 0.5],
+            [0.1, 1.0, 10.0, 36.0, 100.0],
+            [0.05, 0.1, 0.27, 0.5, 1.0, 3.5],
+            [-1.0, -0.5, 0.0, 0.15, 0.5, 1.0],
         ],
     )
 )
 
 
-# 6. epm2: S = c * A^(z1 * A^z2)
-def _epm2_func(a, c, z1, z2):
-    return c * a ** (z1 * a**z2)
+# 6. epm2: S = c * A^(z - d/A)  (Extended power model 2, Tjørve 2009). z lies in
+#    [0, 1], as R sars bounds it; d is unbounded because it scales with the area
+#    units (d/A).
+def _epm2_func(a, c, z, d):
+    return c * a ** (z - d / a)
 
 
 _register(
     _ModelSpec(
         name="epm2",
         func=_epm2_func,
-        param_names=["c", "z1", "z2"],
-        bounds_lower=[1e-10, -10.0, -10.0],
-        bounds_upper=[1e6, 10.0, 10.0],
+        param_names=["c", "z", "d"],
+        bounds_lower=[0.0, 0.0, -np.inf],
+        bounds_upper=[np.inf, 1.0, np.inf],
         start_grid=[
-            [1.0, 10.0, 36.0, 50.0, 100.0],
-            [0.05, 0.1, 0.27, 0.5, 1.0],
-            [-1.0, -0.5, 0.0, 0.5, 1.0],
+            [0.5, 5.0, 20.0, 50.0, 100.0],
+            [0.05, 0.25, 0.5, 0.9],
+            [-10.0, -1.0, 0.0, 0.5, 1.0, 10.0],
         ],
     )
 )
@@ -815,7 +813,7 @@ def sar_linear(data: pd.DataFrame) -> SARFit:
 
 
 def sar_epm1(data: pd.DataFrame) -> SARFit:
-    """Fit the extended power model 1: S = c * A^z * exp(d * (log A)^2)
+    """Fit the extended power model 1: S = c * A^(z * A^-d)
 
     Parameters
     ----------
@@ -830,7 +828,7 @@ def sar_epm1(data: pd.DataFrame) -> SARFit:
 
 
 def sar_epm2(data: pd.DataFrame) -> SARFit:
-    """Fit the extended power model 2: S = c * A^(z1 * A^z2)
+    """Fit the extended power model 2: S = c * A^(z - d/A)
 
     Parameters
     ----------

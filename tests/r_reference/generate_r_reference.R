@@ -5,6 +5,11 @@
 suppressMessages(library(sars))
 out <- function(name) file.path("tests/r_reference", name)
 
+# R's default grid_start = "partial" adds random starting values, so each fit
+# is seeded on its own: the tables are reproducible, and adding a model
+# doesn't change the others.
+SEED <- 1
+
 writeLines(
   c(paste("sars", as.character(packageVersion("sars"))), R.version.string),
   out("r_version.txt")
@@ -29,6 +34,7 @@ fit_all <- function(data, stem) {
     fn <- tryCatch(get(paste0("sar_", m)), error = function(e) NULL)
     if (is.null(fn)) next
     tryCatch({
+      set.seed(SEED)
       fit <- suppressWarnings(fn(data = data))
       results[[m]] <- data.frame(
         model     = m,
@@ -62,6 +68,7 @@ fit_all(galap7, "galap7")
 #    checks (the R defaults).
 shared <- setdiff(models, "mmf")
 average_ref <- function(data, stem) {
+  set.seed(SEED)
   av <- suppressWarnings(sar_average(obj = shared, data = data,
                                      verb = FALSE, display = FALSE))
   d <- av$details

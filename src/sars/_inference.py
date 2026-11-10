@@ -55,7 +55,7 @@ _MODEL_SHAPE: dict[str, str] = {
     "loga": "convex",
     "linear": "linear",
     "epm1": "convex",
-    "epm2": "convex",
+    "epm2": "sigmoid",
     "p1": "convex",
     "p2": "convex",
     "koba": "convex",

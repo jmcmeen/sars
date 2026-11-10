@@ -14,8 +14,8 @@ These models increase without bound as area increases.
 | `sar_powerR` | S = f + c &middot; A^z | f, c, z |
 | `sar_loga` | S = c + z &middot; log(A) | c, z |
 | `sar_linear` | S = c + m &middot; A | c, m |
-| `sar_epm1` | S = c &middot; A^z &middot; exp(d &middot; (log A)^2) | c, z, d |
-| `sar_epm2` | S = c &middot; A^(z1 &middot; A^z2) | c, z1, z2 |
+| `sar_epm1` | S = c &middot; A^(z &middot; A^-d) | c, z, d |
+| `sar_epm2` | S = c &middot; A^(z - d / A) | c, z (0 to 1), d |
 | `sar_p1` | S = c &middot; A^z &middot; exp(-d &middot; A) | c, z, d |
 | `sar_p2` | S = c &middot; A^z &middot; exp(-d / A) | c, z, d |
 

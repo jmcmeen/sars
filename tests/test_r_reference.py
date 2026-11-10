@@ -10,6 +10,9 @@ Every model on each dataset has an expected outcome:
   and every parameter to ``PARAM_RTOL`` (flat directions in the likelihood
   leave the last digits loose).
 - ``BETTER``: a lower AICc than R's, where R stopped short of the optimum.
+- ``UNBOUNDED``: R's asymp fit has ``z > 1`` in ``d - c * z^A``, a curve that grows
+  exponentially, which this package's form (``z > 0`` in ``d - c * exp(-z * A)``)
+  deliberately can't reach. Its fit must keep an asymptote.
 - a GitHub issue reference: a known difference, expected to fail the ``MATCH``
   checks until that issue is fixed (strict xfail, so the fix must update it).
 
@@ -36,7 +39,7 @@ PARAM_ATOL = 1e-5
 
 MATCH = "match"
 BETTER = "better"
-EPM = "#99: epm1 and epm2 fit different models from R"
+UNBOUNDED = "R's fit grows without bound"
 LIMITS = "#100: narrower parameter limits than R"
 GRID = "#101: default threshold grid is coarser than R's"
 
@@ -46,6 +49,8 @@ EXPECTED = {
             [
                 "power",
                 "powerR",
+                "epm1",
+                "epm2",
                 "p1",
                 "p2",
                 "loga",
@@ -63,19 +68,27 @@ EXPECTED = {
             ],
             MATCH,
         ),
-        "epm1": EPM,
-        "epm2": EPM,
         "weibull4": LIMITS,
         "betap": BETTER,
     },
     "galap7": {
         **dict.fromkeys(
-            ["power", "p1", "loga", "koba", "monod", "negexpo", "ratio", "heleg", "linear"],
+            [
+                "power",
+                "epm2",
+                "p1",
+                "loga",
+                "koba",
+                "monod",
+                "negexpo",
+                "ratio",
+                "heleg",
+                "linear",
+            ],
             MATCH,
         ),
-        **dict.fromkeys(["powerR", "chapman", "asymp", "betap"], BETTER),
-        "epm1": EPM,
-        "epm2": EPM,
+        **dict.fromkeys(["powerR", "epm1", "chapman", "betap"], BETTER),
+        "asymp": UNBOUNDED,
         **dict.fromkeys(["p2", "gompertz", "mmf", "weibull3", "weibull4"], LIMITS),
     },
 }
@@ -113,7 +126,7 @@ def _params_on_r_scale(fit: sars.SARFit) -> dict[str, float]:
 
 
 def _is_issue(outcome: str) -> bool:
-    return outcome not in (MATCH, BETTER)
+    return outcome.startswith("#")
 
 
 def _cases(select, xfail: bool = True):
@@ -152,6 +165,13 @@ def test_fit_matches_r(stem, model, fits):
 def test_fit_beats_r_where_r_stops_short(stem, model, fits):
     ref = _read(f"all_models_{stem}.csv").set_index("model").loc[model]
     assert fits[stem][model].aicc < ref["aicc"] - AICC_TOL
+
+
+@pytest.mark.parametrize(("stem", "model"), list(_cases(lambda o: o == UNBOUNDED)))
+def test_asymp_keeps_its_asymptote_where_r_does_not(stem, model, fits):
+    r_params = _r_params(_read(f"all_models_{stem}.csv").set_index("model").loc[model, "params"])
+    assert r_params["z"] > 1
+    assert fits[stem][model].params["z"] > 0
 
 
 # ---------------------------------------------------------------------------
