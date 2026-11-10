@@ -10,6 +10,8 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-10
+
 ### Fixed
 
 - Fits that stopped short of R `sars` because of narrower parameter limits or a start grid tied
@@ -285,7 +287,8 @@ reconstructed from the commit history and the
 - Project skeleton: package layout, CI, publishing workflow, license, and
   citation file.
 
-[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/jmcmeen/sars/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/jmcmeen/sars/compare/v0.7.20...v0.8.0
 [0.7.20]: https://github.com/jmcmeen/sars/compare/v0.7.19...v0.7.20
 [0.7.19]: https://github.com/jmcmeen/sars/compare/v0.7.18...v0.7.19
