@@ -304,6 +304,10 @@ def _fit_zslope_one(x: np.ndarray, y: np.ndarray, threshold: float) -> dict:
 # ---------------------------------------------------------------------------
 
 
+# Each candidate is a least-squares fit; past this the search would seem to hang.
+_MAX_CANDIDATES = 100_000
+
+
 def _grid_search_breakpoint(
     x: np.ndarray,
     y: np.ndarray,
@@ -344,6 +348,12 @@ def _grid_search_breakpoint(
         if not interval > 0:  # a window too narrow for float steps: no breakpoint
             return None
 
+    n_candidates = (x_max_bp - x_min_bp) / interval + 1
+    if n_candidates > _MAX_CANDIDATES:
+        raise ValueError(
+            f"interval={interval!r} gives {n_candidates:.3g} breakpoint candidates "
+            f"(at most {_MAX_CANDIDATES:,}); use a larger interval."
+        )
     candidates = np.arange(x_min_bp, x_max_bp + interval / 2, interval)
     if len(candidates) == 0:
         return None
@@ -419,9 +429,9 @@ def sar_threshold(
         ["ContOne", "ZslopeOne", "Linear"].
     interval : float, optional
         Grid spacing for the breakpoint search, on the fitted scale. Default:
-        0.01 on the natural-log scale (R sars's default), and a thousandth of the breakpoint window (from
-        the third-smallest to the third-largest area) when ``log_area`` is
-        False. Island areas are right-skewed, so on the area scale even that
+        0.01 on the natural-log scale (R sars's default), and a thousandth of
+        the breakpoint window (from the third-smallest to the third-largest
+        area) when ``log_area`` is False. At most 100,000 grid points. Island areas are right-skewed, so on the area scale even that
         grid is coarse among the small islands, where a threshold would be;
         the log scale is the default for that reason.
     log_area : bool

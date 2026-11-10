@@ -130,7 +130,14 @@ class TestSarThreshold:
     def test_custom_interval(self, galap):
         """A coarser interval than the default still works."""
         result = sars.sar_threshold(galap, interval=0.1)
-        assert isinstance(result, sars.ThresholdFit)
+        x = np.sort(np.log(galap["area"].to_numpy()))
+        for model in ["ContOne", "ZslopeOne"]:
+            steps = (result.all_fits[model]["breakpoint"] - x[2]) / 0.1
+            assert steps == pytest.approx(round(steps), abs=1e-9), model
+
+    def test_too_fine_an_interval_raises(self, galap):
+        with pytest.raises(ValueError, match="breakpoint candidates"):
+            sars.sar_threshold(galap, interval=1e-9)
 
     def test_unknown_model_raises(self, galap):
         with pytest.raises(ValueError, match="Unknown threshold model"):

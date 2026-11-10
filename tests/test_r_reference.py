@@ -212,11 +212,11 @@ def _threshold_ref() -> pd.DataFrame:
     return _read("threshold_galap.csv").set_index("model")
 
 
-def test_threshold_models_match_r_on_rs_grid():
-    """R searched ln(area) in steps of 0.01 with three islands kept on each side
-    (nisl = 3), the window this package searches."""
+def test_threshold_models_match_r():
+    """R searched ln(area) in steps of 0.01 (its default, and this package's) with
+    three islands kept on each side (nisl = 3), the window this package searches."""
     data = _data("galap")
-    fit = sars.sar_threshold(data, interval=0.01)
+    fit = sars.sar_threshold(data)
     ref = _threshold_ref()
     for model in ["ContOne", "ZslopeOne", "Linear"]:
         mine = fit.all_fits[model]
@@ -228,15 +228,6 @@ def test_threshold_models_match_r_on_rs_grid():
         if model != "Linear":
             assert mine["breakpoint"] == pytest.approx(r["threshold"], abs=1e-9), model
     assert fit.best_model == ref.drop("Intercept")["aicc"].idxmin()
-
-
-def test_threshold_default_grid_matches_r():
-    fit = sars.sar_threshold(_data("galap"))
-    ref = _threshold_ref()
-    for model in ["ContOne", "ZslopeOne"]:
-        assert fit.all_fits[model]["breakpoint"] == pytest.approx(
-            ref.loc[model, "threshold"], abs=1e-9
-        ), model
 
 
 @pytest.mark.parametrize(("stem", "model"), list(_cases(_is_issue, xfail=False)))
