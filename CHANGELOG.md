@@ -10,6 +10,8 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-10
+
 ### Changed
 
 - **Behavior change:** `sar_epm1` and `sar_epm2` now fit the extended power models R `sars`
@@ -271,7 +273,8 @@ reconstructed from the commit history and the
 - Project skeleton: package layout, CI, publishing workflow, license, and
   citation file.
 
-[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.7.20...HEAD
+[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/jmcmeen/sars/compare/v0.7.20...v0.8.0
 [0.7.20]: https://github.com/jmcmeen/sars/compare/v0.7.19...v0.7.20
 [0.7.19]: https://github.com/jmcmeen/sars/compare/v0.7.18...v0.7.19
 [0.7.17]: https://github.com/jmcmeen/sars/compare/v0.7.16...v0.7.17
