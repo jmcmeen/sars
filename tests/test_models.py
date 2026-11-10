@@ -86,18 +86,9 @@ def test_power_law_spot_check():
     assert 0.0 < fit.r_squared <= 1.0
 
 
-def test_power_law_matches_r(galap, r_reference):
-    """Full validation: must match R sars::sar_power(galap) exactly."""
-    fit = sars.sar_power(galap)
-    ref = r_reference.loc["power"]
-    assert fit.r_squared == pytest.approx(ref["r2"], abs=0.005)
-    assert fit.aicc == pytest.approx(ref["aicc"], abs=0.1)
-    assert fit.params["c"] == pytest.approx(33.1792, abs=0.05)
-    assert fit.params["z"] == pytest.approx(0.2832, abs=0.005)
-
-
 # ---------------------------------------------------------------------------
-# Parametrized validation for all 20 models (uses cached galap_fits)
+# Every model on the galap data (uses cached galap_fits); agreement with R is
+# in test_r_reference.py
 # ---------------------------------------------------------------------------
 
 ALL_MODELS = [
@@ -122,24 +113,6 @@ ALL_MODELS = [
     "heleg",
     "linear",
 ]
-
-
-@pytest.mark.parametrize("model_name", ALL_MODELS)
-def test_model_matches_r(model_name, galap_fits, r_reference):
-    """Validate each model against R sars reference values."""
-    fit = galap_fits[model_name]
-    ref = r_reference.loc[model_name]
-
-    if pd.isna(ref["r2"]):
-        pytest.skip(f"R produced NA for {model_name}")
-
-    assert fit.converged is True, f"{model_name} did not converge"
-    assert fit.r_squared >= ref["r2"] - 0.005, (
-        f"{model_name} R² worse than R: {fit.r_squared} vs {ref['r2']}"
-    )
-    assert fit.aicc <= ref["aicc"] + 0.5, (
-        f"{model_name} AICc worse than R: {fit.aicc} vs {ref['aicc']}"
-    )
 
 
 @pytest.mark.parametrize("model_name", ALL_MODELS)

@@ -21,7 +21,7 @@ pip install sars
 - **Multi-model inference** — fit all models at once, ranked by AICc with Akaike weights
 - **Model averaging** — weighted-average predictions across candidate models
 - **Bootstrap confidence intervals** — percentile-based CIs for averaged predictions
-- **R-validated** — all models tested against R `sars` package reference values
+- **R-validated** — fits, AICc weights, model averaging and threshold models are checked against R `sars` reference output, with every known difference listed in `tests/test_r_reference.py`
 
 ## Quick start
 
