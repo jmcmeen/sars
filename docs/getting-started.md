@@ -95,6 +95,18 @@ and the summary's `breakpoint` column are on that scale. `breakpoint_area` (the 
 and the column next to it) gives the same point in your area units. Pass `log_area=False`
 to fit on area itself.
 
+R `sars`'s other threshold models are available too: DiscOne, ContTwo, ZslopeTwo and DiscTwo.
+Choose models with `models=`. The summary's `breakpoint2` columns hold a two-threshold
+model's second breakpoint. `best_breakpoints` and `breakpoints_area` give all of the best
+model's breakpoints:
+
+```python
+models = ["ContOne", "ZslopeOne", "DiscOne", "ContTwo", "ZslopeTwo", "DiscTwo", "Linear"]
+th = sars.sar_threshold(galap, models=models)
+print(th.summary)
+print(th.all_fits["ContTwo"]["breakpoints"])
+```
+
 ## Bringing your own data
 
 `sars` expects a DataFrame with `area` and `species` columns:

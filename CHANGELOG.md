@@ -10,6 +10,19 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- `sar_threshold` fits the rest of R `sars`'s threshold models: DiscOne (a separate line
+  either side of a breakpoint at an observed area), ContTwo (three joined segments),
+  ZslopeTwo (a flat segment, then two joined sloping ones) and DiscTwo (three separate
+  lines), with R's parameter counts (6, 7, 6 and 9). Choose them with `models=`; the default
+  stays ContOne, ZslopeOne and Linear. Two-threshold fits report both breakpoints in
+  `ThresholdFit.best_breakpoints` and `breakpoints_area`, and in new `breakpoint2` and
+  `breakpoint2_area` columns of `summary`. ContTwo and ZslopeTwo match R's `sar_threshold`
+  on the Galápagos data. For DiscOne and DiscTwo, R's own search strays outside its `nisl`
+  window, so this package keeps three islands in the first and last segments, as `nisl = 3`
+  documents; their RSS matches R's model functions over that window (#109)
+
 ## [0.8.1] - 2026-11-10
 
 ### Fixed

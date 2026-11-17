@@ -3,17 +3,22 @@
 Implements the one-threshold piecewise regression approach described in
 Matthews & Rigal (2021), Frontiers of Biogeography 13(1), e49404.
 
-Three models are supported:
+The models are R sars's:
 - ContOne: continuous two-slope (breakpoint where slope changes)
 - ZslopeOne: left-horizontal + right slope (small island effect)
+- DiscOne: discontinuous, a separate line either side of the breakpoint
+- ContTwo: continuous, three joined segments
+- ZslopeTwo: left-horizontal, then two joined sloping segments
+- DiscTwo: discontinuous, a separate line in each of three segments
 - Linear: simple linear baseline (no breakpoint)
 
 Breakpoint selection is a two-level process: within each piecewise model
-class (ContOne, ZslopeOne), a grid search over the natural log of area (or
-over area itself with ``log_area=False``) selects the breakpoint that
-minimises RSS; then across model classes (including the
-no-breakpoint Linear baseline), AICc ranks the best candidate from each
-class to choose the overall winner.
+class, a search selects the breakpoint (or pair) that minimises RSS; then
+across model classes (including the no-breakpoint Linear baseline), AICc
+ranks the best candidate from each class to choose the overall winner. The
+continuous and left-horizontal models search a grid over the natural log of
+area (or over area itself with ``log_area=False``); the discontinuous models
+put their breakpoints at observed areas, as in R.
 
 Meaningful threshold detection generally requires at least 7 observations
 (n >= 7). With fewer data points the grid search may find zero valid
@@ -43,17 +48,22 @@ class ThresholdFit:
     Attributes
     ----------
     best_model : str
-        Name of the best model by AICc ("ContOne", "ZslopeOne", or "Linear").
+        Name of the best model by AICc: one of the names in ``sar_threshold``'s
+        ``models``.
     best_breakpoint : float | None
         Breakpoint on the fitted scale: the natural log of area when ``log_area``
-        is True (the default), area itself otherwise. None for the linear model.
-        ``breakpoint_area`` is the same point in area units.
+        is True (the default), area itself otherwise. None for the linear model;
+        the first breakpoint for a two-threshold model. ``breakpoint_area`` is
+        the same point in area units.
     best_segments : list[dict]
         Segment parameters as list of dicts with keys 'intercept', 'slope',
-        'x_min', 'x_max', on the fitted scale.
+        'x_min', 'x_max', on the fitted scale, in order along it. Each segment
+        after the first applies above its ``x_min``.
     summary : pd.DataFrame
         Comparison table with columns: model, breakpoint (fitted scale),
-        breakpoint_area (area units), AIC, AICc, BIC, R2.
+        breakpoint_area (area units), breakpoint2 and breakpoint2_area (the
+        second breakpoint of a two-threshold model, NaN otherwise), AIC, AICc,
+        BIC, R2.
     all_fits : dict[str, dict]
         Detailed fit results keyed by model name.
     data : pd.DataFrame
@@ -61,6 +71,10 @@ class ThresholdFit:
     log_area : bool
         Whether the models were fitted on the natural log of area (True) or on
         area itself (False).
+    best_breakpoints : tuple[float, ...]
+        All of the best model's breakpoints on the fitted scale, in order: none
+        for the linear model, two for a two-threshold model.
+        ``breakpoints_area`` gives them in area units.
     """
 
     best_model: str
@@ -70,6 +84,7 @@ class ThresholdFit:
     all_fits: dict[str, dict] = field(repr=False)
     data: pd.DataFrame = field(repr=False)
     log_area: bool = True
+    best_breakpoints: tuple[float, ...] = ()
 
     def predict(self, area: float | np.ndarray) -> np.ndarray:
         """Predict species richness for given area value(s).
@@ -100,11 +115,34 @@ class ThresholdFit:
     @property
     def breakpoint_area(self) -> float | None:
         """The best model's breakpoint in area units (None for the linear model)."""
-        return _to_area(self.best_breakpoint, self.log_area)
+        areas = self.breakpoints_area
+        return areas[0] if areas else None
+
+    @property
+    def breakpoints_area(self) -> tuple[float, ...]:
+        """All of the best model's breakpoints in area units. A discontinuous
+        model's are observed areas, as given in ``data``."""
+        stored = self.all_fits.get(self.best_model, {}).get("breakpoints_area")
+        if stored is not None:
+            return tuple(stored)
+        return tuple(float(np.exp(t)) if self.log_area else float(t) for t in self.best_breakpoints)
+
+    def __post_init__(self) -> None:
+        if self.best_breakpoint is not None and not self.best_breakpoints:
+            self.best_breakpoints = (self.best_breakpoint,)
 
     def __repr__(self) -> str:
         if self.best_breakpoint is None:
             return f"ThresholdFit(best='{self.best_model}')"
+        if len(self.best_breakpoints) > 1:
+            in_area = ", ".join(f"{t:.4g}" for t in self.breakpoints_area)
+            if not self.log_area:
+                return f"ThresholdFit(best='{self.best_model}', breakpoints_area=({in_area}))"
+            on_log = ", ".join(f"{t:.3f}" for t in self.best_breakpoints)
+            return (
+                f"ThresholdFit(best='{self.best_model}', "
+                f"breakpoints=({on_log}) (ln area), breakpoints_area=({in_area}))"
+            )
         if not self.log_area:  # the fitted scale is area: one number says it all
             return f"ThresholdFit(best='{self.best_model}', breakpoint_area={self.breakpoint_area:.4g})"
         return (
@@ -125,14 +163,16 @@ def _predict_segments(x: np.ndarray, segments: list[dict]) -> np.ndarray:
     """Predict from piecewise linear segments, extending the end segments.
 
     ``segments`` are in order along x, as the fitters build them. Each segment
-    applies from its ``x_min`` on, so the first one's line continues below the
-    fitted range and the last one's above it, as the SAR models' ``predict``
+    after the first applies above its ``x_min`` (a point at a breakpoint
+    belongs to the segment on its left, as in the discontinuous fits; the
+    continuous segments meet there), so the first one's line continues below
+    the fitted range and the last one's above it, as the SAR models' ``predict``
     extrapolates their curves. A NaN input gives NaN.
     """
     first = segments[0]
     pred = first["intercept"] + first["slope"] * x
     for seg in segments[1:]:
-        pred = np.where(x >= seg["x_min"], seg["intercept"] + seg["slope"] * x, pred)
+        pred = np.where(x > seg["x_min"], seg["intercept"] + seg["slope"] * x, pred)
     return np.asarray(pred, dtype=float)
 
 
@@ -140,172 +180,236 @@ def _predict_segments(x: np.ndarray, segments: list[dict]) -> np.ndarray:
 # Individual piecewise model fits
 # ---------------------------------------------------------------------------
 
+# Parameters counted for AIC, AICc and BIC, as R sars counts them: each
+# coefficient, each breakpoint, and sigma.
+_K = {
+    "ContOne": 5,
+    "ZslopeOne": 4,
+    "DiscOne": 6,
+    "ContTwo": 7,
+    "ZslopeTwo": 6,
+    "DiscTwo": 9,
+    "Linear": 3,
+}
+MODELS = tuple(_K)
+_DEFAULT_MODELS = ("ContOne", "ZslopeOne", "Linear")
+
+
+def _result(
+    model: str,
+    y: np.ndarray,
+    pred: np.ndarray,
+    breakpoints: tuple[float, ...],
+    coeffs: dict[str, float],
+    segments: list[dict],
+) -> dict:
+    """A fit's result dict: its coefficients, segments, RSS, R2 and information criteria."""
+    n = len(y)
+    rss = float(np.sum((y - pred) ** 2))
+    ss_tot = float(np.sum((y - np.mean(y)) ** 2))
+    r2 = 1.0 - rss / ss_tot if ss_tot > 0 else 0.0
+    k = _K[model]
+    aic, aicc, bic = _compute_ic(k, n, rss)
+    return {
+        "model": model,
+        "breakpoint": breakpoints[0] if breakpoints else None,
+        "breakpoints": breakpoints,
+        "coeffs": coeffs,
+        "segments": segments,
+        "rss": rss,
+        "r2": r2,
+        "aic": aic,
+        "aicc": aicc,
+        "bic": bic,
+        "k": k,
+        "n": n,
+    }
+
 
 def _fit_linear(x: np.ndarray, y: np.ndarray) -> dict:
     """Fit simple linear model y = c + m*x (no breakpoint).
 
     Parameters: c (intercept), m (slope) + sigma = 3 for AICc.
     """
-    n = len(x)
-    # OLS via numpy
-    x_mat = np.column_stack([np.ones(n), x])
-    coeffs, rss_arr, _, _ = np.linalg.lstsq(x_mat, y, rcond=None)
-    c, m = coeffs
-    pred = x_mat @ coeffs
-    rss = float(np.sum((y - pred) ** 2))
-    ss_tot = float(np.sum((y - np.mean(y)) ** 2))
-    r2 = 1.0 - rss / ss_tot if ss_tot > 0 else 0.0
+    x_mat = np.column_stack([np.ones(len(x)), x])
+    coeffs, _, _, _ = np.linalg.lstsq(x_mat, y, rcond=None)
+    c, m = (float(v) for v in coeffs)
+    segments = [{"intercept": c, "slope": m, "x_min": float(np.min(x)), "x_max": float(np.max(x))}]
+    return _result("Linear", y, x_mat @ coeffs, (), {"c": c, "m": m}, segments)
 
-    k = 3  # intercept + slope + sigma
-    aic, aicc, bic = _compute_ic(k, n, rss)
 
-    segments = [
-        {
-            "intercept": float(c),
-            "slope": float(m),
-            "x_min": float(np.min(x)),
-            "x_max": float(np.max(x)),
-        }
-    ]
+def _hinge(x: np.ndarray, threshold: float) -> np.ndarray:
+    """(x - T) * I(x > T): zero up to the breakpoint, then rising with slope 1."""
+    return np.where(x > threshold, x - threshold, 0.0)
 
-    return {
-        "model": "Linear",
-        "breakpoint": None,
-        "coeffs": {"c": float(c), "m": float(m)},
-        "segments": segments,
-        "rss": rss,
-        "r2": r2,
-        "aic": aic,
-        "aicc": aicc,
-        "bic": bic,
-        "k": k,
-        "n": n,
-    }
+
+def _fit_hinged(
+    model: str,
+    x: np.ndarray,
+    y: np.ndarray,
+    thresholds: tuple[float, ...],
+    sloped_first: bool,
+    names: tuple[str, ...],
+) -> dict:
+    """Fit a continuous piecewise line: y = c + z*x + sum_i d_i * (x - T_i) * I(x > T_i).
+
+    ``sloped_first`` False drops the ``z*x`` term, so the first segment is flat
+    (the left-horizontal models). Each breakpoint adds ``d_i`` to the slope.
+    """
+    columns = [np.ones(len(x))] + ([x] if sloped_first else [])
+    columns += [_hinge(x, t) for t in thresholds]
+    x_mat = np.column_stack(columns)
+    coeffs, _, _, _ = np.linalg.lstsq(x_mat, y, rcond=None)
+
+    intercept = float(coeffs[0])
+    slope = float(coeffs[1]) if sloped_first else 0.0
+    deltas = coeffs[2:] if sloped_first else coeffs[1:]
+    edges = [float(np.min(x)), *(float(t) for t in thresholds), float(np.max(x))]
+    segments = []
+    for j in range(len(thresholds) + 1):
+        if j > 0:  # the line bends at T_j: the slope gains d_j, keeping the line continuous
+            slope += float(deltas[j - 1])
+            intercept -= float(deltas[j - 1]) * float(thresholds[j - 1])
+        segments.append(
+            {"intercept": intercept, "slope": slope, "x_min": edges[j], "x_max": edges[j + 1]}
+        )
+    return _result(
+        model,
+        y,
+        x_mat @ coeffs,
+        tuple(float(t) for t in thresholds),
+        {name: float(v) for name, v in zip(names, coeffs, strict=True)},
+        segments,
+    )
 
 
 def _fit_cont_one(x: np.ndarray, y: np.ndarray, threshold: float) -> dict:
-    """Fit continuous one-threshold model.
-
-    y = c1 + z1*x + z_delta * (x - T) * I(x > T)
-
-    Left segment:  y = c1 + z1*x
-    Right segment: y = c1 + z1*T + (z1 + z_delta)*(x - T)
-                     = (c1 + z_delta*T) + (z1 + z_delta)*x  ... wait, no:
-                     = c1 + z1*x + z_delta*(x - T)
+    """Continuous one-threshold model: y = c1 + z1*x + z_delta*(x - T)*I(x > T).
 
     Parameters: c1, z1, z_delta + breakpoint + sigma = 5 for AICc.
     """
-    n = len(x)
-    # Design matrix: [1, x, (x - T) * I(x > T)]
-    right_part = np.where(x > threshold, x - threshold, 0.0)
-    x_mat = np.column_stack([np.ones(n), x, right_part])
-    coeffs, _, _, _ = np.linalg.lstsq(x_mat, y, rcond=None)
-    c1, z1, z_delta = coeffs
-
-    pred = x_mat @ coeffs
-    rss = float(np.sum((y - pred) ** 2))
-    ss_tot = float(np.sum((y - np.mean(y)) ** 2))
-    r2 = 1.0 - rss / ss_tot if ss_tot > 0 else 0.0
-
-    k = 5  # c1 + z1 + z_delta + breakpoint + sigma
-    aic, aicc, bic = _compute_ic(k, n, rss)
-
-    segments = [
-        {
-            "intercept": float(c1),
-            "slope": float(z1),
-            "x_min": float(np.min(x)),
-            "x_max": float(threshold),
-        },
-        {
-            "intercept": float(c1 - z_delta * threshold),
-            "slope": float(z1 + z_delta),
-            "x_min": float(threshold),
-            "x_max": float(np.max(x)),
-        },
-    ]
-
-    return {
-        "model": "ContOne",
-        "breakpoint": float(threshold),
-        "coeffs": {
-            "c1": float(c1),
-            "z1": float(z1),
-            "z_delta": float(z_delta),
-        },
-        "segments": segments,
-        "rss": rss,
-        "r2": r2,
-        "aic": aic,
-        "aicc": aicc,
-        "bic": bic,
-        "k": k,
-        "n": n,
-    }
+    return _fit_hinged("ContOne", x, y, (threshold,), True, ("c1", "z1", "z_delta"))
 
 
 def _fit_zslope_one(x: np.ndarray, y: np.ndarray, threshold: float) -> dict:
-    """Fit left-horizontal one-threshold model (small island effect).
-
-    y = c1 + z2 * (x - T) * I(x > T)
-
-    Left segment:  y = c1  (flat)
-    Right segment: y = c1 + z2*(x - T)
+    """Left-horizontal one-threshold model (small island effect): y = c1 + z2*(x - T)*I(x > T).
 
     Parameters: c1, z2 + breakpoint + sigma = 4 for AICc.
     """
-    n = len(x)
-    # Design matrix: [1, (x - T) * I(x > T)]
-    right_part = np.where(x > threshold, x - threshold, 0.0)
-    x_mat = np.column_stack([np.ones(n), right_part])
-    coeffs, _, _, _ = np.linalg.lstsq(x_mat, y, rcond=None)
-    c1, z2 = coeffs
+    return _fit_hinged("ZslopeOne", x, y, (threshold,), False, ("c1", "z2"))
 
-    pred = x_mat @ coeffs
-    rss = float(np.sum((y - pred) ** 2))
-    ss_tot = float(np.sum((y - np.mean(y)) ** 2))
-    r2 = 1.0 - rss / ss_tot if ss_tot > 0 else 0.0
 
-    k = 4  # c1 + z2 + breakpoint + sigma
-    aic, aicc, bic = _compute_ic(k, n, rss)
+def _fit_cont_two(x: np.ndarray, y: np.ndarray, t1: float, t2: float) -> dict:
+    """Continuous two-threshold model:
+    y = c1 + z1*x + z_delta1*(x - T1)*I(x > T1) + z_delta2*(x - T2)*I(x > T2).
 
-    segments = [
-        {
-            "intercept": float(c1),
-            "slope": 0.0,
-            "x_min": float(np.min(x)),
-            "x_max": float(threshold),
-        },
-        {
-            "intercept": float(c1 - z2 * threshold),
-            "slope": float(z2),
-            "x_min": float(threshold),
-            "x_max": float(np.max(x)),
-        },
-    ]
+    Parameters: c1, z1, z_delta1, z_delta2 + 2 breakpoints + sigma = 7 for AICc.
+    """
+    return _fit_hinged("ContTwo", x, y, (t1, t2), True, ("c1", "z1", "z_delta1", "z_delta2"))
 
-    return {
-        "model": "ZslopeOne",
-        "breakpoint": float(threshold),
-        "coeffs": {"c1": float(c1), "z2": float(z2)},
-        "segments": segments,
-        "rss": rss,
-        "r2": r2,
-        "aic": aic,
-        "aicc": aicc,
-        "bic": bic,
-        "k": k,
-        "n": n,
-    }
+
+def _fit_zslope_two(x: np.ndarray, y: np.ndarray, t1: float, t2: float) -> dict:
+    """Left-horizontal two-threshold model:
+    y = c1 + z2*(x - T1)*I(x > T1) + z_delta*(x - T2)*I(x > T2).
+
+    Parameters: c1, z2, z_delta + 2 breakpoints + sigma = 6 for AICc.
+    """
+    return _fit_hinged("ZslopeTwo", x, y, (t1, t2), False, ("c1", "z2", "z_delta"))
+
+
+def _line(x: np.ndarray, y: np.ndarray) -> tuple[float, float]:
+    """Least-squares intercept and slope; a flat line through the mean when x has one value."""
+    if len(np.unique(x)) < 2:
+        return float(np.mean(y)), 0.0
+    coeffs, _, _, _ = np.linalg.lstsq(np.column_stack([np.ones(len(x)), x]), y, rcond=None)
+    return float(coeffs[0]), float(coeffs[1])
+
+
+def _fit_disc(model: str, x: np.ndarray, y: np.ndarray, thresholds: tuple[float, ...]) -> dict:
+    """Fit a separate line to each segment; a point at a breakpoint is in the segment to its left.
+
+    The coefficients are each segment's intercept and slope: c1, z1, c2, z2, ...
+    A segment holding a single area gets a flat line through its mean, as R's
+    rank-deficient ``lm`` predicts.
+    """
+    cuts = [-np.inf, *thresholds, np.inf]
+    edges = [float(np.min(x)), *(float(t) for t in thresholds), float(np.max(x))]
+    pred = np.empty(len(x))
+    coeffs: dict[str, float] = {}
+    segments = []
+    for j in range(len(cuts) - 1):
+        inside = (x > cuts[j]) & (x <= cuts[j + 1])
+        intercept, slope = _line(x[inside], y[inside])
+        pred[inside] = intercept + slope * x[inside]
+        coeffs[f"c{j + 1}"], coeffs[f"z{j + 1}"] = intercept, slope
+        segments.append(
+            {"intercept": intercept, "slope": slope, "x_min": edges[j], "x_max": edges[j + 1]}
+        )
+    return _result(model, y, pred, tuple(float(t) for t in thresholds), coeffs, segments)
+
+
+def _fit_disc_one(x: np.ndarray, y: np.ndarray, threshold: float) -> dict:
+    """Discontinuous one-threshold model: a separate line either side of T.
+
+    Parameters: 2 intercepts, 2 slopes + breakpoint + sigma = 6 for AICc.
+    """
+    return _fit_disc("DiscOne", x, y, (threshold,))
+
+
+def _fit_disc_two(x: np.ndarray, y: np.ndarray, t1: float, t2: float) -> dict:
+    """Discontinuous two-threshold model: a separate line in each of three segments.
+
+    Parameters: 3 intercepts, 3 slopes + 2 breakpoints + sigma = 9 for AICc.
+    """
+    return _fit_disc("DiscTwo", x, y, (t1, t2))
 
 
 # ---------------------------------------------------------------------------
-# Grid search for optimal breakpoint
+# Breakpoint searches
 # ---------------------------------------------------------------------------
 
 
 # Each candidate is a least-squares fit; past this the search would seem to hang.
 _MAX_CANDIDATES = 100_000
+# The two-threshold searches score all second breakpoints for one first
+# breakpoint at once; past this many pairs they too would seem to hang.
+_MAX_PAIRS = 10_000_000
+
+
+def _breakpoint_grid(x: np.ndarray, interval: float | None, min_points: int) -> np.ndarray | None:
+    """Grid of candidate breakpoints for the continuous models, on the scale of ``x``.
+
+    It runs from the ``min_points``-th smallest value to the ``min_points``-th
+    largest in steps of ``interval`` (None: a thousandth of that window), as R
+    sars's ``nisl`` window does. None when the window is empty.
+    """
+    x_sorted = np.sort(x)
+    x_min_bp = x_sorted[min_points - 1]
+    x_max_bp = x_sorted[-(min_points)]
+
+    if x_min_bp >= x_max_bp:
+        return None
+    if interval is None:
+        interval = (x_max_bp - x_min_bp) / 1000
+        if not interval > 0:  # a window too narrow for float steps: no breakpoint
+            return None
+
+    n_candidates = (x_max_bp - x_min_bp) / interval + 1
+    if n_candidates > _MAX_CANDIDATES:
+        raise ValueError(
+            f"interval={interval!r} gives {n_candidates:.3g} breakpoint candidates "
+            f"(at most {_MAX_CANDIDATES:,}); use a larger interval."
+        )
+    candidates = np.arange(x_min_bp, x_max_bp + interval / 2, interval)
+    return candidates if len(candidates) else None
+
+
+def _check_pairs(n_pairs: float, hint: str) -> None:
+    if n_pairs > _MAX_PAIRS:
+        raise ValueError(
+            f"The two-threshold search would score {n_pairs:.3g} pairs of breakpoints "
+            f"(at most {_MAX_PAIRS:,}); {hint}."
+        )
 
 
 def _grid_search_breakpoint(
@@ -315,7 +419,7 @@ def _grid_search_breakpoint(
     interval: float | None,
     min_points: int = 3,
 ) -> dict | None:
-    """Search for the breakpoint that minimises RSS.
+    """Search the grid for the one breakpoint that minimises RSS.
 
     Parameters
     ----------
@@ -336,26 +440,8 @@ def _grid_search_breakpoint(
     dict or None
         Best fit result dict, or None if no valid breakpoint found.
     """
-    x_sorted = np.sort(x)
-    # Ensure at least min_points on each side
-    x_min_bp = x_sorted[min_points - 1]
-    x_max_bp = x_sorted[-(min_points)]
-
-    if x_min_bp >= x_max_bp:
-        return None
-    if interval is None:
-        interval = (x_max_bp - x_min_bp) / 1000
-        if not interval > 0:  # a window too narrow for float steps: no breakpoint
-            return None
-
-    n_candidates = (x_max_bp - x_min_bp) / interval + 1
-    if n_candidates > _MAX_CANDIDATES:
-        raise ValueError(
-            f"interval={interval!r} gives {n_candidates:.3g} breakpoint candidates "
-            f"(at most {_MAX_CANDIDATES:,}); use a larger interval."
-        )
-    candidates = np.arange(x_min_bp, x_max_bp + interval / 2, interval)
-    if len(candidates) == 0:
+    candidates = _breakpoint_grid(x, interval, min_points)
+    if candidates is None:
         return None
 
     best_fit = None
@@ -378,6 +464,138 @@ def _grid_search_breakpoint(
     return best_fit
 
 
+def _grid_search_two_breakpoints(
+    x: np.ndarray,
+    y: np.ndarray,
+    fit_func: Callable[[np.ndarray, np.ndarray, float, float], dict],
+    sloped_first: bool,
+    interval: float | None,
+    min_points: int = 3,
+) -> dict | None:
+    """Search the grid for the pair of breakpoints T1 < T2 that minimises RSS.
+
+    The first segment (up to T1) and the last (above T2) hold at least
+    ``min_points`` values each; the middle one may hold any number, as in R
+    sars. For each T1, every T2 is scored at once: the RSS falls from that of
+    the fit without the T2 term by (r_y . r_h)^2 / (r_h . r_h), where r_y and
+    r_h are y and the T2 hinge with the T1 fit's columns projected out. The
+    winning pair is then refitted with ``fit_func``.
+    """
+    grid = _breakpoint_grid(x, interval, min_points)
+    if grid is None:
+        return None
+    x_sorted = np.sort(x)
+    n_left = np.searchsorted(x_sorted, grid, side="right")
+    first_ok = n_left >= min_points
+    last_ok = len(x) - n_left >= min_points
+    m = len(grid)
+    _check_pairs(m * (m - 1) / 2, "use a larger interval")
+
+    best_rss, best_pair = np.inf, None
+    for i in np.nonzero(first_ok)[0]:
+        js = np.nonzero(last_ok[i + 1 :])[0] + i + 1
+        if not len(js):
+            continue
+        columns = [np.ones(len(x))] + ([x] if sloped_first else []) + [_hinge(x, grid[i])]
+        u, s, _ = np.linalg.svd(np.column_stack(columns), full_matrices=False)
+        q = u[:, s > s[0] * 1e-10]  # an orthonormal basis for the T1 fit's columns
+        r_y = y - q @ (q.T @ y)
+        hinges = np.maximum(x[:, None] - grid[js][None, :], 0.0)
+        r_h = hinges - q @ (q.T @ hinges)
+        norms = np.sum(r_h**2, axis=0)
+        gain = np.zeros(len(js))
+        usable = norms > 1e-10 * np.sum(
+            hinges**2, axis=0
+        )  # a T2 term the T1 fit can't already make
+        gain[usable] = (r_y @ r_h[:, usable]) ** 2 / norms[usable]
+        rss = r_y @ r_y - gain
+        j = int(np.argmin(rss))
+        if rss[j] < best_rss:
+            best_rss, best_pair = rss[j], (grid[i], grid[js[j]])
+
+    if best_pair is None:
+        return None
+    return fit_func(x, y, *best_pair)
+
+
+def _segment_rss(sums: np.ndarray, start: np.ndarray, stop: np.ndarray) -> np.ndarray:
+    """RSS of a least-squares line through each run [start, stop) of the sorted data.
+
+    ``sums`` holds the running sums of 1, x, y, x^2, xy and y^2 (centred), with
+    a leading row of zeros. A run with one distinct x contributes its spread
+    about the mean, as a flat line does.
+    """
+    d = sums[stop] - sums[start]
+    count, sx, sy, sxx, sxy, syy = (d[..., k] for k in range(6))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        cxx = sxx - sx**2 / count
+        cxy = sxy - sx * sy / count
+        cyy = syy - sy**2 / count
+        sloped = cxx > 1e-12 * np.maximum(sxx, np.finfo(float).tiny)
+        explained = np.where(sloped, cxy**2 / np.where(sloped, cxx, 1.0), 0.0)
+    return np.maximum(cyy - explained, 0.0)
+
+
+def _disc_candidates(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """The distinct values of ``x`` (the discontinuous models' candidate
+    breakpoints), how many points lie at or below each, and the running sums
+    over the data sorted by ``x`` for ``_segment_rss``.
+    """
+    order = np.argsort(x, kind="stable")
+    xs, ys = x[order], y[order]
+    xc, yc = xs - xs.mean(), ys - ys.mean()
+    terms = np.column_stack([np.ones(len(xs)), xc, yc, xc**2, xc * yc, yc**2])
+    sums = np.vstack([np.zeros(6), np.cumsum(terms, axis=0)])
+    values = np.unique(xs)
+    n_left = np.searchsorted(xs, values, side="right")
+    return values, n_left, sums
+
+
+def _search_disc_one(x: np.ndarray, y: np.ndarray, min_points: int = 3) -> dict | None:
+    """The observed area, with at least ``min_points`` values on each side, that
+    minimises the discontinuous one-threshold model's RSS."""
+    values, n_left, sums = _disc_candidates(x, y)
+    n = len(x)
+    ok = (n_left >= min_points) & (n - n_left >= min_points)
+    if not ok.any():
+        return None
+    cut = n_left[ok]
+    rss = _segment_rss(sums, np.zeros_like(cut), cut) + _segment_rss(
+        sums, cut, np.full_like(cut, n)
+    )
+    return _fit_disc_one(x, y, values[ok][int(np.argmin(rss))])
+
+
+def _search_disc_two(x: np.ndarray, y: np.ndarray, min_points: int = 3) -> dict | None:
+    """The pair of observed areas T1 < T2 that minimises the discontinuous
+    two-threshold model's RSS, with at least ``min_points`` values up to T1 and
+    above T2 (the middle segment holds at least T2 itself). For each T1, every
+    T2 is scored at once from the running sums."""
+    values, n_left, sums = _disc_candidates(x, y)
+    n = len(x)
+    lasts = np.nonzero(n - n_left >= min_points)[0]
+    firsts = np.nonzero(n_left >= min_points)[0]
+    firsts = firsts[firsts < (lasts[-1] if len(lasts) else -1)]
+    n_pairs = len(lasts) * len(firsts) - int(np.searchsorted(lasts, firsts, side="right").sum())
+    _check_pairs(n_pairs, "the dataset has too many distinct areas")
+
+    best_rss, best_pair = np.inf, None
+    for i in firsts:
+        js = lasts[lasts > i]
+        a, b = n_left[i], n_left[js]
+        rss = (
+            _segment_rss(sums, np.array([0]), np.array([a]))[0]
+            + _segment_rss(sums, np.full_like(b, a), b)
+            + _segment_rss(sums, b, np.full_like(b, n))
+        )
+        w = int(np.argmin(rss))
+        if rss[w] < best_rss:
+            best_rss, best_pair = rss[w], (values[i], values[js[w]])
+    if best_pair is None:
+        return None
+    return _fit_disc_two(x, y, *best_pair)
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -391,12 +609,18 @@ def sar_threshold(
 ) -> ThresholdFit:
     """Fit threshold / piecewise SAR models.
 
-    Fits up to three piecewise models to the data and selects the best
-    by AICc:
+    Fits piecewise models to the data and selects the best by AICc. The
+    models are R sars's:
 
     - **ContOne**: continuous two-slope model with one breakpoint
     - **ZslopeOne**: left-horizontal + right slope (small island effect)
+    - **DiscOne**: discontinuous, a separate line either side of one breakpoint
+    - **ContTwo**: continuous, three joined segments (two breakpoints)
+    - **ZslopeTwo**: left-horizontal first segment, then two joined sloping ones
+    - **DiscTwo**: discontinuous, a separate line in each of three segments
     - **Linear**: simple linear model (no breakpoint, baseline)
+
+    ContOne, ZslopeOne and Linear are fitted unless ``models`` says otherwise.
 
     By default the models are fitted on the natural log of area, as R sars
     does (``logAreaT = TRUE``); ``log_area=False`` fits them on area itself.
@@ -405,33 +629,42 @@ def sar_threshold(
     (``breakpoint_area``).
 
     Breakpoint selection uses a two-level procedure. Within each piecewise
-    model class (ContOne, ZslopeOne), a grid search over the fitted scale
-    selects the breakpoint that minimises residual sum of squares (RSS). Then,
-    across model classes — including the no-breakpoint Linear baseline —
-    the best candidate from each class is ranked by AICc to choose the
-    overall best model. Because the models differ in parameter count
-    (Linear: k=3, ZslopeOne: k=4, ContOne: k=5), AICc penalises
-    complexity appropriately at the cross-model level.
+    model class, a search selects the breakpoint (or pair of breakpoints) that
+    minimises residual sum of squares (RSS): the continuous and left-horizontal
+    models search a grid over the fitted scale, and the discontinuous models
+    search the observed areas, since their breakpoints must sit at a data
+    point (``interval`` doesn't apply to them). Then, across model classes —
+    including the no-breakpoint Linear baseline — the best candidate from each
+    class is ranked by AICc to choose the overall best model. The parameter
+    counts are R sars's, each coefficient, breakpoint and sigma counting one
+    (Linear: k=3, ZslopeOne: 4, ContOne: 5, DiscOne: 6, ZslopeTwo: 6,
+    ContTwo: 7, DiscTwo: 9), so AICc penalises complexity at the cross-model
+    level.
 
     Meaningful threshold detection requires at least 7 observations. The
-    breakpoint grid search needs a minimum of 3 data points on each side
-    of a candidate breakpoint (``min_points=3``), so with fewer than 7
-    observations the piecewise models may find zero valid candidates and
-    only the Linear baseline will be returned. A ``UserWarning`` is
-    emitted when ``n < 7``.
+    first and last segments must each hold at least 3 data points (R sars's
+    ``nisl = 3``); a two-threshold model's middle segment may hold any number,
+    as in R. With fewer than 7 observations the piecewise models may find no
+    valid candidates and only the Linear baseline will be returned. A
+    ``UserWarning`` is emitted when ``n < 7``. R sars advises against the
+    two-threshold models for datasets of fewer than about 20 islands.
 
     Parameters
     ----------
     data : pd.DataFrame
         DataFrame with columns 'area' and 'species'.
     models : list[str], optional
-        Which models to fit. Default is all three:
-        ["ContOne", "ZslopeOne", "Linear"].
+        Which models to fit, from "ContOne", "ZslopeOne", "DiscOne", "ContTwo",
+        "ZslopeTwo", "DiscTwo" and "Linear". Default: ["ContOne", "ZslopeOne",
+        "Linear"].
     interval : float, optional
         Grid spacing for the breakpoint search, on the fitted scale. Default:
         0.01 on the natural-log scale (R sars's default), and a thousandth of
         the breakpoint window (from the third-smallest to the third-largest
-        area) when ``log_area`` is False. At most 100,000 grid points. Island areas are right-skewed, so on the area scale even that
+        area) when ``log_area`` is False. At most 100,000 grid points, and at
+        most 10 million pairs of breakpoints for ContTwo and ZslopeTwo. (DiscTwo
+        has the same limit on pairs of observed areas, which ``interval``
+        doesn't change.) Island areas are right-skewed, so on the area scale even that
         grid is coarse among the small islands, where a threshold would be;
         the log scale is the default for that reason.
     log_area : bool
@@ -453,12 +686,11 @@ def sar_threshold(
     relationship. Frontiers of Biogeography 13(1), e49404.
     """
     if models is None:
-        models = ["ContOne", "ZslopeOne", "Linear"]
+        models = list(_DEFAULT_MODELS)
 
-    valid_models = {"ContOne", "ZslopeOne", "Linear"}
     for m in models:
-        if m not in valid_models:
-            raise ValueError(f"Unknown threshold model: {m!r}. Choose from {sorted(valid_models)}")
+        if m not in _K:
+            raise ValueError(f"Unknown threshold model: {m!r}. Choose from {sorted(_K)}")
 
     _validate_data(data)
 
@@ -484,20 +716,29 @@ def sar_threshold(
     if interval is None and log_area:
         interval = 0.01  # as R sars; on the area scale the grid search sizes it from its window
 
+    searches: dict[str, Callable[[], dict | None]] = {
+        "Linear": lambda: _fit_linear(x, y),
+        "ContOne": lambda: _grid_search_breakpoint(x, y, _fit_cont_one, interval),
+        "ZslopeOne": lambda: _grid_search_breakpoint(x, y, _fit_zslope_one, interval),
+        "DiscOne": lambda: _search_disc_one(x, y),
+        "ContTwo": lambda: _grid_search_two_breakpoints(x, y, _fit_cont_two, True, interval),
+        "ZslopeTwo": lambda: _grid_search_two_breakpoints(x, y, _fit_zslope_two, False, interval),
+        "DiscTwo": lambda: _search_disc_two(x, y),
+    }
     all_fits: dict[str, dict] = {}
-
-    if "Linear" in models:
-        all_fits["Linear"] = _fit_linear(x, y)
-
-    if "ContOne" in models:
-        result = _grid_search_breakpoint(x, y, _fit_cont_one, interval)
-        if result is not None:
-            all_fits["ContOne"] = result
-
-    if "ZslopeOne" in models:
-        result = _grid_search_breakpoint(x, y, _fit_zslope_one, interval)
-        if result is not None:
-            all_fits["ZslopeOne"] = result
+    for name in searches:  # a fixed order, whatever order ``models`` gives
+        if name in models:
+            result = searches[name]()
+            if result is not None:
+                if name.startswith("Disc"):  # at observed areas: report them as given
+                    result["breakpoints_area"] = tuple(
+                        float(area[x == t][0]) for t in result["breakpoints"]
+                    )
+                else:
+                    result["breakpoints_area"] = tuple(
+                        _to_area(t, log_area) for t in result["breakpoints"]
+                    )
+                all_fits[name] = result
 
     if not all_fits:
         raise RuntimeError("No threshold models could be fitted to the data.")
@@ -505,11 +746,16 @@ def sar_threshold(
     # Build summary table
     rows = []
     for name, fit in all_fits.items():
+        second = fit["breakpoints"][1] if len(fit["breakpoints"]) > 1 else np.nan
         rows.append(
             {
                 "model": name,
                 "breakpoint": fit["breakpoint"],
-                "breakpoint_area": _to_area(fit["breakpoint"], log_area),
+                "breakpoint_area": fit["breakpoints_area"][0] if fit["breakpoints"] else None,
+                "breakpoint2": second,
+                "breakpoint2_area": fit["breakpoints_area"][1]
+                if len(fit["breakpoints"]) > 1
+                else np.nan,
                 "AIC": fit["aic"],
                 "AICc": fit["aicc"],
                 "BIC": fit["bic"],
@@ -530,4 +776,5 @@ def sar_threshold(
         all_fits=all_fits,
         data=data,
         log_area=log_area,
+        best_breakpoints=best["breakpoints"],
     )

@@ -222,3 +222,171 @@ class TestSarThreshold:
         result = sars.sar_threshold(galap)
         r = repr(result)
         assert "ThresholdFit" in r
+
+
+ALL_MODELS = ["ContOne", "ZslopeOne", "DiscOne", "ContTwo", "ZslopeTwo", "DiscTwo", "Linear"]
+
+
+def _two_knees(n: int = 30, seed: int = 0) -> pd.DataFrame:
+    """Flat, then rising, then rising faster, on ln(area), with knees at ln 2 and ln 5."""
+    rng = np.random.default_rng(seed)
+    x = np.sort(rng.uniform(0.0, 7.0, n))
+    y = 10.0 + 4.0 * np.maximum(x - 2.0, 0.0) + 8.0 * np.maximum(x - 5.0, 0.0)
+    return pd.DataFrame({"area": np.exp(x), "species": y + rng.normal(0, 0.05, n)})
+
+
+class TestMoreThresholdModels:
+    """DiscOne, ContTwo, ZslopeTwo and DiscTwo, as in R sars."""
+
+    def test_default_models_are_unchanged(self, galap):
+        assert set(sars.sar_threshold(galap).all_fits) == {"ContOne", "ZslopeOne", "Linear"}
+
+    def test_each_model_reports_its_parameters_breakpoints_and_segments(self, galap):
+        fit = sars.sar_threshold(galap, models=ALL_MODELS)
+        shape = {"ContOne": (5, 1), "ZslopeOne": (4, 1), "DiscOne": (6, 1),
+                 "ContTwo": (7, 2), "ZslopeTwo": (6, 2), "DiscTwo": (9, 2), "Linear": (3, 0)}  # fmt: skip
+        for name, (k, n_breaks) in shape.items():
+            result = fit.all_fits[name]
+            assert result["k"] == k, name
+            assert len(result["breakpoints"]) == n_breaks, name
+            assert len(result["segments"]) == n_breaks + 1, name
+            assert list(result["breakpoints"]) == sorted(result["breakpoints"]), name
+
+    def test_outer_segments_hold_three_islands(self, galap):
+        fit = sars.sar_threshold(galap, models=ALL_MODELS)
+        x = np.log(galap["area"].to_numpy())
+        for name, result in fit.all_fits.items():
+            if result["breakpoints"]:
+                assert np.sum(x <= result["breakpoints"][0]) >= 3, name
+                assert np.sum(x > result["breakpoints"][-1]) >= 3, name
+
+    def test_discontinuous_breakpoints_are_observed_areas(self, galap):
+        fit = sars.sar_threshold(galap, models=["DiscOne", "DiscTwo"])
+        x = np.log(galap["area"].to_numpy())
+        for name in ["DiscOne", "DiscTwo"]:
+            for t in fit.all_fits[name]["breakpoints"]:
+                assert np.min(np.abs(x - t)) == 0.0, name
+
+    @pytest.mark.parametrize("model", ["ContTwo", "ZslopeTwo"])
+    def test_continuous_two_threshold_segments_meet(self, galap, model):
+        result = sars.sar_threshold(galap, models=[model]).all_fits[model]
+        segs = result["segments"]
+        for t, left, right in zip(result["breakpoints"], segs[:-1], segs[1:], strict=True):
+            at_left = left["intercept"] + left["slope"] * t
+            assert at_left == pytest.approx(right["intercept"] + right["slope"] * t, abs=1e-8)
+        if model == "ZslopeTwo":
+            assert segs[0]["slope"] == 0.0
+
+    @pytest.mark.parametrize("model", ["ContTwo", "ZslopeTwo"])
+    def test_two_knees_are_recovered(self, model):
+        data = _two_knees()
+        fit = sars.sar_threshold(data, models=[model, "ContOne", "Linear"])
+        assert fit.best_model == model
+        assert fit.best_breakpoints == pytest.approx((2.0, 5.0), abs=0.05)
+        assert fit.breakpoints_area == pytest.approx(np.exp(fit.best_breakpoints))
+        assert fit.predict(np.exp([1.0, 6.5])) == pytest.approx([10.0, 40.0], abs=0.2)
+
+    def test_jumps_are_recovered_by_the_discontinuous_models(self):
+        x = np.arange(1.0, 13.0)
+        y = np.where(x <= 4, 5.0 + x, np.where(x <= 8, 30.0 + 2 * x, 80.0 - x))
+        data = pd.DataFrame({"area": np.exp(x), "species": y})
+        one = sars.sar_threshold(data, models=["DiscOne"]).all_fits["DiscOne"]
+        assert one["breakpoints"][0] in (4.0, 8.0)  # at one of the jumps
+        two = sars.sar_threshold(data, models=["DiscTwo", "DiscOne", "Linear"])
+        assert two.best_model == "DiscTwo"
+        assert two.best_breakpoints == pytest.approx((4.0, 8.0))
+        assert two.all_fits["DiscTwo"]["rss"] == pytest.approx(0.0, abs=1e-18)
+        # A point at a breakpoint is in the segment to its left, as in the fit.
+        assert two.predict(np.exp([4.0, 8.0])) == pytest.approx([9.0, 46.0])
+
+    def test_vectorised_searches_match_trying_every_pair(self):
+        """The two-threshold searches score pairs in bulk; the pair they pick must be the
+        one fitting every pair separately would."""
+        from sars import _threshold as th
+
+        rng = np.random.default_rng(3)
+        x = np.sort(rng.uniform(0, 5, 14))
+        y = 20 + 3 * x + rng.normal(0, 2, 14)
+        grid = th._breakpoint_grid(x, 0.05, 3)
+        values = np.unique(x)
+        for fit_func, sloped, cands in [
+            (th._fit_cont_two, True, grid),
+            (th._fit_zslope_two, False, grid),
+            (th._fit_disc_two, None, values),
+        ]:
+            best = min(
+                (fit_func(x, y, a, b) for a in cands for b in cands
+                 if a < b and np.sum(x <= a) >= 3 and np.sum(x > b) >= 3),
+                key=lambda r: r["rss"],
+            )  # fmt: skip
+            if sloped is None:
+                found = th._search_disc_two(x, y)
+            else:
+                found = th._grid_search_two_breakpoints(x, y, fit_func, sloped, 0.05)
+            assert found["rss"] == pytest.approx(best["rss"], rel=1e-12)
+            assert found["breakpoints"] == pytest.approx(best["breakpoints"])
+        best_one = min(
+            (
+                th._fit_disc_one(x, y, t)
+                for t in values
+                if np.sum(x <= t) >= 3 and np.sum(x > t) >= 3
+            ),
+            key=lambda r: r["rss"],
+        )
+        assert th._search_disc_one(x, y)["breakpoints"] == best_one["breakpoints"]
+
+    def test_summary_reports_the_second_breakpoint(self, galap):
+        fit = sars.sar_threshold(galap, models=ALL_MODELS)
+        table = fit.summary.set_index("model")
+        assert table.loc["ContTwo", "breakpoint2"] == fit.all_fits["ContTwo"]["breakpoints"][1]
+        assert table.loc["ContTwo", "breakpoint2_area"] == pytest.approx(
+            np.exp(table.loc["ContTwo", "breakpoint2"])
+        )
+        assert table.loc[["ContOne", "DiscOne", "Linear"], "breakpoint2"].isna().all()
+
+    def test_repr_shows_both_breakpoints(self):
+        fit = sars.sar_threshold(_two_knees(), models=["ContTwo"])
+        assert "breakpoints=(" in repr(fit) and "breakpoints_area=(" in repr(fit)
+        assert fit.best_breakpoint == fit.best_breakpoints[0]
+        on_area = sars.sar_threshold(_two_knees(), models=["ContTwo"], log_area=False)
+        assert "breakpoints_area=(" in repr(on_area) and "ln area" not in repr(on_area)
+
+    def test_one_threshold_and_linear_fits_report_their_breakpoints_as_a_tuple(self, galap):
+        fit = sars.sar_threshold(galap, models=["ContOne"])
+        assert fit.best_breakpoints == (fit.best_breakpoint,)
+        assert sars.sar_threshold(galap, models=["Linear"]).best_breakpoints == ()
+
+    def test_too_many_pairs_raises(self, galap, monkeypatch):
+        from sars import _threshold as th
+
+        monkeypatch.setattr(th, "_MAX_PAIRS", 1000)
+        with pytest.raises(ValueError, match="pairs of breakpoints"):
+            sars.sar_threshold(galap, models=["ContTwo"])
+        with pytest.raises(ValueError, match="too many distinct areas"):
+            sars.sar_threshold(_two_knees(n=60), models=["DiscTwo"])
+
+    def test_small_data_still_falls_back_to_linear(self):
+        data = pd.DataFrame({"area": [1.0, 2.0, 3.0, 4.0, 5.0], "species": [1, 2, 3, 4, 5]})
+        with pytest.warns(UserWarning):
+            fit = sars.sar_threshold(data, models=ALL_MODELS)
+        assert set(fit.all_fits) == {"Linear"}
+
+    def test_second_breakpoint_columns_are_float_without_a_two_threshold_model(self, galap):
+        summary = sars.sar_threshold(galap).summary
+        assert summary["breakpoint2"].dtype == float
+        assert summary["breakpoint2_area"].dtype == float
+        assert summary["breakpoint2"].isna().all()
+
+    def test_discontinuous_breakpoints_in_area_units_are_the_observed_areas(self, galap):
+        fit = sars.sar_threshold(galap, models=["DiscOne", "DiscTwo"])
+        areas = set(galap["area"])
+        for name in ["DiscOne", "DiscTwo"]:
+            assert set(fit.all_fits[name]["breakpoints_area"]) <= areas, name
+        assert fit.breakpoint_area in areas
+        row = fit.summary.set_index("model").loc["DiscTwo"]
+        assert {row["breakpoint_area"], row["breakpoint2_area"]} <= areas
+
+    def test_a_fit_built_with_one_breakpoint_lists_it(self, galap):
+        fit = sars.ThresholdFit("ContOne", 1.2, [], pd.DataFrame(), {}, galap)
+        assert fit.best_breakpoints == (1.2,)
+        assert fit.breakpoints_area == pytest.approx((np.exp(1.2),))
