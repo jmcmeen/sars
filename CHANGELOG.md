@@ -22,6 +22,9 @@ reconstructed from the commit history and the
   on the Galápagos data. For DiscOne and DiscTwo, R's own search strays outside its `nisl`
   window, so this package keeps three islands in the first and last segments, as `nisl = 3`
   documents; their RSS matches R's model functions over that window (#109)
+- `sar_threshold` warns when AICc is undefined for some of the models it fits (a model of k
+  parameters needs more than k + 1 observations), as R's `summary` does, and raises
+  `ValueError` when that's true of every model, instead of naming one of them best (#109)
 
 ## [0.8.1] - 2026-11-10
 

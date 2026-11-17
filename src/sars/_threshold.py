@@ -371,9 +371,12 @@ def _fit_disc_two(x: np.ndarray, y: np.ndarray, t1: float, t2: float) -> dict:
 
 # Each candidate is a least-squares fit; past this the search would seem to hang.
 _MAX_CANDIDATES = 100_000
-# The two-threshold searches score all second breakpoints for one first
-# breakpoint at once; past this many pairs they too would seem to hang.
+# The two-threshold searches score the second breakpoints for each first one
+# together; past this many pairs they too would seem to hang.
 _MAX_PAIRS = 10_000_000
+# Most (observation, candidate) cells a ContTwo/ZslopeTwo block scores at once
+# (8 MB per temporary array), so memory stays bounded however large the data.
+_BLOCK = 1_000_000
 
 
 def _breakpoint_grid(x: np.ndarray, interval: float | None, min_points: int) -> np.ndarray | None:
@@ -464,6 +467,20 @@ def _grid_search_breakpoint(
     return best_fit
 
 
+def _hinge_rss(x: np.ndarray, q: np.ndarray, r_y: np.ndarray, t2: np.ndarray) -> np.ndarray:
+    """RSS of the T1 fit (orthonormal basis ``q``, residuals ``r_y``) plus a hinge at each ``t2``."""
+    hinges = np.maximum(x[:, None] - t2[None, :], 0.0)
+    r_h = hinges - q @ (q.T @ hinges)
+    norms = np.sum(r_h**2, axis=0)
+    # A hinge the T1 fit can already make adds nothing. The cut is far below
+    # where its remainder stops being resolvable: rounding leaves about 1e-16
+    # of the hinge in r_h, so at 1e-10 of it the gain is still good to ~1e-5.
+    usable = norms > 1e-20 * np.sum(hinges**2, axis=0)
+    gain = np.zeros(len(t2))
+    gain[usable] = (r_y @ r_h[:, usable]) ** 2 / norms[usable]
+    return r_y @ r_y - gain
+
+
 def _grid_search_two_breakpoints(
     x: np.ndarray,
     y: np.ndarray,
@@ -500,15 +517,12 @@ def _grid_search_two_breakpoints(
         u, s, _ = np.linalg.svd(np.column_stack(columns), full_matrices=False)
         q = u[:, s > s[0] * 1e-10]  # an orthonormal basis for the T1 fit's columns
         r_y = y - q @ (q.T @ y)
-        hinges = np.maximum(x[:, None] - grid[js][None, :], 0.0)
-        r_h = hinges - q @ (q.T @ hinges)
-        norms = np.sum(r_h**2, axis=0)
-        gain = np.zeros(len(js))
-        usable = norms > 1e-10 * np.sum(
-            hinges**2, axis=0
-        )  # a T2 term the T1 fit can't already make
-        gain[usable] = (r_y @ r_h[:, usable]) ** 2 / norms[usable]
-        rss = r_y @ r_y - gain
+        rss = np.concatenate(
+            [
+                _hinge_rss(x, q, r_y, grid[block])
+                for block in np.array_split(js, -(-len(js) * len(x) // _BLOCK))
+            ]
+        )
         j = int(np.argmin(rss))
         if rss[j] < best_rss:
             best_rss, best_pair = rss[j], (grid[i], grid[js[j]])
@@ -518,51 +532,72 @@ def _grid_search_two_breakpoints(
     return fit_func(x, y, *best_pair)
 
 
-def _segment_rss(sums: np.ndarray, start: np.ndarray, stop: np.ndarray) -> np.ndarray:
-    """RSS of a least-squares line through each run [start, stop) of the sorted data.
+class _Runs:
+    """Least-squares lines through runs [start, stop) of the data sorted by x.
 
-    ``sums`` holds the running sums of 1, x, y, x^2, xy and y^2 (centred), with
-    a leading row of zeros. A run with one distinct x contributes its spread
-    about the mean, as a flat line does.
+    Scores come from running sums of 1, x, y, x^2, xy and y^2 (centred on the
+    data's means), so any run costs O(1). Those sums lose precision for a run
+    whose spread in x is tiny next to its distance from the mean of x (a
+    cluster of areas far from the rest, say); such runs are fitted directly.
     """
-    d = sums[stop] - sums[start]
-    count, sx, sy, sxx, sxy, syy = (d[..., k] for k in range(6))
-    with np.errstate(divide="ignore", invalid="ignore"):
-        cxx = sxx - sx**2 / count
-        cxy = sxy - sx * sy / count
-        cyy = syy - sy**2 / count
-        sloped = cxx > 1e-12 * np.maximum(sxx, np.finfo(float).tiny)
-        explained = np.where(sloped, cxy**2 / np.where(sloped, cxx, 1.0), 0.0)
-    return np.maximum(cyy - explained, 0.0)
+
+    # Below this ratio of a run's spread in x to its sum of squares about the
+    # mean, the running-sum spread has lost too many digits to trust.
+    _RELIABLE = 1e-8
+
+    def __init__(self, x: np.ndarray, y: np.ndarray) -> None:
+        order = np.argsort(x, kind="stable")
+        self.xs, self.ys = x[order], y[order]
+        xc, yc = self.xs - self.xs.mean(), self.ys - self.ys.mean()
+        terms = np.column_stack([np.ones(len(xc)), xc, yc, xc**2, xc * yc, yc**2])
+        self.sums = np.vstack([np.zeros(6), np.cumsum(terms, axis=0)])
+        self._exact: dict[tuple[int, int], float] = {}
+
+    def rss(self, start: np.ndarray, stop: np.ndarray) -> np.ndarray:
+        """RSS of the line through each run. A run with one distinct x
+        contributes its spread about the mean, as a flat line does."""
+        d = self.sums[stop] - self.sums[start]
+        count, sx, sy, sxx, sxy, syy = (d[..., k] for k in range(6))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            cxx = sxx - sx**2 / count
+            cxy = sxy - sx * sy / count
+            cyy = syy - sy**2 / count
+            reliable = cxx > self._RELIABLE * sxx
+            explained = np.where(reliable, cxy**2 / np.where(reliable, cxx, 1.0), 0.0)
+        rss = np.maximum(cyy - explained, 0.0)
+        for k in np.nonzero(~reliable & (count > 1))[0]:
+            rss[k] = self._fit(int(start[k]), int(stop[k]))
+        return rss
+
+    def _fit(self, start: int, stop: int) -> float:
+        key = (start, stop)
+        if key not in self._exact:
+            xs, ys = self.xs[start:stop], self.ys[start:stop]
+            intercept, slope = _line(xs - xs.mean(), ys)
+            self._exact[key] = float(np.sum((ys - intercept - slope * (xs - xs.mean())) ** 2))
+        return self._exact[key]
 
 
-def _disc_candidates(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _disc_candidates(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray, _Runs]:
     """The distinct values of ``x`` (the discontinuous models' candidate
-    breakpoints), how many points lie at or below each, and the running sums
-    over the data sorted by ``x`` for ``_segment_rss``.
+    breakpoints), how many points lie at or below each, and the runs to score.
     """
-    order = np.argsort(x, kind="stable")
-    xs, ys = x[order], y[order]
-    xc, yc = xs - xs.mean(), ys - ys.mean()
-    terms = np.column_stack([np.ones(len(xs)), xc, yc, xc**2, xc * yc, yc**2])
-    sums = np.vstack([np.zeros(6), np.cumsum(terms, axis=0)])
-    values = np.unique(xs)
-    n_left = np.searchsorted(xs, values, side="right")
-    return values, n_left, sums
+    runs = _Runs(x, y)
+    values = np.unique(runs.xs)
+    n_left = np.searchsorted(runs.xs, values, side="right")
+    return values, n_left, runs
 
 
 def _search_disc_one(x: np.ndarray, y: np.ndarray, min_points: int = 3) -> dict | None:
     """The observed area, with at least ``min_points`` values on each side, that
     minimises the discontinuous one-threshold model's RSS."""
-    values, n_left, sums = _disc_candidates(x, y)
+    values, n_left, runs = _disc_candidates(x, y)
     n = len(x)
     ok = (n_left >= min_points) & (n - n_left >= min_points)
     if not ok.any():
         return None
     cut = n_left[ok]
-    rss = _segment_rss(sums, np.zeros_like(cut), cut) + _segment_rss(
-        sums, cut, np.full_like(cut, n)
-    )
+    rss = runs.rss(np.zeros_like(cut), cut) + runs.rss(cut, np.full_like(cut, n))
     return _fit_disc_one(x, y, values[ok][int(np.argmin(rss))])
 
 
@@ -571,7 +606,7 @@ def _search_disc_two(x: np.ndarray, y: np.ndarray, min_points: int = 3) -> dict 
     two-threshold model's RSS, with at least ``min_points`` values up to T1 and
     above T2 (the middle segment holds at least T2 itself). For each T1, every
     T2 is scored at once from the running sums."""
-    values, n_left, sums = _disc_candidates(x, y)
+    values, n_left, runs = _disc_candidates(x, y)
     n = len(x)
     lasts = np.nonzero(n - n_left >= min_points)[0]
     firsts = np.nonzero(n_left >= min_points)[0]
@@ -584,9 +619,9 @@ def _search_disc_two(x: np.ndarray, y: np.ndarray, min_points: int = 3) -> dict 
         js = lasts[lasts > i]
         a, b = n_left[i], n_left[js]
         rss = (
-            _segment_rss(sums, np.array([0]), np.array([a]))[0]
-            + _segment_rss(sums, np.full_like(b, a), b)
-            + _segment_rss(sums, b, np.full_like(b, n))
+            runs.rss(np.array([0]), np.array([a]))[0]
+            + runs.rss(np.full_like(b, a), b)
+            + runs.rss(b, np.full_like(b, n))
         )
         w = int(np.argmin(rss))
         if rss[w] < best_rss:
@@ -675,10 +710,17 @@ def sar_threshold(
     ThresholdFit
         Result with best model, breakpoint, segments, and comparison table.
 
+    Raises
+    ------
+    ValueError
+        If AICc is undefined for every model fitted (n <= k + 1 for each).
+
     Warns
     -----
     UserWarning
-        If the dataset has fewer than 7 observations.
+        If the dataset has fewer than 7 observations, or AICc is undefined for
+        some of the models fitted (they rank last), as R sars's ``summary``
+        warns.
 
     References
     ----------
@@ -763,6 +805,21 @@ def sar_threshold(
             }
         )
     summary = pd.DataFrame(rows).sort_values("AICc").reset_index(drop=True)
+
+    undefined = summary.loc[np.isinf(summary["AICc"]), "model"].tolist()
+    if len(undefined) == len(summary):
+        raise ValueError(
+            f"AICc is undefined for every model fitted ({', '.join(undefined)}): with "
+            f"{n} observations, a model of k parameters needs n > k + 1. Include a "
+            f"model with fewer parameters (such as Linear) or use more data."
+        )
+    if undefined:
+        warnings.warn(
+            f"AICc is undefined for {', '.join(undefined)} with {n} observations "
+            f"(a model of k parameters needs n > k + 1); they rank last.",
+            UserWarning,
+            stacklevel=2,
+        )
 
     # Select best by AICc
     best_name = summary.iloc[0]["model"]

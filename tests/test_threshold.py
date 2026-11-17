@@ -390,3 +390,45 @@ class TestMoreThresholdModels:
         fit = sars.ThresholdFit("ContOne", 1.2, [], pd.DataFrame(), {}, galap)
         assert fit.best_breakpoints == (1.2,)
         assert fit.breakpoints_area == pytest.approx((np.exp(1.2),))
+
+    def test_runs_far_from_the_mean_are_scored_exactly(self):
+        """A cluster of areas far from the rest: running sums would lose its slope."""
+        from sars import _threshold as th
+
+        rng = np.random.default_rng(0)
+        x = np.concatenate([np.linspace(1, 6, 6), 1e8 + np.linspace(0, 7, 8)])
+        y = np.concatenate([np.full(6, 50.0), 10 + 5 * np.linspace(0, 7, 8)])
+        y = y + rng.normal(0, 0.1, 14)
+        _, _, runs = th._disc_candidates(x, y)
+        xs, ys = x[6:] - x[6:].mean(), y[6:]
+        slope, intercept = np.polyfit(xs, ys, 1)
+        exact = np.sum((ys - intercept - slope * xs) ** 2)
+        assert runs.rss(np.array([6]), np.array([14]))[0] == pytest.approx(exact, rel=1e-6)
+        assert exact < 1.0  # a sloped run, not a flat one
+
+    def test_two_threshold_search_in_small_blocks_matches_trying_every_pair(self, monkeypatch):
+        from sars import _threshold as th
+
+        monkeypatch.setattr(th, "_BLOCK", 50)  # a few candidates per block
+        rng = np.random.default_rng(5)
+        x = np.sort(rng.uniform(0, 5, 14))
+        y = 20 + 3 * x + rng.normal(0, 2, 14)
+        grid = th._breakpoint_grid(x, 0.05, 3)
+        best = min(
+            (th._fit_cont_two(x, y, a, b) for a in grid for b in grid
+             if a < b and np.sum(x <= a) >= 3 and np.sum(x > b) >= 3),
+            key=lambda r: r["rss"],
+        )  # fmt: skip
+        found = th._grid_search_two_breakpoints(x, y, th._fit_cont_two, True, 0.05)
+        assert found["breakpoints"] == pytest.approx(best["breakpoints"])
+
+    def test_undefined_aicc_warns_and_ranks_last(self):
+        data = _two_knees(n=10)
+        with pytest.warns(UserWarning, match="AICc is undefined for DiscTwo"):
+            fit = sars.sar_threshold(data, models=["DiscTwo", "ContOne", "Linear"])
+        assert fit.summary["model"].iloc[-1] == "DiscTwo"
+
+    def test_undefined_aicc_for_every_model_raises(self):
+        data = _two_knees(n=8)
+        with pytest.raises(ValueError, match="AICc is undefined for every model"):
+            sars.sar_threshold(data, models=["ContTwo", "DiscTwo"])
