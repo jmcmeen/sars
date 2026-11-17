@@ -120,9 +120,13 @@ class _ModelSpec:
     name: str
     func: _SARFunc
     param_names: list[str]
+    # Search limits on the rescaled parameters (see _RESCALE), not on the ones
+    # reported: a fit in other units can report values beyond them.
     bounds_lower: list[float]
     bounds_upper: list[float]
-    start_grid: list[list[float]]  # one list of starting values per param
+    # One list of starting values per param, on the rescaled data the fit runs on
+    # (see _RESCALE): area over its geometric mean, species over its maximum.
+    start_grid: list[list[float]]
     # Parameters the solver searches on the natural-log scale, for ones whose
     # optimum can sit many orders of magnitude from the start values (weibull4's
     # c reaches 1e-15). Their bounds and start values are still given, and their
@@ -152,8 +156,129 @@ _MODEL_REGISTRY: dict[str, _ModelSpec] = {}
 
 
 def _register(spec: _ModelSpec) -> _ModelSpec:
+    if spec.name not in _RESCALE:
+        raise ValueError(f"model {spec.name!r} needs a rescaling entry in _RESCALE")
     _MODEL_REGISTRY[spec.name] = spec
     return spec
+
+
+# ---------------------------------------------------------------------------
+# Rescaling
+# ---------------------------------------------------------------------------
+
+# Each model is fitted on rescaled data, A' = A / a and S' = S / s, where a is
+# the geometric mean of the areas and s the largest richness, and its
+# parameters converted back. The start grids and bounds are then in units
+# near 1 whatever the data's units, and a model whose form survives a change
+# of units gives the same fit (the same R2, and parameters converted exactly)
+# in km2 or m2, for tens of species or thousands. Each entry maps rescaled
+# parameters p' to the data's units, and back, in the spec's parameter order.
+# epm1 and epm2 change form with the area units (their exponent depends on A
+# itself), so only their richness is rescaled.
+_Rescale = Callable[[np.ndarray, float, float], list[float]]
+_RESCALE: dict[str, tuple[_Rescale, _Rescale]] = {
+    # S = c A^z: c = s c' a^-z
+    "power": (
+        lambda p, a, s: [s * p[0] * a ** -p[1], p[1]],
+        lambda p, a, s: [p[0] * a ** p[1] / s, p[1]],
+    ),
+    # S = f + c A^z: f = s f', c = s c' a^-z
+    "powerR": (
+        lambda p, a, s: [s * p[0], s * p[1] * a ** -p[2], p[2]],
+        lambda p, a, s: [p[0] / s, p[1] * a ** p[2] / s, p[2]],
+    ),
+    # S = c + z log A: z = s z', c = s (c' - z' log a)
+    "loga": (
+        lambda p, a, s: [s * (p[0] - p[1] * np.log(a)), s * p[1]],
+        lambda p, a, s: [p[0] / s + p[1] / s * np.log(a), p[1] / s],
+    ),
+    # S = c + m A: c = s c', m = s m' / a
+    "linear": (
+        lambda p, a, s: [s * p[0], s * p[1] / a],
+        lambda p, a, s: [p[0] / s, p[1] * a / s],
+    ),
+    # epm1 and epm2: c = s c' (richness only)
+    "epm1": (
+        lambda p, a, s: [s * p[0], p[1], p[2]],
+        lambda p, a, s: [p[0] / s, p[1], p[2]],
+    ),
+    "epm2": (
+        lambda p, a, s: [s * p[0], p[1], p[2]],
+        lambda p, a, s: [p[0] / s, p[1], p[2]],
+    ),
+    # S = c A^z exp(-d A): c = s c' a^-z, d = d' / a
+    "p1": (
+        lambda p, a, s: [s * p[0] * a ** -p[1], p[1], p[2] / a],
+        lambda p, a, s: [p[0] * a ** p[1] / s, p[1], p[2] * a],
+    ),
+    # S = c A^z exp(-d / A): c = s c' a^-z, d = d' a
+    "p2": (
+        lambda p, a, s: [s * p[0] * a ** -p[1], p[1], p[2] * a],
+        lambda p, a, s: [p[0] * a ** p[1] / s, p[1], p[2] / a],
+    ),
+    # S = c log(1 + A / z): c = s c', z = z' a
+    "koba": (
+        lambda p, a, s: [s * p[0], p[1] * a],
+        lambda p, a, s: [p[0] / s, p[1] / a],
+    ),
+    # S = d A / (c + A): d = s d', c = c' a
+    "monod": (
+        lambda p, a, s: [s * p[0], p[1] * a],
+        lambda p, a, s: [p[0] / s, p[1] / a],
+    ),
+    # S = d (1 - exp(-z A)): d = s d', z = z' / a
+    "negexpo": (
+        lambda p, a, s: [s * p[0], p[1] / a],
+        lambda p, a, s: [p[0] / s, p[1] * a],
+    ),
+    # S = d - c exp(-z A): d = s d', c = s c', z = z' / a
+    "asymp": (
+        lambda p, a, s: [s * p[0], s * p[1], p[2] / a],
+        lambda p, a, s: [p[0] / s, p[1] / s, p[2] * a],
+    ),
+    # S = (c + z A) / (1 + d A): c = s c', z = s z' / a, d = d' / a
+    "ratio": (
+        lambda p, a, s: [s * p[0], s * p[1] / a, p[2] / a],
+        lambda p, a, s: [p[0] / s, p[1] * a / s, p[2] * a],
+    ),
+    # S = d / (1 + c A^-z): d = s d', c = c' a^z
+    "mmf": (
+        lambda p, a, s: [s * p[0], p[1] * a ** p[2], p[2]],
+        lambda p, a, s: [p[0] / s, p[1] * a ** -p[2], p[2]],
+    ),
+    # S = d exp(-exp(-z (A - c))): d = s d', z = z' / a, c = c' a
+    "gompertz": (
+        lambda p, a, s: [s * p[0], p[1] / a, p[2] * a],
+        lambda p, a, s: [p[0] / s, p[1] * a, p[2] / a],
+    ),
+    # S = d (1 - exp(-c A^z)): d = s d', c = c' a^-z
+    "weibull3": (
+        lambda p, a, s: [s * p[0], p[1] * a ** -p[2], p[2]],
+        lambda p, a, s: [p[0] / s, p[1] * a ** p[2], p[2]],
+    ),
+    # S = d (1 - exp(-c A^z))^f: d = s d', c = c' a^-z
+    "weibull4": (
+        lambda p, a, s: [s * p[0], p[1] * a ** -p[2], p[2], p[3]],
+        lambda p, a, s: [p[0] / s, p[1] * a ** p[2], p[2], p[3]],
+    ),
+    # S = d (1 - exp(-z A))^c: d = s d', z = z' / a
+    "chapman": (
+        lambda p, a, s: [s * p[0], p[1] / a, p[2]],
+        lambda p, a, s: [p[0] / s, p[1] * a, p[2]],
+    ),
+    # S = d (1 - (1 + (A / c)^z)^-f): d = s d', c = c' a
+    "betap": (
+        lambda p, a, s: [s * p[0], p[1] * a, p[2], p[3]],
+        lambda p, a, s: [p[0] / s, p[1] / a, p[2], p[3]],
+    ),
+    # S = c / (f + A^-z): c = s c' a^-z, f = f' a^-z
+    "heleg": (
+        lambda p, a, s: [s * p[0] * a ** -p[2], p[1] * a ** -p[2], p[2]],
+        lambda p, a, s: [p[0] * a ** p[2] / s, p[1] * a ** p[2], p[2]],
+    ),
+}
+# Models whose area isn't rescaled (see above).
+_AREA_UNSCALED = {"epm1", "epm2"}
 
 
 # ---------------------------------------------------------------------------
@@ -238,13 +363,19 @@ def _fit_nls(
     species = np.asarray(data["species"], dtype=float)
     n = len(area)
 
+    # The fit runs on rescaled data (see _RESCALE).
+    a_scale = 1.0 if name in _AREA_UNSCALED else float(np.exp(np.mean(np.log(area))))
+    s_scale = float(np.max(species))
+    to_natural, to_scaled = _RESCALE[name]
+    area_s, species_s = area / a_scale, species / s_scale
+
     log_idx = [spec.param_names.index(p) for p in spec.log_params]
     lower = _to_search_scale(spec.bounds_lower, log_idx)
     upper = _to_search_scale(spec.bounds_upper, log_idx)
 
     def residuals(p: np.ndarray) -> np.ndarray:
-        pred = spec.func(area, *(_to_natural_scale(p, log_idx) if log_idx else p))
-        res = species - pred
+        pred = spec.func(area_s, *(_to_natural_scale(p, log_idx) if log_idx else p))
+        res = species_s - pred
         # Replace any NaN/Inf with a large penalty
         return np.where(np.isfinite(res), res, 1e10)
 
@@ -272,7 +403,14 @@ def _fit_nls(
                 f"start_from values for {bad} must be positive: model '{name}' "
                 f"searches them on a log scale"
             )
-        starts: Iterable[Sequence[float]] = [[start_from[k] for k in spec.param_names]]
+        given = np.array([start_from[k] for k in spec.param_names], dtype=float)
+        with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+            warm = np.array(to_scaled(given, a_scale, s_scale), dtype=float)
+        if np.all(np.isfinite(warm)) and all(warm[i] > 0 for i in log_idx):
+            starts: Iterable[Sequence[float]] = [warm.tolist()]
+        else:  # it doesn't survive rescaling (overflow, or a log parameter at 0)
+            logger.debug("Model '%s': warm start %s can't be rescaled; using the grid", name, given)
+            starts = product(*spec.start_grid)
     else:
         starts = product(*spec.start_grid)
 
@@ -378,15 +516,23 @@ def _fit_nls(
         except Exception:
             logger.debug("Model '%s': polishing the best fit failed", name, exc_info=True)
 
-    rss = 2.0 * best_result.cost
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        values = np.array(
+            to_natural(_to_natural_scale(best_result.x, log_idx), a_scale, s_scale), dtype=float
+        )
+        # RSS in the data's units, from the converted parameters: it is what's
+        # reported, and it checks the conversion.
+        rss = float(np.sum((species - spec.func(area, *values)) ** 2))
+    if not (np.all(np.isfinite(values)) and np.isfinite(rss)):
+        logger.info("Model '%s': the fit's parameters overflow in the data's units", name)
+        return _failed_fit(name, spec.param_names, n, data)
+    params = dict(zip(spec.param_names, (float(v) for v in values), strict=True))
     ss_tot = np.sum((species - np.mean(species)) ** 2)
-    r_squared = 1.0 - rss / ss_tot
+    # R² is undefined when every island has the same richness.
+    r_squared = 1.0 - rss / ss_tot if ss_tot > 0 else np.nan
 
     k = len(spec.param_names) + 1  # +1 for sigma
     aic, aicc, bic = _compute_ic(k, n, rss)
-    params = dict(
-        zip(spec.param_names, _to_natural_scale(best_result.x, log_idx).tolist(), strict=True)
-    )
 
     return SARFit(
         model=name,
@@ -430,7 +576,7 @@ _register(
         bounds_lower=[1e-10, -5.0],
         bounds_upper=[1e6, 5.0],
         start_grid=[
-            [1.0, 5.0, 10.0, 30.0, 50.0, 100.0],
+            [0.05, 0.1, 0.3, 0.5, 1.0, 2.0],
             [0.05, 0.1, 0.2, 0.3, 0.5, 0.8, 1.0, 1.5],
         ],
     )
@@ -445,8 +591,8 @@ _register(
         bounds_lower=[-1e6, 1e-10, -5.0],
         bounds_upper=[1e6, 1e6, 5.0],
         start_grid=[
-            [-100.0, -10.0, 0.0, 10.0],
-            [1.0, 10.0, 50.0, 100.0],
+            [-1.0, -0.3, 0.0, 0.1],
+            [0.1, 0.3, 1.0, 3.0],
             [0.05, 0.15, 0.3, 0.5, 1.0],
         ],
     )
@@ -461,8 +607,8 @@ _register(
         bounds_lower=[-1e6, -1e6],
         bounds_upper=[1e6, 1e6],
         start_grid=[
-            [-10.0, 0.0, 0.3, 1.0, 10.0, 50.0],
-            [1.0, 10.0, 20.0, 30.0, 50.0, 80.0, 100.0],
+            [-1.0, -0.3, 0.0, 0.3, 1.0],
+            [0.01, 0.03, 0.1, 0.3, 1.0],
         ],
     )
 )
@@ -476,8 +622,8 @@ _register(
         bounds_lower=[-1e6, -1e6],
         bounds_upper=[1e6, 1e6],
         start_grid=[
-            [0.0, 10.0, 50.0, 70.0, 100.0],
-            [0.01, 0.1, 0.2, 0.5, 1.0],
+            [0.0, 0.1, 0.3, 0.5, 1.0],
+            [0.001, 0.01, 0.03, 0.1, 1.0],
         ],
     )
 )
@@ -496,9 +642,9 @@ _register(
         bounds_lower=[0.0, -50.0, -50.0],
         bounds_upper=[np.inf, 50.0, 50.0],
         start_grid=[
-            [1e-6, 1e-3, 0.1, 10.0, 100.0],
-            [0.05, 0.27, 1.0, 3.5, 8.0],
-            [-1.0, -0.3, 0.0, 0.15, 0.5, 1.0],
+            [1e-08, 1e-05, 0.001, 0.03, 0.3],
+            [0.05, 0.3, 1.0, 3.0, 8.0],
+            [-1.0, -0.3, 0.0, 0.1, 0.5, 1.0],
         ],
         # c spans dozens of orders of magnitude with the area units (1e-49 in m²).
         log_params=("c",),
@@ -521,7 +667,7 @@ _register(
         bounds_lower=[0.0, 0.0, -np.inf],
         bounds_upper=[np.inf, 1.0, np.inf],
         start_grid=[
-            [0.5, 5.0, 20.0, 50.0, 100.0],
+            [0.002, 0.02, 0.06, 0.15, 0.3],
             [0.05, 0.25, 0.5, 0.9],
             [-10.0, -1.0, 0.0, 0.5, 1.0, 10.0],
         ],
@@ -542,9 +688,9 @@ _register(
         bounds_lower=[1e-10, -5.0, 0.0],
         bounds_upper=[1e6, 5.0, 10.0],
         start_grid=[
-            [1.0, 5.0, 8.6, 20.0, 50.0],
-            [0.1, 0.3, 0.5, 0.67, 1.0],
-            [0.0001, 0.001, 0.002, 0.01, 0.1],
+            [0.05, 0.1, 0.3, 0.5, 1.0],
+            [0.1, 0.3, 0.5, 0.7, 1.0],
+            [0.001, 0.01, 0.03, 0.1, 0.3],
         ],
     )
 )
@@ -563,9 +709,9 @@ _register(
         bounds_lower=[1e-10, -5.0, -np.inf],
         bounds_upper=[1e6, 5.0, np.inf],
         start_grid=[
-            [10.0, 50.0, 100.0, 195.0, 500.0],
+            [0.1, 0.3, 0.5, 1.0, 2.0],
             [0.001, 0.01, 0.05, 0.1, 0.5],
-            [1.0, 5.0, 10.0, 25.0, 50.0],
+            [0.03, 0.1, 0.3, 1.0, 3.0],
         ],
     )
 )
@@ -581,8 +727,8 @@ _register(
         bounds_lower=[1e-10, 1e-10],
         bounds_upper=[1e6, 1e6],
         start_grid=[
-            [5.0, 10.0, 20.0, 40.0, 60.0, 80.0, 100.0],
-            [0.5, 1.0, 2.0, 3.5, 5.0, 10.0, 50.0],
+            [0.01, 0.03, 0.1, 0.2, 0.3, 0.5],
+            [0.001, 0.01, 0.03, 0.1, 0.3, 1.0, 3.0],
         ],
     )
 )
@@ -596,8 +742,8 @@ _register(
         bounds_lower=[1e-10, 1e-10],
         bounds_upper=[1e6, 1e6],
         start_grid=[
-            [100.0, 150.0, 200.0, 222.0, 300.0, 500.0],
-            [5.0, 10.0, 20.0, 47.0, 100.0, 200.0],
+            [0.3, 0.5, 0.8, 1.0, 1.5, 3.0],
+            [0.03, 0.1, 0.3, 1.0, 3.0, 10.0],
         ],
     )
 )
@@ -611,8 +757,8 @@ _register(
         bounds_lower=[1e-10, 1e-10],
         bounds_upper=[1e6, 100.0],
         start_grid=[
-            [100.0, 150.0, 200.0, 208.0, 300.0, 500.0],
-            [0.001, 0.005, 0.01, 0.014, 0.05, 0.1],
+            [0.3, 0.5, 0.8, 1.0, 1.5, 3.0],
+            [0.01, 0.03, 0.1, 0.3, 1.0, 3.0],
         ],
     )
 )
@@ -626,9 +772,9 @@ _register(
         bounds_lower=[1e-10, 1e-10, 1e-10],
         bounds_upper=[1e6, 1e6, 100.0],
         start_grid=[
-            [150.0, 200.0, 209.0, 300.0],
-            [100.0, 150.0, 185.0, 300.0],
-            [0.001, 0.005, 0.01, 0.989, 1.0],
+            [0.5, 0.8, 1.0, 2.0],
+            [0.3, 0.6, 1.0, 2.0],
+            [0.003, 0.03, 0.1, 0.3, 1.0],
         ],
     )
 )
@@ -642,9 +788,9 @@ _register(
         bounds_lower=[-1e6, 1e-10, 1e-10],
         bounds_upper=[1e6, 1e6, 100.0],
         start_grid=[
-            [-10.0, 0.0, 10.0, 20.0, 50.0],
-            [0.5, 1.0, 3.5, 5.0, 10.0],
-            [0.001, 0.005, 0.015, 0.05, 0.1],
+            [-0.1, 0.0, 0.03, 0.1, 0.3],
+            [0.03, 0.1, 0.3, 1.0, 3.0],
+            [0.03, 0.1, 0.3, 1.0, 3.0],
         ],
     )
 )
@@ -660,9 +806,9 @@ _register(
         bounds_lower=[1e-10, 1e-10, 1e-10],
         bounds_upper=[np.inf, np.inf, 10.0],
         start_grid=[
-            [100.0, 150.0, 223.0, 300.0, 500.0],
-            [10.0, 30.0, 45.0, 80.0, 150.0],
-            [0.1, 0.5, 0.99, 1.5, 2.0],
+            [0.3, 0.5, 1.0, 2.0, 5.0],
+            [0.1, 0.5, 1.0, 3.0, 10.0],
+            [0.1, 0.5, 1.0, 1.5, 2.0],
         ],
         # On small samples d and c grow together toward a power-law limit.
         log_params=("d", "c"),
@@ -678,9 +824,9 @@ _register(
         bounds_lower=[1e-10, 1e-10, -1e6],
         bounds_upper=[np.inf, 100.0, 1e6],
         start_grid=[
-            [150.0, 200.0, 211.0, 300.0, 500.0],
-            [0.001, 0.005, 0.01, 0.017, 0.05, 0.1],
-            [0.0, 10.0, 38.0, 50.0, 100.0],
+            [0.5, 0.8, 1.0, 2.0, 5.0],
+            [0.03, 0.1, 0.3, 1.0, 3.0, 10.0],
+            [0.0, 0.1, 0.3, 1.0, 3.0],
         ],
     )
 )
@@ -699,9 +845,9 @@ _register(
         bounds_lower=[1e-10, 0.0, 1e-10],
         bounds_upper=[np.inf, 100.0, 10.0],
         start_grid=[
-            [150.0, 200.0, 208.0, 300.0, 500.0],
-            [0.001, 0.01, 0.029, 0.1, 0.5],
-            [0.1, 0.5, 0.83, 1.0, 1.5],
+            [0.5, 0.8, 1.0, 2.0, 5.0],
+            [0.01, 0.1, 0.3, 1.0, 3.0],
+            [0.1, 0.5, 1.0, 1.5, 2.0],
         ],
         # On small samples d runs off toward a power-law limit, with c shrinking.
         log_params=("d", "c"),
@@ -723,8 +869,8 @@ _register(
         bounds_lower=[1e-10, 0.0, 1e-10, 1e-10],
         bounds_upper=[np.inf, 100.0, 10.0, 100.0],
         start_grid=[
-            [150.0, 200.0, 300.0],
-            [1e-15, 1e-9, 5e-5, 0.007, 0.14, 1.0],
+            [0.5, 1.0, 2.0],
+            [1e-08, 1e-05, 0.001, 0.03, 0.3, 1.0],
             [0.5, 1.0, 3.0, 6.0, 9.0],
             [0.05, 0.1, 0.5, 1.0, 2.0],
         ],
@@ -747,9 +893,9 @@ _register(
         bounds_lower=[1e-10, 1e-10, 1e-10],
         bounds_upper=[1e6, 100.0, 100.0],
         start_grid=[
-            [150.0, 200.0, 208.0, 300.0, 500.0],
-            [0.001, 0.005, 0.01, 0.05, 0.1],
-            [0.1, 0.5, 0.68, 1.0, 2.0],
+            [0.5, 0.8, 1.0, 2.0, 5.0],
+            [0.03, 0.1, 0.3, 1.0, 3.0],
+            [0.1, 0.3, 0.5, 1.0, 2.0],
         ],
     )
 )
@@ -768,18 +914,17 @@ _register(
         bounds_lower=[1e-10, 1e-10, 1e-10, 1e-10],
         bounds_upper=[1e6, 1e6, 10.0, 100.0],
         start_grid=[
-            [150.0, 200.0, 208.0, 300.0],
-            [50.0, 100.0, 378.0, 500.0, 1000.0],
-            [0.1, 0.5, 0.9, 1.5, 2.0],
-            [0.5, 1.0, 2.0, 5.2, 10.0],
+            [0.5, 0.8, 1.0, 2.0],
+            [0.3, 1.0, 3.0, 10.0, 30.0],
+            [0.1, 0.5, 1.0, 1.5, 2.0],
+            [0.5, 1.0, 2.0, 5.0, 10.0],
         ],
     )
 )
 
 
 # 20. heleg: S = c / (f + A^(-z))
-#     R sars params: c, f, z (all positive). Asymptote = c / f.
-#     R reference: c=4.95781, f=0.022238, z=0.988229
+#     Parameters c, f, z (all positive). Asymptote = c / f.
 def _heleg_func(a, c, f, z):
     with np.errstate(divide="ignore", invalid="ignore"):
         result = c / (f + a ** (-z))
@@ -794,9 +939,9 @@ _register(
         bounds_lower=[1e-10, 1e-10, 1e-10],
         bounds_upper=[1e6, 1e6, 1e6],
         start_grid=[
-            [1.0, 5.0, 10.0, 50.0, 100.0],
-            [0.001, 0.01, 0.022, 0.05, 0.1],
-            [0.1, 0.5, 0.99, 2.0, 5.0],
+            [0.03, 0.1, 0.3, 1.0, 3.0],
+            [0.03, 0.1, 0.3, 1.0, 3.0],
+            [0.1, 0.5, 1.0, 2.0, 5.0],
         ],
     )
 )

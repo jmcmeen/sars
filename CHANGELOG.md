@@ -37,6 +37,16 @@ reconstructed from the commit history and the
 
 ### Fixed
 
+- Fits no longer depend on the data's units. The start grids and bounds were fixed numbers,
+  many of them the Galápagos fit's own values, so in other units fits went wrong while still
+  reporting convergence. With areas in m², negexpo, asymp, gompertz and chapman fitted
+  nothing (R² 0) and p1 did worse than a flat line. Each model is now fitted on rescaled data
+  (area over its geometric mean, richness over its maximum) from neutral start values, and
+  its parameters converted back. Every model except epm1 and epm2, whose form changes with
+  the area units, gives the same fit in any units (weibull4 to within its flat ridge). Fitting all 20 models on Galápagos is
+  about a third faster (#111)
+- `SARFit.r_squared` is NaN, not `-inf` or NaN with a warning, when every island has the
+  same richness, where R² is undefined (#111)
 - Docs: heleg's formula in the model reference (`c / (f + A^(-z))`, as fitted), koba
   listed with the non-asymptotic models (it has no asymptote), the full Preston (1962)
   citation for the bundled Galápagos data, and two statements in the Galápagos notebook:
