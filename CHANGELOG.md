@@ -26,6 +26,15 @@ reconstructed from the commit history and the
   parameters needs more than k + 1 observations), as R's `summary` does, and raises
   `ValueError` when that's true of every model, instead of naming one of them best (#109)
 
+### Changed
+
+- **Behavior change:** the `shape` column of `sar_multi`'s summary follows Matthews et al.
+  (2019, Table 1) with R `sars`'s later corrections. p2 is now "sigmoid" (was "convex");
+  epm1, p1 and asymp are "convex/sigmoid" (were "convex"), and mmf and heleg are
+  "convex/sigmoid" (were "sigmoid"), for models whose parameters decide the shape. Code
+  that filters on `shape` gets different models. The model reference and README give each
+  model's shape (#113)
+
 ### Fixed
 
 - Docs: heleg's formula in the model reference (`c / (f + A^(-z))`, as fitted), koba

@@ -55,9 +55,13 @@ For a complete analysis of these data, see the
 
 | Type | Models |
 | ------ | -------- |
-| Non-asymptotic | `power`, `powerR`, `loga`, `koba`, `linear`, `epm1`, `epm2`, `p1`, `p2` |
-| Asymptotic convex | `monod`, `negexpo`, `asymp`, `ratio` |
-| Asymptotic sigmoid | `mmf`, `gompertz`, `weibull3`, `weibull4`, `chapman`, `betap`, `heleg` |
+| Linear | `linear` |
+| Non-asymptotic, convex | `power`, `powerR`, `loga`, `koba` |
+| Non-asymptotic, convex or sigmoid | `epm1`, `p1` |
+| Non-asymptotic, sigmoid | `epm2`, `p2` |
+| Asymptotic, convex | `monod`, `negexpo`, `ratio` |
+| Asymptotic, convex or sigmoid | `asymp`, `mmf`, `heleg` |
+| Asymptotic, sigmoid | `gompertz`, `weibull3`, `weibull4`, `chapman`, `betap` |
 
 Each model has a dedicated function (e.g. `sars.sar_power()`, `sars.sar_negexpo()`) and returns a `SARFit` object with parameters, R², AIC, AICc, and BIC.
 
