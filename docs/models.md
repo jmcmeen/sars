@@ -6,13 +6,15 @@ object.
 
 ## Non-asymptotic models
 
-These models increase without bound as area increases.
+These models have no asymptote parameter. Most increase without bound as area
+increases; p1 can peak and then fall, and epm1 levels off at c when d > 0.
 
 | Function | Formula | Parameters |
 |----------|---------|------------|
 | `sar_power` | S = c &middot; A^z | c, z |
 | `sar_powerR` | S = f + c &middot; A^z | f, c, z |
 | `sar_loga` | S = c + z &middot; log(A) | c, z |
+| `sar_koba` | S = c &middot; log(1 + A/z) | c, z |
 | `sar_linear` | S = c + m &middot; A | c, m |
 | `sar_epm1` | S = c &middot; A^(z &middot; A^-d) | c, z, d |
 | `sar_epm2` | S = c &middot; A^(z - d / A) | c, z (0 to 1), d |
@@ -25,7 +27,6 @@ These models approach a finite asymptote with a convex (decelerating) curve.
 
 | Function | Formula | Parameters |
 |----------|---------|------------|
-| `sar_koba` | S = c &middot; log(1 + A/z) | c, z |
 | `sar_monod` | S = d &middot; A / (c + A) | d, c |
 | `sar_negexpo` | S = d &middot; (1 - exp(-z &middot; A)) | d, z |
 | `sar_asymp` | S = d - c &middot; exp(-z &middot; A) | d, c, z |
@@ -46,7 +47,7 @@ inflection point.
 | `sar_weibull4` | S = d &middot; (1 - exp(-c &middot; A^z))^f | d, c, z, f |
 | `sar_chapman` | S = d &middot; (1 - exp(-z &middot; A))^c | d, z, c |
 | `sar_betap` | S = d &middot; (1 - (1 + (A/c)^z)^(-f)) | d, c, z, f |
-| `sar_heleg` | S = d / (1 + slope^log(c / A)) | d, slope, c |
+| `sar_heleg` | S = c / (f + A^(-z)) | c, f, z |
 
 ## Fitting details
 

@@ -26,6 +26,14 @@ reconstructed from the commit history and the
   parameters needs more than k + 1 observations), as R's `summary` does, and raises
   `ValueError` when that's true of every model, instead of naming one of them best (#109)
 
+### Fixed
+
+- Docs: heleg's formula in the model reference (`c / (f + A^(-z))`, as fitted), koba
+  listed with the non-asymptotic models (it has no asymptote), the full Preston (1962)
+  citation for the bundled Galápagos data, and two statements in the Galápagos notebook:
+  `summary`'s shape column is each model's typical shape, and the bootstrap's central
+  curve (#112)
+
 ## [0.8.1] - 2026-11-10
 
 ### Fixed

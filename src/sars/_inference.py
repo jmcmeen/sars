@@ -45,8 +45,8 @@ ALL_MODEL_NAMES: list[str] = [
 # dynamically based on fitted parameter values — a model can exhibit
 # convex, sigmoid, or other curvature depending on the data. Here we
 # assign each model its *typical* shape class. In particular, several
-# asymptotic models listed as "convex" (koba, monod, negexpo, asymp,
-# ratio) can produce sigmoid curves for certain parameter combinations,
+# models listed as "convex" (koba, monod, negexpo, asymp, ratio) can
+# produce sigmoid curves for certain parameter combinations,
 # and some sigmoid models can appear convex. Users needing the dynamic
 # classification from R should inspect the fitted curve directly.
 _MODEL_SHAPE: dict[str, str] = {
@@ -398,7 +398,8 @@ class BootstrappedCI:
         Area values at which predictions were made.
     mean : np.ndarray
         Mean prediction across bootstrap replicates. A few resamples whose
-        prediction runs away can dominate it; ``median`` is the robust centre.
+        prediction runs away can dominate it; for a central curve use the
+        averaged fit's own prediction, or ``median`` as the interval's centre.
     lower : np.ndarray
         Lower confidence bound.
     upper : np.ndarray
@@ -628,7 +629,8 @@ def bootstrap_ci(
         warnings.warn(
             f"The bootstrap mean is outside the central 95% of the resample "
             f"predictions at {outside} of {len(area_grid)} areas: a few resamples' "
-            f"predictions run away there. Use the median as the central curve.",
+            f"predictions run away there. Use the averaged fit's own prediction as the "
+            f"central curve, or the median as the interval's centre.",
             stacklevel=2,
         )
     return BootstrappedCI(

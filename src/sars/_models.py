@@ -570,7 +570,7 @@ _register(
     )
 )
 
-# --- Asymptotic convex models (5) ---
+# --- koba (convex, no asymptote), then the asymptotic convex models (4) ---
 
 # 9. koba: S = c * log(1 + A/z)
 _register(
