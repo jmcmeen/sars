@@ -18,6 +18,12 @@ reconstructed from the commit history and the
   column still gives the model's general shape, which for five models is "convex/sigmoid"
   and doesn't say which a fit took (#116)
 
+### Fixed
+
+- The warm-start test compared weibull4's AICc on the Galápagos data to 1e-6, tighter than
+  that fit's flat ridge allows, and failed on Python 3.10; it now allows the tolerance the
+  R-reference tests use for fits on a ridge (#136)
+
 ## [0.9.0] - 2026-11-19
 
 ### Added

@@ -165,7 +165,10 @@ def test_a_warm_start_takes_natural_scale_values(galap, galap_fits):
 
     fit = galap_fits["weibull4"]
     warm = _fit_nls("weibull4", galap, start_from=fit.params)
-    assert warm.aicc == pytest.approx(fit.aicc, abs=1e-6)
+    # weibull4 sits on a flat ridge here, and where a solver stops along it varies
+    # with the platform's floating point by a few thousandths of an AICc unit. A
+    # start misread as log-scale values would be whole units away.
+    assert warm.aicc == pytest.approx(fit.aicc, abs=1e-2)
 
 
 def test_a_zero_lower_bound_becomes_the_log_floor():
