@@ -72,6 +72,22 @@ reconstructed from the commit history and the
   173 Aegean islands; Matthews et al. 2020) and `load_niering()` (plants on 32 islands of
   Kapingamarangi Atoll; Niering 1963). Areas are in km². A new Datasets page in the
   documentation lists them with their sources and a threshold example (#126)
+- Residual checks before model averaging, as in R `sars`. `SARFit.residual_checks()` returns
+  a `ResidualChecks` with a normality test of the residuals (`"shapiro"` or `"kolmogorov"`),
+  a homoscedasticity test (the Spearman, Pearson or Kendall correlation of the squared
+  residuals with the fitted values, `"cor.fitted"`, or with area, `"cor.area"`) and whether
+  any fitted value at the observed areas is negative. `sar_multi`, `sar_average` and
+  `bootstrap_ci` take `normality`, `homoscedasticity`, `cor_method`, `neg_check`,
+  `alpha_normality` and `alpha_homoscedasticity`: models that fail a check asked for are
+  left out, listed with the reason in the new `MultiSARFit.excluded` and in one warning.
+  The default is no checks, so results are unchanged unless you ask.
+  A model whose fitted values aren't all finite fails any check asked for. `sar_average` and
+  `bootstrap_ci` raise `ValueError` if every model fails; `bootstrap_ci` applies the checks
+  to the fits on the original data only, which fixes the models every resample averages.
+  Statistics, p values and the models left out match R on the Galápagos data.
+  `"kolmogorov"` uses a normal distribution with the residuals' mean and standard deviation
+  (R's `"kolmo"` uses a standard normal, which depends on the units of richness), and R's
+  Lilliefors test is not offered (#121)
 
 ### Fixed
 

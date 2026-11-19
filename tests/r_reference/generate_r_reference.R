@@ -65,7 +65,7 @@ fit_all(galap7, "galap7")
 # 3. Multimodel weights. R's sar_average no longer offers
 #    mmf (and Python has no logistic), so both use the 19 models they share.
 #    Plain AICc weights: no residual normality, homogeneity or negative-value
-#    checks (the R defaults).
+#    checks (the R defaults; section 10 has them).
 shared <- setdiff(models, "mmf")
 average_ref <- function(data, stem) {
   set.seed(SEED)
@@ -252,6 +252,92 @@ for (nm in names(other)) {
   )
 }
 write.csv(do.call(rbind, th_other), out("threshold_datasets.csv"), row.names = FALSE)
+# 10. Residual checks. Each fit stores the tests asked for (normaTest, homoTest,
+#    homoCor) and whether any fitted value is negative (neg_check). Three
+#    seeded fits per model, the same fit each time, cover Shapiro-Wilk and the
+#    three correlations. R's "kolmo" compares the residuals with a standard
+#    normal, which Python doesn't offer; the Kolmogorov-Smirnov reference is
+#    base R's ks.test on the fit's residuals against a normal with their mean
+#    and standard deviation. kept is whether sar_average keeps the model when
+#    asked for the Shapiro-Wilk test, the Spearman correlation with the fitted
+#    values and the negative-value check (NA for mmf, which it doesn't offer).
+#    sar_average fits the models itself, one seed for the whole set, so where
+#    R's fit of a model varies with the random starts (betap and chapman on
+#    the seven islands) kept can disagree with that model's row.
+checks_ref <- function(data, stem) {
+  rows <- list()
+  for (m in models) {
+    fn <- get(paste0("sar_", m))
+    fit_with <- function(...) {
+      set.seed(SEED)
+      suppressWarnings(fn(data = data, normaTest = "shapiro", ...))
+    }
+    a <- fit_with(homoTest = "cor.fitted", homoCor = "spearman")
+    b <- fit_with(homoTest = "cor.area", homoCor = "kendall")
+    p <- fit_with(homoTest = "cor.fitted", homoCor = "pearson")
+    res <- a$residuals
+    ks <- ks.test(res, "pnorm", mean(res), sd(res))
+    rows[[m]] <- data.frame(
+      model = m,
+      shapiro_w = a$normaTest[[2]]$statistic, shapiro_p = a$normaTest[[2]]$p.value,
+      ks_d = ks$statistic, ks_p = ks$p.value,
+      fitted_spearman = a$homoTest[[2]]$estimate,
+      fitted_spearman_p = a$homoTest[[2]]$p.value,
+      area_kendall = b$homoTest[[2]]$estimate,
+      area_kendall_p = b$homoTest[[2]]$p.value,
+      fitted_pearson = p$homoTest[[2]]$estimate,
+      fitted_pearson_p = p$homoTest[[2]]$p.value,
+      neg_check = a$neg_check
+    )
+  }
+  tab <- do.call(rbind, rows)
+  set.seed(SEED)
+  av <- suppressWarnings(sar_average(obj = shared, data = data, normaTest = "shapiro",
+                                     homoTest = "cor.fitted", homoCor = "spearman",
+                                     neg_check = TRUE, verb = FALSE, display = FALSE))
+  tab$kept <- ifelse(tab$model %in% shared, tab$model %in% names(av$details$mod_names), NA)
+  write.csv(tab, out(paste0("residual_checks_", stem, ".csv")), row.names = FALSE)
+}
+checks_ref(galap, "galap")
+checks_ref(galap7, "galap7")
+
+# 11. Correlation tests away from the SAR fits: base R's cor.test of 1..n with
+#    each y. For Spearman's rho the p value is exact up to n = 9 and a series
+#    beyond; ties switch both tests to their large-sample approximations.
+cor_cases <- list(
+  spearman = list(c(2, 1, 4, 3, 5), c(5, 4, 3, 1, 2), c(3, 5, 1, 2, 4),
+                  c(1, 3, 2, 5, 4, 7, 6, 9, 8), c(9, 7, 8, 4, 6, 5, 1, 3, 2),
+                  c(3, 1, 4, 2, 6, 5, 9, 7, 10, 8),
+                  c(12, 10, 11, 7, 9, 8, 4, 6, 5, 1, 3, 2),
+                  c(7, 2, 11, 4, 16, 1, 9, 13, 5, 20, 3, 15, 8, 18, 6, 12, 10, 19, 14, 17),
+                  c(1, 1, 2, 4, 3, 6, 5)),
+  kendall = list(c(2, 1, 4, 3, 5), c(3, 1, 4, 2, 6, 5, 9, 7, 10, 8),
+                 c(1, 1, 2, 4, 3, 6, 5, 8))
+)
+cor_rows <- list()
+for (method in names(cor_cases)) for (y in cor_cases[[method]]) {
+  ct <- suppressWarnings(cor.test(seq_along(y), y, method = method))
+  cor_rows[[length(cor_rows) + 1]] <- data.frame(
+    method = method, y = paste(y, collapse = " "),
+    estimate = unname(ct$estimate), p = ct$p.value)
+}
+write.csv(do.call(rbind, cor_rows), out("correlation_tests.csv"), row.names = FALSE)
+
+# 12. Kolmogorov-Smirnov tests against a normal with the sample's mean and
+#    standard deviation, for x = sin(i) + (i mod 7) / 3, i = 1..n. ks.test's p
+#    value is exact below 100 untied observations and asymptotic otherwise;
+#    tied makes the first two values equal.
+ks_rows <- list()
+for (n in c(20, 99, 100, 150)) for (tied in c(FALSE, TRUE)) {
+  i <- seq_len(n)
+  x <- sin(i) + (i %% 7) / 3
+  if (tied) x[2] <- x[1]
+  ks <- suppressWarnings(ks.test(x, "pnorm", mean(x), sd(x)))
+  ks_rows[[length(ks_rows) + 1]] <- data.frame(
+    n = n, tied = tied, d = unname(ks$statistic), p = ks$p.value,
+    exact = isTRUE(ks$exact))
+}
+write.csv(do.call(rbind, ks_rows), out("ks_tests.csv"), row.names = FALSE)
 
 cat("Reference tables written.\n\nPower law:\n")
 print(sar_power(galap))

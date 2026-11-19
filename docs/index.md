@@ -16,6 +16,7 @@ A conceptual mirror of the R [`sars`](https://cran.r-project.org/package=sars) p
 - **Multi-model inference** -- fit all models at once, ranked by AICc with Akaike weights
 - **Model averaging** -- weighted-average predictions across candidate models
 - **Prediction** -- a table of predicted richness at any areas, from any fit
+- **Residual checks** -- normality, homoscedasticity and negative-prediction checks on each fit, optionally leaving out the models that fail before averaging
 - **Bootstrap confidence intervals** -- percentile-based CIs for averaged predictions
 - **Threshold models** -- piecewise regression for detecting breakpoints (small island effect), with bootstrap confidence intervals for the breakpoints
 - **Random placement** -- Coleman's null model for richness from a species-by-site abundance table

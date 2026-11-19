@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import least_squares
 
+from sars._checks import CheckOptions, ResidualChecks, run_checks
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -94,6 +96,72 @@ class SARFit:
             return "none"
         area = np.asarray(self.data["area"], dtype=float)
         return _curve_shape(self.predict, float(area.min()), float(area.max()))
+
+    def residual_checks(
+        self,
+        normality: str | None = "shapiro",
+        homoscedasticity: str | None = "cor.fitted",
+        cor_method: str = "spearman",
+    ) -> ResidualChecks:
+        """Test the residuals for normality and constant variance.
+
+        Least squares, and the information criteria built on it, assume
+        normal residuals of constant variance. These are the checks R sars
+        offers before model averaging (``normaTest``, ``homoTest`` and
+        ``neg_check``). ``sar_multi``, ``sar_average`` and ``bootstrap_ci``
+        can leave out the models that fail them.
+
+        Parameters
+        ----------
+        normality : str or None
+            Normality test for the residuals: ``"shapiro"`` (Shapiro-Wilk, the
+            default), ``"kolmogorov"`` (Kolmogorov-Smirnov against a normal
+            distribution with the residuals' mean and standard deviation), or
+            None for no test. Estimating the mean and standard deviation from
+            the residuals makes the Kolmogorov-Smirnov p value too large, so
+            that test rejects less often than its alpha suggests. R sars's
+            ``"kolmo"`` is a different test: it compares the residuals with a
+            standard normal, so its result depends on the units of richness.
+            R's ``"lillie"`` (Lilliefors) is not available.
+        homoscedasticity : str or None
+            Homoscedasticity test: the correlation of the squared residuals
+            with the fitted values (``"cor.fitted"``, the default) or with
+            area (``"cor.area"``), or None for no test.
+        cor_method : str
+            The correlation used by the homoscedasticity test: ``"spearman"``
+            (default), ``"pearson"`` or ``"kendall"``. p values are computed
+            as R's ``ks.test`` and ``cor.test`` compute them: exact for the
+            Kolmogorov-Smirnov test below 100 untied residuals and asymptotic
+            otherwise, exact for Kendall's tau below
+            50 untied observations and for Spearman's rho up to 9, a series
+            approximation for Spearman's rho beyond that, and the usual t or
+            normal approximation when values are tied. (Where that series
+            gives R a Spearman p value of exactly 0, far in the tail, this
+            reports the t distribution's small positive value.)
+
+        Returns
+        -------
+        ResidualChecks
+            The test statistics and p values, and whether any fitted value at
+            the observed areas is negative. If a fitted value isn't finite,
+            no test is run and ``finite_fitted`` is False.
+
+        Raises
+        ------
+        ValueError
+            If a test or correlation name is not one of those above.
+        """
+        return self._run_checks(
+            CheckOptions(
+                normality=normality, homoscedasticity=homoscedasticity, cor_method=cor_method
+            )
+        )
+
+    def _run_checks(self, options: CheckOptions) -> ResidualChecks:
+        """``residual_checks`` for options that are already validated."""
+        area = self.data["area"].to_numpy(dtype=float)
+        species = self.data["species"].to_numpy(dtype=float)
+        return run_checks(self.model, area, species, self.predict(area), options)
 
     def __repr__(self) -> str:
         p = "  ".join(f"{k}={v:.4f}" for k, v in self.params.items())

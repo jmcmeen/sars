@@ -27,8 +27,8 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from scipy import stats
 from scipy.optimize import least_squares
+from scipy.special import stdtr
 
 from sars._inference import akaike_weights
 from sars._models import _compute_ic
@@ -376,7 +376,7 @@ def _fit_candidate(model: str, terms: str, design: np.ndarray, data: pd.DataFram
     se = _std_errors(gradient, sigma2)
     # An exact fit has zero standard errors, and so no t statistics.
     with np.errstate(divide="ignore", invalid="ignore"):
-        p = 2.0 * stats.t.sf(np.abs(beta / se), dof)
+        p = 2.0 * stdtr(dof, -np.abs(beta / se))
 
     # Each coefficient and the residual variance count as a parameter. The
     # likelihood is unbounded as RSS goes to zero, so an exact fit is scored

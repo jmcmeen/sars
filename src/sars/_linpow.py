@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
-from scipy import stats
+from scipy.special import stdtr
 
 from sars._models import SARFit, _fit_nls, _validate_data
 
@@ -283,8 +283,8 @@ def lin_pow(
         logc_se = float(sigma * np.sqrt(1.0 / n + x.mean() ** 2 / sxx))
         logc_t = logc / logc_se
         z_t = z / z_se
-        logc_p = float(2.0 * stats.t.sf(abs(logc_t), df))
-        z_p = float(2.0 * stats.t.sf(abs(z_t), df))
+        logc_p = float(2.0 * stdtr(df, -abs(logc_t)))
+        z_p = float(2.0 * stdtr(df, -abs(z_t)))
 
     if flat:
         r_squared = adj_r_squared = float("nan")

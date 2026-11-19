@@ -11,6 +11,9 @@
 ## LinPowFit
 
 ::: sars.LinPowFit
+## ResidualChecks
+
+::: sars.ResidualChecks
 
 ## Fitting functions
 

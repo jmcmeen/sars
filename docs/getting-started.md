@@ -122,6 +122,60 @@ sars.sar_pred(avg, [5000, 10000]) # the averaged prediction
 Areas must be positive (a threshold fit made with `log_area=False` takes any finite
 area). An averaged prediction depends on which models were
 averaged, so compare it with R `sars`'s only over the same set of models.
+## Residual checks
+
+Least squares assumes residuals that are normal with constant variance. `residual_checks()`
+on a fit tests both, and reports whether the model predicts negative richness at any
+observed area:
+
+```python
+checks = sars.sar_power(galap).residual_checks()
+checks.normality_pvalue          # 0.150 (Shapiro-Wilk)
+checks.homoscedasticity_pvalue   # 0.037 (squared residuals vs fitted values, Spearman)
+checks.negative_fitted           # False
+```
+
+`normality` is `"shapiro"` (the default), `"kolmogorov"` or `None`. `homoscedasticity`
+correlates the squared residuals with the fitted values (`"cor.fitted"`, the default) or
+with area (`"cor.area"`), using `cor_method` `"spearman"`, `"pearson"` or `"kendall"`.
+
+`sar_multi`, `sar_average` and `bootstrap_ci` run no checks by default, as in R `sars`.
+Ask for them to leave out the models that fail, at `alpha_normality` and
+`alpha_homoscedasticity` (0.05 each):
+
+```python
+avg = sars.sar_average(
+    galap, normality="shapiro", homoscedasticity="cor.fitted", neg_check=True
+)
+avg.multi.excluded
+# {'power': 'residual variance not constant (spearman correlation of squared residuals
+#            with fitted values = 0.529, p = 0.0373 < 0.05)',
+#  'epm2': 'residual variance not constant (...)',
+#  'loga': 'negative fitted values',
+#  'linear': 'residuals not normal (shapiro p = 0.0202 < 0.05)'}
+```
+
+A warning lists the models left out, and the weights are shared among the rest. A model
+that fails more than one check is listed under the first, in the order normality,
+homoscedasticity, negative values. If every model fails, `sar_average` and `bootstrap_ci`
+raise `ValueError`. `bootstrap_ci` applies the checks once, to the fits on the original
+data: every resample averages the models that passed, so the interval belongs to the same
+average `sar_average` reports.
+
+Statistics and p values match R (`shapiro.test`, `ks.test`, `cor.test`), including where
+R switches from an exact p value to an approximate one (the Kolmogorov-Smirnov test at
+100 residuals, or when values are tied). On the Galápagos data the same models are left
+out as by R's `sar_average`. A model whose fitted values aren't all finite can't be
+tested, so it is left out whenever any check is asked for. Two differences from
+R `sars`:
+
+- `"kolmogorov"` compares the residuals with a normal distribution that has their own mean
+  and standard deviation. R's `normaTest = "kolmo"` compares them with a standard normal,
+  so its answer depends on the units of richness. Because the mean and standard deviation
+  are estimated, the test is conservative: it rejects less often than its alpha.
+- R's `normaTest = "lillie"` (the Lilliefors test, which corrects for that) is not
+  available. scipy doesn't have it, and no published formula gives its p value over the
+  whole range.
 
 ## Bootstrap confidence intervals
 
