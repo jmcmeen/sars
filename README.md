@@ -18,6 +18,7 @@ pip install sars
 ## Features
 
 - **20 SAR models** — power, logarithmic, asymptotic, sigmoid, and more
+- **Log-log power model** — the classic straight-line fit of log S on log A, with standard errors and p values
 - **Multi-model inference** — fit all models at once, ranked by AICc with Akaike weights
 - **Model averaging** — weighted-average predictions across candidate models
 - **Bootstrap confidence intervals** — percentile-based CIs for averaged predictions
@@ -35,7 +36,7 @@ galap = sars.load_galap()
 # Fit a single model
 fit = sars.sar_power(galap)
 print(fit)
-# SARFit(model='power', c=33.1792  z=0.2832, R²=0.4912, AICc=189.03)
+# SARFit(model='power', c=33.1803  z=0.2832, R²=0.4912, AICc=189.03)
 
 # Fit all 20 models and compare
 multi = sars.sar_multi(galap)

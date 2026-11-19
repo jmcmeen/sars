@@ -30,7 +30,7 @@ galap = sars.load_galap()
 # Fit a single model
 fit = sars.sar_power(galap)
 print(fit)
-# SARFit(model='power', c=33.1792  z=0.2832, R²=0.4912, AICc=189.03)
+# SARFit(model='power', c=33.1803  z=0.2832, R²=0.4912, AICc=189.03)
 
 # Fit all 20 models and compare
 multi = sars.sar_multi(galap)

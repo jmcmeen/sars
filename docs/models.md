@@ -25,6 +25,11 @@ or a dip too small to see doesn't change the label. The two columns can differ. 
 is `convex` over the data, and a model that can turn down at large areas (p1, epm1, epm2)
 is `none` when its fit does.
 
+`sars.lin_pow()` fits the power model the traditional way instead, as a straight line
+on log-log axes (log S = log c + z log A) by ordinary least squares, and returns a
+`LinPowFit`. It isn't one of the 20 models `sar_multi` compares: its R² is in log
+space, so it can't be ranked against theirs.
+
 ## Non-asymptotic models
 
 These models have no asymptote parameter. Most increase without bound as area

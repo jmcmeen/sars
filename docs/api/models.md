@@ -4,6 +4,14 @@
 
 ::: sars.SARFit
 
+## lin_pow
+
+::: sars.lin_pow
+
+## LinPowFit
+
+::: sars.LinPowFit
+
 ## Fitting functions
 
 ::: sars.sar_power

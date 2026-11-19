@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from sars._inference import AveragedSAR, MultiSARFit
+from sars._linpow import LinPowFit
 from sars._models import SARFit
 from sars._threshold import _fitted_data
 
@@ -355,5 +356,60 @@ def plot_threshold(
     ax.set_xlabel("ln(Area)" if fit.log_area else "Area")
     ax.set_ylabel("Species")
     ax.set_title(f"Threshold model: {model}")
+    ax.legend()
+    return ax
+
+
+def plot_lin_pow(
+    fit: LinPowFit,
+    ax: plt.Axes | None = None,
+    scatter_kw: dict | None = None,
+    line_kw: dict | None = None,
+) -> plt.Axes:
+    """Plot a log-log power model fit: the data and the fitted line on log-log axes.
+
+    Parameters
+    ----------
+    fit : LinPowFit
+        A fitted log-log power model.
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on. If None, creates a new figure.
+    scatter_kw : dict, optional
+        Extra keyword arguments passed to ``ax.scatter()`` for the
+        observed data points.
+    line_kw : dict, optional
+        Extra keyword arguments passed to ``ax.plot()`` for the fitted line.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The axes are logarithmic and labelled in area and richness units,
+        whatever the fit's log base. When a constant was added to the richness
+        (``fit.con``), the points and the line are of richness plus that
+        constant, the values the line was fitted to.
+    """
+    if ax is None:
+        _, ax = plt.subplots()
+
+    area = fit.data["area"].to_numpy(dtype=float)
+    species = fit.data["species"].to_numpy(dtype=float) + fit.con
+
+    s_defaults = {"color": "black", "zorder": 3, "label": "Observed"}
+    ax.scatter(area, species, **{**s_defaults, **(scatter_kw or {})})
+
+    # A power law is straight on log-log axes, so its two ends draw it.
+    ends = np.array([area.min(), area.max()])
+    l_defaults = {
+        "color": "dodgerblue",
+        "linewidth": 2,
+        "label": f"z={fit.z:.3f} (R²={fit.r_squared:.3f})",
+    }
+    ax.plot(ends, fit.predict(ends) + fit.con, **{**l_defaults, **(line_kw or {})})
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Area")
+    ax.set_ylabel(f"Species + {fit.con:g}" if fit.con else "Species")
+    ax.set_title("Log-log power model")
     ax.legend()
     return ax

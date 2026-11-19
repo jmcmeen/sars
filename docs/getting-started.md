@@ -35,11 +35,43 @@ The returned `SARFit` object contains fitted parameters, goodness-of-fit
 statistics, and a `predict()` method:
 
 ```python
-fit.params      # {'c': 33.1792, 'z': 0.2832}
+fit.params      # {'c': 33.1803, 'z': 0.2832}
 fit.r_squared   # 0.4912
 fit.aicc        # 189.03
 fit.predict(100.0)  # predicted richness for 100 km²
 ```
+
+## The log-log power model
+
+The power model is traditionally fitted as a straight line on log-log axes,
+log S = log c + z log A, by ordinary least squares. `lin_pow()` does that and
+reports the line's coefficients with their standard errors, t and p values, and
+R² in log space:
+
+```python
+lp = sars.lin_pow(galap)
+print(lp)
+# LinPowFit(logc=3.0186, c=20.4636, z=0.3385, R²=0.5298, log_base='e')
+lp.z, lp.z_se, lp.z_p   # slope, its standard error and p value
+lp.predict(100.0)       # c * 100 ** z, on the arithmetic scale
+```
+
+It minimises error in log richness, so its c and z differ from `sar_power()`'s,
+which minimises error in richness itself. `compare=True` fits both:
+
+```python
+lp = sars.lin_pow(galap, compare=True)
+print(lp.comparison[["c", "z"]].round(3))
+#                 c      z
+# fit
+# log-log    20.464  0.339
+# nonlinear  33.180  0.283
+```
+
+`log_base` takes "e" (the default), "2" or "10"; only `logc` depends on it. If an
+island has no species, `con` (default 1) is added to every richness value so the
+logs exist, and `predict()` takes it off again. `plot_lin_pow(lp)` draws the data
+and the line on log-log axes.
 
 ## Comparing all 20 models
 

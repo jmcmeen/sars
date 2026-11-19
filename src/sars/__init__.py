@@ -28,6 +28,7 @@ from sars._io import (
     from_pyinaturalist,
     load_galap,
 )
+from sars._linpow import LinPowFit, lin_pow
 from sars._models import (
     SARFit,
     sar_asymp,
@@ -51,13 +52,21 @@ from sars._models import (
     sar_weibull3,
     sar_weibull4,
 )
-from sars._plots import plot_average, plot_fit, plot_multi, plot_residuals, plot_threshold
+from sars._plots import (
+    plot_average,
+    plot_fit,
+    plot_lin_pow,
+    plot_multi,
+    plot_residuals,
+    plot_threshold,
+)
 from sars._threshold import ThresholdCI, ThresholdFit, sar_threshold, threshold_ci
 
 __all__ = [
     "__version__",
     "AveragedSAR",
     "BootstrappedCI",
+    "LinPowFit",
     "MultiSARFit",
     "SARFit",
     "ThresholdCI",
@@ -69,6 +78,7 @@ __all__ = [
     "from_df",
     "from_geodataframe",
     "from_pyinaturalist",
+    "lin_pow",
     "load_galap",
     "sar_average",
     "sar_multi",
@@ -76,6 +86,7 @@ __all__ = [
     "threshold_ci",
     "plot_average",
     "plot_fit",
+    "plot_lin_pow",
     "plot_multi",
     "plot_residuals",
     "plot_threshold",

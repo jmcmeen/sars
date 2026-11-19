@@ -30,6 +30,15 @@ reconstructed from the commit history and the
 - `plot_threshold` plots a threshold model on the scale it was fitted on: the data, the
   fitted segments (a discontinuous model's drawn apart at each jump), a line at each
   breakpoint and, given a `ThresholdCI`, its interval shaded (#119)
+- `lin_pow` fits the log-log power model, log S = log c + z log A, by ordinary least
+  squares, as R `sars`'s `lin_pow` does. It returns a `LinPowFit` with log c, c and z, their
+  standard errors, t and p values, R² and adjusted R² in log space, and a `predict` on the
+  arithmetic scale. `log_base` chooses natural, base-2 or base-10 logs. When an island has
+  no species, `con` (default 1) is added to every richness value. `compare=True` also fits
+  the nonlinear power model, so the two fits' c and z can be set side by side
+  (`LinPowFit.comparison`), with a warning if that fit doesn't converge. `plot_lin_pow` draws the data and the fitted line on log-log
+  axes. The coefficients, standard errors, p values and R² match R on the Galápagos data
+  for each log base, with and without an empty island (#122)
 
 ### Fixed
 

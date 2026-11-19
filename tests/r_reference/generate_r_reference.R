@@ -127,5 +127,32 @@ write.csv(data.frame(model = names_th,
                      r2 = 1 - rss / sum((galap$s - mean(galap$s))^2)),
           out("threshold_galap.csv"), row.names = FALSE)
 
+# 5. The log-log power model for each log base, on galap and on galap with its
+#    smallest island emptied (so that con = 1 is added to every richness).
+#    power_c and power_z are the nonlinear power fit lin_pow returns with
+#    compare = TRUE, which is to the richness as given.
+galap_zero <- galap
+galap_zero$s[1] <- 0
+lin_pow_ref <- function(data, name, base) {
+  set.seed(SEED)
+  fit <- suppressWarnings(lin_pow(data, con = 1, logT = get(base), compare = TRUE))
+  co <- fit$Model$coefficients
+  data.frame(data = name, log_base = if (base == "log") "e" else sub("log", "", base),
+             logc = co[1, 1], z = co[2, 1], logc_se = co[1, 2], z_se = co[2, 2],
+             logc_t = co[1, 3], z_t = co[2, 3], logc_p = co[1, 4], z_p = co[2, 4],
+             r2 = fit$Model$r.squared, adj_r2 = fit$Model$adj.r.squared,
+             sigma = fit$Model$sigma,
+             power_c = fit$power$par[["c"]], power_z = fit$power$par[["z"]])
+}
+lin_pow_rows <- list()
+for (base in c("log", "log2", "log10")) {
+  lin_pow_rows[[length(lin_pow_rows) + 1]] <- lin_pow_ref(galap, "galap", base)
+  lin_pow_rows[[length(lin_pow_rows) + 1]] <- lin_pow_ref(galap_zero, "galap_zero", base)
+}
+lin_pow_tab <- do.call(rbind, lin_pow_rows)
+num <- sapply(lin_pow_tab, is.numeric)
+lin_pow_tab[num] <- lapply(lin_pow_tab[num], signif, digits = 12)
+write.csv(lin_pow_tab, out("lin_pow_galap.csv"), row.names = FALSE)
+
 cat("Reference tables written.\n\nPower law:\n")
 print(sar_power(galap))

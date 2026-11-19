@@ -12,6 +12,10 @@
 
 ::: sars.plot_average
 
+## plot_lin_pow
+
+::: sars.plot_lin_pow
+
 ## plot_residuals
 
 ::: sars.plot_residuals

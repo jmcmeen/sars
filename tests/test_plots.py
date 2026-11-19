@@ -8,9 +8,11 @@ import numpy as np
 import pytest
 
 from sars import (
+    lin_pow,
     load_galap,
     plot_average,
     plot_fit,
+    plot_lin_pow,
     plot_multi,
     plot_residuals,
     plot_threshold,
@@ -292,4 +294,53 @@ class TestPlotThreshold:
         assert all(ln.get_color() == "orange" for ln in _segments_drawn(ax))
         labels = ax.get_legend_handles_labels()[1]
         assert labels.count("mine") == 1  # one legend entry, however many segments
+        plt.close("all")
+
+
+class TestPlotLinPow:
+    def test_log_log_scatter_and_line(self):
+        fit = lin_pow(load_galap())
+        ax = plot_lin_pow(fit)
+        assert isinstance(ax, plt.Axes)
+        assert ax.get_xscale() == "log"
+        assert ax.get_yscale() == "log"
+        assert ax.get_ylabel() == "Species"
+        points = ax.collections[0].get_offsets()
+        np.testing.assert_allclose(points[:, 1], fit.data["species"])
+        # The line is the fitted power law between the smallest and largest area.
+        x, y = ax.lines[0].get_data()
+        np.testing.assert_allclose(x, [fit.data["area"].min(), fit.data["area"].max()])
+        np.testing.assert_allclose(y, fit.predict(x))
+        plt.close("all")
+
+    def test_plots_richness_plus_the_constant(self):
+        data = load_galap()
+        data.loc[0, "species"] = 0
+        fit = lin_pow(data)
+        ax = plot_lin_pow(fit)
+        # A zero can't be drawn on a log axis; the fitted values can.
+        points = ax.collections[0].get_offsets()
+        np.testing.assert_allclose(points[:, 1], data["species"] + 1)
+        x, y = ax.lines[0].get_data()
+        np.testing.assert_allclose(y, fit.predict(x) + 1)
+        assert ax.get_ylabel() == "Species + 1"
+        plt.close("all")
+
+    def test_line_is_drawn_when_c_overflows(self):
+        import pandas as pd
+
+        data = pd.DataFrame(
+            {"area": [1e-6, 1.01e-6, 1.02e-6, 1.03e-6], "species": [1, 40, 2, 9000]}
+        )
+        fit = lin_pow(data)
+        assert fit.c == np.inf
+        _, y = plot_lin_pow(fit).lines[0].get_data()
+        assert np.isfinite(y).all()
+        plt.close("all")
+
+    def test_accepts_existing_axes_and_keywords(self):
+        fig, ax = plt.subplots()
+        result = plot_lin_pow(lin_pow(load_galap()), ax=ax, line_kw={"color": "red"})
+        assert result is ax
+        assert ax.lines[0].get_color() == "red"
         plt.close("all")

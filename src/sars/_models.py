@@ -389,15 +389,19 @@ _AREA_UNSCALED = {"epm1", "epm2"}
 # ---------------------------------------------------------------------------
 
 
-def _validate_data(data: pd.DataFrame) -> None:
+def _validate_data(data: pd.DataFrame, allow_zero_species: bool = False) -> None:
     """Validate a SAR input DataFrame.
 
     Checks that *data* has the required ``area`` and ``species`` columns,
-    contains at least two rows, and that all values are positive and finite.
+    contains at least two rows, and that all values are finite and positive
+    (richness may be zero with ``allow_zero_species``).
 
     Parameters
     ----------
     data : pd.DataFrame
+    allow_zero_species : bool
+        Accept islands with no species (richness still can't be negative).
+        Only the log-log power model takes them, by adding a constant.
 
     Raises
     ------
@@ -429,7 +433,10 @@ def _validate_data(data: pd.DataFrame) -> None:
         raise ValueError("'species' contains NaN or infinite values")
     if (area.to_numpy(dtype=float) <= 0).any():
         raise ValueError("'area' must contain only positive values")
-    if (species.to_numpy(dtype=float) <= 0).any():
+    if allow_zero_species:
+        if (species.to_numpy(dtype=float) < 0).any():
+            raise ValueError("'species' must not contain negative values")
+    elif (species.to_numpy(dtype=float) <= 0).any():
         raise ValueError("'species' must contain only positive values")
 
 
@@ -442,6 +449,7 @@ def _fit_nls(
     name: str,
     data: pd.DataFrame,
     start_from: dict[str, float] | None = None,
+    allow_zero_species: bool = False,
 ) -> SARFit:
     """Fit a model from the registry using multi-start NLS.
 
@@ -455,16 +463,24 @@ def _fit_nls(
         If provided, use these parameter values as the single starting point
         instead of the full grid search. Used by bootstrap to avoid the
         expensive grid search on each resample.
+    allow_zero_species : bool
+        Accept islands with no species. Least squares on the arithmetic scale
+        has no trouble with them; the public fitting functions reject them.
 
     Returns
     -------
     SARFit
     """
-    _validate_data(data)
+    _validate_data(data, allow_zero_species=allow_zero_species)
     spec = _MODEL_REGISTRY[name]
     area = np.asarray(data["area"], dtype=float)
     species = np.asarray(data["species"], dtype=float)
     n = len(area)
+    if not (species > 0).any():
+        # Only reachable with allow_zero_species. There is no richness to
+        # rescale by, and a curve through all zeros has no likelihood (RSS 0).
+        logger.info("Model '%s': no island has any species; nothing to fit", name)
+        return _failed_fit(name, spec.param_names, n, data)
 
     # The fit runs on rescaled data (see _RESCALE).
     a_scale = 1.0 if name in _AREA_UNSCALED else float(np.exp(np.mean(np.log(area))))
