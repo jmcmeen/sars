@@ -10,6 +10,14 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- `sar_multi`'s summary has an `observed_shape` column, and `SARFit` an `observed_shape()`
+  method: the shape the fitted curve takes between the smallest and largest observed area
+  ("convex", "sigmoid", "linear" or "none"), from how its slope changes. The `shape`
+  column still gives the model's general shape, which for five models is "convex/sigmoid"
+  and doesn't say which a fit took (#116)
+
 ## [0.9.0] - 2026-11-19
 
 ### Added

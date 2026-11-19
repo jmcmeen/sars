@@ -62,9 +62,112 @@ class SARFit:
             raise NotImplementedError(f"predict not yet implemented for '{self.model}'")
         return spec.func(area, *[self.params[k] for k in spec.param_names])
 
+    def observed_shape(self) -> str:
+        """The shape the fitted curve takes over the observed range of areas.
+
+        A model's general shape (the ``shape`` column of ``sar_multi``'s
+        summary) says what the model can do; this says what the fit did. The
+        curve is evaluated between the smallest and largest observed area, on
+        arithmetic axes, and classified by how its slope changes:
+
+        - ``"linear"``: the curve follows the straight line through its end
+          points (a flat curve included).
+        - ``"convex"``: richness rises and the slope only falls (the curve
+          decelerates; "convex upward" in the SAR literature).
+        - ``"sigmoid"``: richness rises and the slope first rises, then falls
+          (one inflection point inside the observed range).
+        - ``"none"``: anything else: richness falls somewhere, the curve only
+          accelerates, or it has more than one inflection point.
+
+        Each test allows a departure of a thousandth of the curve's range of
+        richness, so a bend or a dip too small to see doesn't change the
+        label. A sigmoid model whose inflection point lies below the smallest
+        area is therefore ``"convex"`` here: over the data it only decelerates.
+
+        Returns
+        -------
+        str
+            ``"linear"``, ``"convex"``, ``"sigmoid"`` or ``"none"``. ``"none"``
+            too if the fit didn't converge or the curve isn't finite.
+        """
+        if not self.converged:
+            return "none"
+        area = np.asarray(self.data["area"], dtype=float)
+        return _curve_shape(self.predict, float(area.min()), float(area.max()))
+
     def __repr__(self) -> str:
         p = "  ".join(f"{k}={v:.4f}" for k, v in self.params.items())
         return f"SARFit(model='{self.model}', {p}, R²={self.r_squared:.4f}, AICc={self.aicc:.2f})"
+
+
+# ---------------------------------------------------------------------------
+# Observed shape
+# ---------------------------------------------------------------------------
+
+# How far, as a fraction of the curve's range of richness, a curve may stray
+# from a shape and still be given it. One tolerance for every test, in richness
+# and not in slope: areas often span many orders of magnitude, and a slope
+# among the largest islands is tiny beside one among the smallest.
+_SHAPE_TOL = 1e-3
+_SHAPE_GRID = 300
+
+
+def _gap_below_hull(x: np.ndarray, y: np.ndarray) -> float:
+    """The most the curve dips below the tightest concave curve drawn over it
+    (its upper hull): zero for a curve whose slope only falls."""
+    hull: list[int] = []
+    for i in range(len(x)):
+        while len(hull) >= 2:
+            a, b = hull[-2], hull[-1]
+            # Drop b if it lies on or below the line from a to the new point.
+            if (y[b] - y[a]) * (x[i] - x[a]) <= (y[i] - y[a]) * (x[b] - x[a]):
+                hull.pop()
+            else:
+                break
+        hull.append(i)
+    return float(np.max(np.interp(x, x[hull], y[hull]) - y))
+
+
+def _curve_shape(predict: Callable[[np.ndarray], np.ndarray], lo: float, hi: float) -> str:
+    """Classify ``predict`` on [lo, hi] as linear, convex, sigmoid or none (see
+    ``SARFit.observed_shape``)."""
+    if not hi > lo:
+        return "none"
+    # Island areas are right-skewed, and a curve bends most among the small
+    # ones: an even grid alone would step over that, so add a geometric one.
+    x = np.unique(
+        np.concatenate([np.linspace(lo, hi, _SHAPE_GRID), np.geomspace(lo, hi, _SHAPE_GRID)])
+    )
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        y = np.asarray(predict(x), dtype=float)
+    if not np.all(np.isfinite(y)):
+        return "none"
+
+    spread = float(y.max() - y.min())
+    if spread <= 1e-9 * float(np.max(np.abs(y))):
+        return "linear"  # flat: a line of slope zero
+    tol = _SHAPE_TOL * spread
+    chord = y[0] + (y[-1] - y[0]) * (x - lo) / (hi - lo)
+    if np.max(np.abs(y - chord)) <= tol:
+        return "linear"
+    if np.max(np.maximum.accumulate(y) - y) > tol:
+        return "none"  # richness falls somewhere
+    if _gap_below_hull(x, y) <= tol:
+        return "convex"
+    if _gap_below_hull(x, -y) <= tol:
+        return "none"  # it only accelerates
+
+    # Sigmoid: accelerating up to some point, decelerating after it. The
+    # longer the accelerating stretch, the easier the rest passes, so find the
+    # longest one (its gap only grows with length: a binary search).
+    first, last = 1, len(x) - 1
+    while first < last:
+        mid = (first + last + 1) // 2
+        if _gap_below_hull(x[: mid + 1], -y[: mid + 1]) <= tol:
+            first = mid
+        else:
+            last = mid - 1
+    return "sigmoid" if _gap_below_hull(x[first:], y[first:]) <= tol else "none"
 
 
 # ---------------------------------------------------------------------------

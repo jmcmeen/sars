@@ -175,11 +175,13 @@ class MultiSARFit:
         Original data.
     summary : pd.DataFrame
         Summary table with columns: model, R2, AIC, AICc, BIC, delta_AICc,
-        weight, shape, asymptote. Sorted by AICc ascending. ``shape`` is the
-        model's general shape as classified by Matthews et al. (2019, Table 1):
-        "convex", "sigmoid", "convex/sigmoid" (the parameters decide) or
-        "linear". It describes the model, not the fitted curve: plot a fit
-        (``plot_fit``, ``plot_multi``) to see which shape it took.
+        weight, shape, asymptote, observed_shape. Sorted by AICc ascending.
+        ``shape`` is the model's general shape as classified by Matthews et al.
+        (2019, Table 1): "convex", "sigmoid", "convex/sigmoid" (the parameters
+        decide) or "linear". It describes the model, not the fitted curve.
+        ``observed_shape`` is the shape the fitted curve takes over the
+        observed areas: "convex", "sigmoid", "linear" or "none" (see
+        ``SARFit.observed_shape``).
     """
 
     fits: list[SARFit]
@@ -234,22 +236,26 @@ def sar_multi(
     return MultiSARFit(fits=fits, data=data, summary=summary)
 
 
-def _build_summary(fits: list[SARFit]) -> pd.DataFrame:
-    """Build summary DataFrame from a list of SARFit objects."""
+_SUMMARY_COLUMNS = [
+    "model",
+    "R2",
+    "AIC",
+    "AICc",
+    "BIC",
+    "delta_AICc",
+    "weight",
+    "shape",
+    "asymptote",
+    "observed_shape",
+]
+
+
+def _build_summary(fits: list[SARFit], shapes: bool = True) -> pd.DataFrame:
+    """Build summary DataFrame from a list of SARFit objects. ``shapes=False``
+    leaves ``observed_shape`` empty: the bootstrap builds a summary per
+    resample and reads only its weights."""
     if not fits:
-        return pd.DataFrame(
-            columns=[
-                "model",
-                "R2",
-                "AIC",
-                "AICc",
-                "BIC",
-                "delta_AICc",
-                "weight",
-                "shape",
-                "asymptote",
-            ]
-        )
+        return pd.DataFrame(columns=_SUMMARY_COLUMNS)
 
     rows = []
     aicc_vals = []
@@ -263,6 +269,7 @@ def _build_summary(fits: list[SARFit]) -> pd.DataFrame:
                 "AICc": fit.aicc,
                 "BIC": fit.bic,
                 "shape": _MODEL_SHAPE[fit.model],
+                "observed_shape": fit.observed_shape() if shapes else None,
                 "asymptote": asym,
             }
         )
@@ -274,7 +281,7 @@ def _build_summary(fits: list[SARFit]) -> pd.DataFrame:
     df["delta_AICc"] = df["AICc"] - min_aicc
     df["weight"] = weights
     df = df.sort_values("AICc").reset_index(drop=True)
-    return df[["model", "R2", "AIC", "AICc", "BIC", "delta_AICc", "weight", "shape", "asymptote"]]
+    return df[_SUMMARY_COLUMNS]
 
 
 # ---------------------------------------------------------------------------
@@ -464,7 +471,7 @@ def _sar_multi_fast(
         if fit.converged:
             fits.append(fit)
 
-    summary = _build_summary(fits)
+    summary = _build_summary(fits, shapes=False)
     return MultiSARFit(fits=fits, data=data, summary=summary)
 
 

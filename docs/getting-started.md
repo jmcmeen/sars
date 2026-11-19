@@ -51,7 +51,8 @@ print(multi.summary[["model", "R2", "AICc", "delta_AICc", "weight"]])
 ```
 
 The summary table is sorted by AICc. The `weight` column gives Akaike weights
-that sum to 1.
+that sum to 1. `shape` is each model's general shape and `observed_shape` the shape its
+fitted curve took over the observed areas (see [Models](models.md)).
 
 ## Model averaging
 

@@ -271,3 +271,103 @@ def test_a_model_needs_a_rescaling_entry():
                 bounds_lower=[0.0], bounds_upper=[1.0], start_grid=[[0.5]],
             )
         )  # fmt: skip
+
+
+class TestObservedShape:
+    """Curves whose shape is known, classified on [1, 100]."""
+
+    @pytest.mark.parametrize(
+        ("curve", "expected"),
+        [
+            (lambda a: 3 + 2 * a, "linear"),
+            (lambda a: 50 - 0.2 * a, "linear"),
+            (lambda a: np.full_like(a, 7.0), "linear"),
+            (lambda a: 5 * a**0.3, "convex"),
+            (lambda a: 10 * np.log(a + 1), "convex"),
+            (lambda a: 80 * (1 - np.exp(-0.05 * a)), "convex"),
+            (lambda a: 80 / (1 + np.exp(-0.2 * (a - 40))), "sigmoid"),
+            (lambda a: 80 * np.exp(-np.exp(-0.1 * (a - 30))), "sigmoid"),
+            # The inflection point is below the range: only the decelerating part shows.
+            (lambda a: 80 / (1 + np.exp(-0.2 * (a + 20))), "convex"),
+            # ...or above it: only the accelerating part.
+            (lambda a: 80 / (1 + np.exp(-0.05 * (a - 300))), "none"),
+            (lambda a: 0.01 * a**2, "none"),
+            (lambda a: 5 * a**0.5 * np.exp(-0.02 * a), "none"),  # falls after A = 25
+            (lambda a: a + 5 * np.sin(a / 5), "none"),  # several inflection points
+            (lambda a: np.full_like(a, np.nan), "none"),
+            # Flat but for rounding noise: still a line of slope zero.
+            (lambda a: 200 + 1e-13 * np.sin(a), "linear"),
+            # A bend too small to see doesn't make a convex curve sigmoid.
+            (lambda a: 5 * a**0.3 + 1e-4 * 60 / (1 + np.exp(-(a - 3))), "convex"),
+        ],
+    )
+    def test_known_curves(self, curve, expected):
+        from sars._models import _curve_shape
+
+        assert _curve_shape(curve, 1.0, 100.0) == expected
+
+    def test_a_bend_among_the_small_islands_is_seen(self):
+        """Areas spanning eight orders of magnitude: the sigmoid's rising slope sits
+        below a thousandth of the range, where an even grid has no points."""
+        from sars._models import _curve_shape
+
+        def curve(a):
+            return 80 * a**2 / (1e-4 + a**2)
+
+        assert _curve_shape(curve, 1e-3, 1e5) == "sigmoid"
+
+    @pytest.mark.parametrize(
+        ("curve", "expected"),
+        [
+            # Among the largest islands a slope is tiny beside one among the smallest:
+            # a fall of four species there, or a tail that accelerates, must still count.
+            (lambda a: 5 * a**0.25 * np.exp(-a / 2e5), "none"),
+            (lambda a: 5 * a**0.25 + 1e-8 * a**2, "none"),
+            # ...unless it is too small to see: this tail bends up by 0.003 species.
+            (lambda a: 5 * a**0.25 + 1e-9 * a**2, "convex"),
+            (lambda a: 5 * a**0.25, "convex"),
+        ],
+    )
+    def test_areas_spanning_many_orders_of_magnitude(self, curve, expected):
+        from sars._models import _curve_shape
+
+        assert _curve_shape(curve, 1e-3, 1e5) == expected
+
+    def test_a_small_rise_on_a_large_intercept_is_still_convex(self):
+        from sars._models import _curve_shape
+
+        def curve(a):
+            return 979.316529976624 + 0.6524907527948977 * a**0.11493479713945963
+
+        assert _curve_shape(curve, 0.08536470703959534, 10.669173905822692) == "convex"
+
+    def test_rounding_noise_is_not_a_bend(self):
+        from sars._models import _curve_shape
+
+        rng = np.random.default_rng(0)
+
+        def curve(a):
+            return 5 * a**0.3 * (1 + 1e-13 * rng.standard_normal(a.shape))
+
+        assert _curve_shape(curve, 1.0, 100.0) == "convex"
+
+    def test_one_distinct_area_has_no_shape(self):
+        from sars._models import _curve_shape
+
+        assert _curve_shape(lambda a: a, 5.0, 5.0) == "none"
+
+    def test_fits_recover_the_shape_of_their_data(self):
+        area = np.geomspace(1, 1000, 25)
+        convex = pd.DataFrame({"area": area, "species": 5 * area**0.25})
+        assert sars.sar_power(convex).observed_shape() == "convex"
+        line = pd.DataFrame({"area": area, "species": 3 + 0.1 * area})
+        assert sars.sar_linear(line).observed_shape() == "linear"
+        area = np.linspace(1, 100, 25)
+        s_curve = pd.DataFrame({"area": area, "species": 80 * np.exp(-np.exp(-0.1 * (area - 30)))})
+        assert sars.sar_gompertz(s_curve).observed_shape() == "sigmoid"
+
+    def test_a_failed_fit_has_no_shape(self):
+        from sars._models import _failed_fit
+
+        data = pd.DataFrame({"area": [1.0, 2.0, 3.0], "species": [1.0, 2.0, 3.0]})
+        assert _failed_fit("power", ["c", "z"], 3, data).observed_shape() == "none"

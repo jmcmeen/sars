@@ -146,6 +146,35 @@ class TestSarMulti:
         shapes = galap_multi.summary.set_index("model")["shape"].to_dict()
         assert shapes == {m: expected[m] for m in shapes}
 
+    def test_observed_shape_column(self, galap_multi):
+        summary = galap_multi.summary
+        assert list(summary.columns)[-1] == "observed_shape"  # appended: positions kept
+        observed = summary.set_index("model")["observed_shape"].to_dict()
+        # Convex models stay convex; a sigmoid model's fit is sigmoid only when its
+        # inflection point is among the islands; fits that turn down have no shape.
+        expected = {
+            "power": "convex", "powerR": "convex", "loga": "convex", "koba": "convex",
+            "monod": "convex", "negexpo": "convex", "ratio": "convex", "linear": "linear",
+            "asymp": "convex", "mmf": "convex", "heleg": "convex", "chapman": "convex",
+            "weibull3": "convex", "betap": "convex", "gompertz": "sigmoid", "p2": "sigmoid",
+            "p1": "none", "epm1": "none", "epm2": "none",
+        }  # fmt: skip
+        for model, shape in expected.items():
+            assert observed[model] == shape, model
+        # weibull4 sits on a flat ridge, where its curve's shape isn't pinned down.
+        assert observed["weibull4"] in {"convex", "sigmoid", "none"}
+
+    def test_bootstrap_resamples_skip_the_shape(self, galap_fits):
+        from sars._inference import _build_summary
+
+        summary = _build_summary([galap_fits["power"]], shapes=False)
+        assert summary["observed_shape"].isna().all()
+
+    def test_observed_shape_of_an_empty_summary(self):
+        from sars._inference import _build_summary
+
+        assert "observed_shape" in _build_summary([]).columns
+
     def test_asymptote_column(self, galap_multi):
         """Models with an asymptote report it; the others (koba among them) don't."""
         asymptotic = {"monod", "negexpo", "ratio", "asymp", "mmf", "heleg", "gompertz",
