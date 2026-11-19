@@ -97,6 +97,11 @@ reconstructed from the commit history and the
   identify, and those that depend on a derivative of the curve that can't be computed
   reliably (`sar_weibull4`'s on the Galápagos data), get `NaN` and a `UserWarning`
   instead of a meaningless number (#120)
+- A second worked example in the documentation: the 26 independent sites of Stout, Jessee &
+  McMeen (2025) on southern Appalachian amphibians, read from a CSV. It sets the classical
+  log-log power fit beside `sar_power`, compares all twenty models, and takes the model
+  average through a bootstrap interval, a prediction for an unstudied site and a threshold
+  check (#127)
 
 ### Fixed
 

@@ -59,6 +59,7 @@ nav:
   - Datasets: datasets.md
   - Examples:
       - Galápagos plants: examples/galapagos.ipynb
+      - Appalachian amphibians: examples/appalachian.ipynb
   - API Reference:
       - Models: api/models.md
       - Multi-model Inference: api/inference.md

@@ -58,6 +58,9 @@ ci = sars.bootstrap_ci(galap, n_boot=100)
 
 For a complete analysis of these data, see the
 [worked example](https://jmcmeen.github.io/sars/examples/galapagos/) in the documentation.
+A [second example](https://jmcmeen.github.io/sars/examples/appalachian/) takes published
+amphibian counts from 26 southern Appalachian sites, read from a CSV, through the same
+steps, and compares the classical log-log power fit with the non-linear one.
 
 ## Available models
 

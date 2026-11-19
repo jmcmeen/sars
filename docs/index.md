@@ -51,11 +51,16 @@ predictions = avg.predict([1.0, 10.0, 100.0])
 ci = sars.bootstrap_ci(galap, n_boot=100)
 ```
 
-## Worked example
+## Worked examples
 
 [The Galápagos plant species–area relationship](examples/galapagos.ipynb) takes the
 bundled dataset through the whole workflow: one model, all twenty, model averaging,
 bootstrap confidence intervals and threshold models, with the plots for each step.
+
+[Southern Appalachian amphibians](examples/appalachian.ipynb) does the same for
+published counts from 26 independent sites, read from a CSV. It compares the classical
+log–log power fit with the non-linear one, predicts richness for an unstudied site and
+shows what a weak fit and a wide bootstrap interval look like.
 
 ## Support and contributing
 
