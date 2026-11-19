@@ -302,3 +302,24 @@ def test_coleman_matches_r():
     assert (~fit.sites["within_sd"]).tolist() == outside.tolist()
     assert fit.fraction_outside == pytest.approx(9 / 11)
     assert fit.rejected
+
+
+@pytest.mark.parametrize("name", ["aegean", "aegean2", "niering"])
+def test_threshold_models_match_r_on_bundled_datasets(name):
+    """The default models on the larger datasets, where thresholds are usually
+    shown: R's breakpoints, fit and ranking. On niering ContOne has the lower
+    RSS and ZslopeOne the lower AICc, so the ranking there rests on the
+    parameter counts."""
+    ref = _read("threshold_datasets.csv")
+    ref = ref[ref["dataset"] == name].set_index("model")
+    fit = sars.sar_threshold(getattr(sars, f"load_{name}")())
+    assert set(fit.all_fits) == set(ref.index)
+    for model, r in ref.iterrows():
+        mine = fit.all_fits[model]
+        assert mine["k"] == r["k"], model
+        assert mine["rss"] == pytest.approx(r["rss"], rel=1e-9), model
+        assert mine["aic"] == pytest.approx(r["aic"], abs=1e-6), model
+        assert mine["aicc"] == pytest.approx(r["aicc"], abs=1e-6), model
+        expected = () if np.isnan(r["threshold"]) else (r["threshold"],)
+        assert mine["breakpoints"] == pytest.approx(expected, abs=1e-9), model
+    assert fit.best_model == ref["aicc"].idxmin()

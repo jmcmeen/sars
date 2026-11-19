@@ -28,7 +28,10 @@ from sars._io import (
     from_df,
     from_geodataframe,
     from_pyinaturalist,
+    load_aegean,
+    load_aegean2,
     load_galap,
+    load_niering,
 )
 from sars._linpow import LinPowFit, lin_pow
 from sars._models import (
@@ -87,7 +90,10 @@ __all__ = [
     "from_geodataframe",
     "from_pyinaturalist",
     "lin_pow",
+    "load_aegean",
+    "load_aegean2",
     "load_galap",
+    "load_niering",
     "sar_average",
     "sar_gdm",
     "sar_multi",

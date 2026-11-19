@@ -67,6 +67,11 @@ reconstructed from the commit history and the
   `GDMFit` has the coefficients with standard errors and p values, fitted values, R², AIC,
   AICc, BIC and `predict(area, time)`. The fit doesn't depend on the units of area or age.
   Coefficients and AIC match R on the example from its help page (#124)
+- Three more bundled datasets, with the values R `sars` ships: `load_aegean()` (terrestrial
+  isopods on 90 Aegean islands; Sfenthourakis & Triantis 2009), `load_aegean2()` (plants on
+  173 Aegean islands; Matthews et al. 2020) and `load_niering()` (plants on 32 islands of
+  Kapingamarangi Atoll; Niering 1963). Areas are in km². A new Datasets page in the
+  documentation lists them with their sources and a threshold example (#126)
 
 ### Fixed
 

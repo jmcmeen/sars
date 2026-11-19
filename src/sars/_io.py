@@ -12,6 +12,31 @@ if TYPE_CHECKING:
     from geopandas import GeoDataFrame
 
 
+def _load_dataset(name: str) -> pd.DataFrame:
+    """Read a bundled dataset, ``sars/data/<name>.csv``, as an area/species frame.
+
+    The files keep the column names R sars uses (``a``, ``s``) and its row
+    order, so they can be compared with R's copies line for line.
+    """
+    filename = f"{name}.csv"
+    # Only the lookup is guarded: an error from parsing a file that is there
+    # is a different problem, and shouldn't be reported as a missing file.
+    try:
+        ref = importlib.resources.files("sars.data").joinpath(filename)
+        found = ref.is_file()
+    except (TypeError, ModuleNotFoundError):
+        found = False
+    if not found:
+        raise FileNotFoundError(
+            f"{filename} is not available. The sars package data may not "
+            "have been installed correctly. Try reinstalling with: "
+            "pip install --force-reinstall sars"
+        )
+    with importlib.resources.as_file(ref) as path:
+        df = pd.read_csv(path)
+    return df.rename(columns={"a": "area", "s": "species"})
+
+
 def load_galap() -> pd.DataFrame:
     """Load the Galapagos plant species-area dataset.
 
@@ -25,18 +50,85 @@ def load_galap() -> pd.DataFrame:
     pd.DataFrame
         DataFrame with columns 'area' and 'species'.
     """
-    try:
-        ref = importlib.resources.files("sars.data").joinpath("galap.csv")
-        with importlib.resources.as_file(ref) as path:
-            df = pd.read_csv(path)
-    except (TypeError, FileNotFoundError, ModuleNotFoundError) as exc:
-        raise FileNotFoundError(
-            "galap.csv is not available. The sars package data may not "
-            "have been installed correctly. Try reinstalling with: "
-            "pip install --force-reinstall sars"
-        ) from exc
-    df = df.rename(columns={"a": "area", "s": "species"})
-    return df
+    return _load_dataset("galap")
+
+
+def load_aegean() -> pd.DataFrame:
+    """Load the Aegean terrestrial isopod species-area dataset.
+
+    Terrestrial isopod species counts and island area (km²) for 90 islands
+    of the Aegean Sea, Greece, from Crete (8261 km²) down to islets of a few
+    thousand square metres. The values are those shipped in the R sars
+    package; rows are in its order, largest island first. Every island has
+    at least one species (1 to 34), so the data can go straight to the
+    fitting functions.
+
+    The source used these islands to study the small-island effect, which
+    makes them a common example for `sar_threshold`.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns 'area' and 'species'.
+
+    References
+    ----------
+    Sfenthourakis S, Triantis KA (2009). Habitat diversity, ecological
+    requirements of species and the Small Island Effect. Diversity and
+    Distributions 15, 131-140.
+    """
+    return _load_dataset("aegean")
+
+
+def load_aegean2() -> pd.DataFrame:
+    """Load the Aegean plant species-area dataset.
+
+    Plant species counts and island area (km²) for 173 islands of the Aegean
+    Sea, Greece, from islets of 600 m² (0.0006 km²) up to Crete (8270 km²).
+    The values are those shipped in the R sars package; rows are in its
+    order, smallest island first. Every island has at least one species (2
+    to 1751), so the data can go straight to the fitting functions.
+
+    A different set of islands from `load_aegean`: the two come from separate
+    studies of different taxa. With areas spanning seven orders of magnitude
+    this is the usual example for `sar_threshold`.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns 'area' and 'species'.
+
+    References
+    ----------
+    Matthews TJ, Rigal F, Kougioumoutzis K, Trigas P, Triantis KA (2020).
+    Unravelling the small-island effect through phylogenetic community
+    ecology. Journal of Biogeography 47, 2341-2352.
+    """
+    return _load_dataset("aegean2")
+
+
+def load_niering() -> pd.DataFrame:
+    """Load the Kapingamarangi Atoll plant species-area dataset.
+
+    Plant species counts and island area (km²) for 32 islands of
+    Kapingamarangi Atoll in the Caroline Islands, Micronesia. The islands are
+    tiny, 0.00012 to 0.318 km² (120 m² to 32 ha), so a model fitted to them
+    has its parameters in those units. The values are those shipped in the R
+    sars package; rows are in its order, smallest island first. Every island
+    has at least one species (5 to 60), so the data can go straight to the
+    fitting functions.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns 'area' and 'species'.
+
+    References
+    ----------
+    Niering WA (1963). Terrestrial ecology of Kapingamarangi Atoll, Caroline
+    Islands. Ecological Monographs 33, 131-160.
+    """
+    return _load_dataset("niering")
 
 
 def from_df(

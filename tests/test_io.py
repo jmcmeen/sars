@@ -1,9 +1,16 @@
 """Tests for I/O adapters."""
 
+import importlib.resources
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
 import sars
+from sars._io import _load_dataset
+from sars._models import _validate_data
+
+REF = Path(__file__).parent / "r_reference"
 
 
 class TestLoadGalap:
@@ -20,6 +27,85 @@ class TestLoadGalap:
         df = sars.load_galap()
         assert (df["area"] > 0).all()
         assert (df["species"] > 0).all()
+
+
+# Rows, then the sums of area and species over R sars's copy of each dataset
+# (R: nrow(d), sum(d$a), sum(d$s)), so a changed value shows even where the
+# reference tables aren't to hand.
+DATASETS = {
+    "galap": (16, 3117.76, 1703),
+    "aegean": (90, 11943.8839, 878),
+    "aegean2": (173, 22593.1625, 53686),
+    "niering": (32, 1.10292, 580),
+}
+
+
+@pytest.mark.parametrize("name", DATASETS)
+class TestBundledDatasets:
+    def test_shape_and_columns(self, name):
+        df = getattr(sars, f"load_{name}")()
+        assert list(df.columns) == ["area", "species"]
+        assert len(df) == DATASETS[name][0]
+        assert df["area"].dtype == float
+        assert pd.api.types.is_integer_dtype(df["species"])
+
+    def test_passes_validation(self, name):
+        """No island has zero species (or area), which the fitters would reject."""
+        df = getattr(sars, f"load_{name}")()
+        _validate_data(df)
+        assert (df["species"] >= 1).all()
+
+    def test_sums(self, name):
+        _, area_sum, species_sum = DATASETS[name]
+        df = getattr(sars, f"load_{name}")()
+        assert df["area"].sum() == pytest.approx(area_sum, rel=1e-12)
+        assert df["species"].sum() == species_sum
+
+    def test_file_is_r_export(self, name):
+        """The bundled file is, byte for byte, the one the reference generator
+        writes from R sars's copy of the dataset."""
+        bundled = importlib.resources.files("sars.data").joinpath(f"{name}.csv")
+        assert bundled.read_bytes() == (REF / f"{name}.csv").read_bytes()
+
+    def test_file_is_package_data(self, name):
+        """Each file is found through the installed package, which is where the
+        loaders look. The wheel target ships the package directory whole
+        (``packages = ["src/sars"]`` in pyproject.toml), data files included."""
+        assert importlib.resources.files("sars.data").joinpath(f"{name}.csv").is_file()
+
+    def test_fresh_copy(self, name):
+        """Changing a loaded frame doesn't change what the next call returns."""
+        df = getattr(sars, f"load_{name}")()
+        df.loc[0, "species"] = -1
+        assert getattr(sars, f"load_{name}")().loc[0, "species"] > 0
+
+    def test_fits(self, name):
+        fit = sars.sar_power(getattr(sars, f"load_{name}")())
+        assert fit.converged
+        assert 0 < fit.params["z"] < 1
+
+
+class TestLoadDataset:
+    def test_missing_file_names_it(self):
+        with pytest.raises(FileNotFoundError, match=r"nosuch\.csv is not available.*reinstall"):
+            _load_dataset("nosuch")
+
+    def test_parse_error_is_not_reported_as_missing(self, monkeypatch):
+        def broken(*_args, **_kwargs):
+            raise TypeError("bad parse")
+
+        monkeypatch.setattr(pd, "read_csv", broken)
+        with pytest.raises(TypeError, match="bad parse"):
+            sars.load_galap()
+
+    def test_missing_data_package(self, monkeypatch):
+        def no_package(_name):
+            raise ModuleNotFoundError("No module named 'sars.data'")
+
+        monkeypatch.setattr("importlib.resources.files", no_package)
+        for loader in (sars.load_galap, sars.load_aegean, sars.load_aegean2, sars.load_niering):
+            with pytest.raises(FileNotFoundError, match="reinstall"):
+                loader()
 
 
 class TestFromDf:

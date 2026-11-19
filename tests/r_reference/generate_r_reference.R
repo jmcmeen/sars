@@ -228,6 +228,30 @@ write.csv(gdm_fitted, out("gdm_fitted_galap.csv"), row.names = FALSE)
 # model = "all" ranks the four forms; its printed table is kept as the record
 # that the ranking below comes from the same fits.
 print(gdm(galap_t, model = "all", mod_sel = FALSE))
+# 9. The other bundled datasets, as R ships them, and the default threshold
+#    models on each (same search and parameter counts as section 4): these
+#    are the datasets thresholds are usually shown on, and far larger than
+#    galap. The intercept-only model R adds isn't one this package fits.
+other <- list(aegean = aegean, aegean2 = aegean2, niering = niering)
+th_other <- list()
+for (nm in names(other)) {
+  d <- other[[nm]]
+  write.csv(d, out(paste0(nm, ".csv")), row.names = FALSE)
+  th_d <- sar_threshold(d, mod = c("ContOne", "ZslopeOne"), non_th_models = TRUE,
+                        interval = 0.01, nisl = 3)
+  keep <- th_d[[2]] != "Intercept"
+  pars_d <- k[th_d[[2]][keep]]
+  rss_d <- sapply(th_d[[1]][keep], function(m) sum(residuals(m)^2))
+  n_d <- nrow(d)
+  aic_d <- n_d * (log(2 * pi * rss_d / n_d) + 1) + 2 * pars_d
+  th_other[[nm]] <- data.frame(
+    dataset = nm, model = th_d[[2]][keep],
+    threshold = sapply(th_d[[3]][keep], function(t) t[1]),
+    k = pars_d, rss = rss_d, aic = aic_d,
+    aicc = aic_d + 2 * pars_d * (pars_d + 1) / (n_d - pars_d - 1)
+  )
+}
+write.csv(do.call(rbind, th_other), out("threshold_datasets.csv"), row.names = FALSE)
 
 cat("Reference tables written.\n\nPower law:\n")
 print(sar_power(galap))

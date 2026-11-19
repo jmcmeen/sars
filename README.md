@@ -26,6 +26,7 @@ pip install sars
 - **Threshold models** — piecewise regression for detecting breakpoints (small island effect), with bootstrap confidence intervals for the breakpoints
 - **Random placement** — Coleman's null model for richness from a species-by-site abundance table
 - **General dynamic model** — richness as a function of island area and a hump in island age (Whittaker et al. 2008), with nested-model comparison
+- **Bundled datasets** — four published island datasets: `load_galap`, `load_aegean`, `load_aegean2`, `load_niering`
 - **R-validated** — fits, AICc weights, model averaging, threshold models, random placement and the general dynamic model are checked against R `sars` reference output, with every known difference listed in `tests/test_r_reference.py`
 
 ## Quick start
@@ -118,7 +119,10 @@ This package is a Python implementation inspired by the R [`sars`](https://githu
 
 ### Data
 
-- Preston FW (1962). The canonical distribution of commonness and rarity. *Ecology*, 43, 185-215, 410-432. (the bundled Galápagos dataset, `load_galap`)
+- Preston FW (1962). The canonical distribution of commonness and rarity. *Ecology*, 43, 185-215, 410-432. (the bundled Galápagos plant dataset, `load_galap`; areas in km²)
+- Sfenthourakis S, Triantis KA (2009). Habitat diversity, ecological requirements of species and the Small Island Effect. *Diversity and Distributions*, 15, 131-140. (terrestrial isopods on 90 Aegean islands, `load_aegean`; areas in km²)
+- Matthews TJ, Rigal F, Kougioumoutzis K, Trigas P, Triantis KA (2020). Unravelling the small-island effect through phylogenetic community ecology. *Journal of Biogeography*, 47, 2341-2352. (plants on 173 Aegean islands, `load_aegean2`; areas in km²)
+- Niering WA (1963). Terrestrial ecology of Kapingamarangi Atoll, Caroline Islands. *Ecological Monographs*, 33, 131-160. (plants on 32 islands of Kapingamarangi Atoll, `load_niering`; areas in km²)
 
 ### Threshold models
 

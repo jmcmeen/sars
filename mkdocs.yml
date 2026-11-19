@@ -56,6 +56,7 @@ nav:
   - Home: index.md
   - Getting Started: getting-started.md
   - Models: models.md
+  - Datasets: datasets.md
   - Examples:
       - Galápagos plants: examples/galapagos.ipynb
   - API Reference:

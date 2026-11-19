@@ -1,8 +1,20 @@
 # I/O Adapters API
 
-## load_galap
+## Bundled datasets
+
+See [Datasets](../datasets.md) for a summary table and an example.
 
 ::: sars.load_galap
+
+::: sars.load_aegean
+
+::: sars.load_aegean2
+
+::: sars.load_niering
+
+## from_df
+
+::: sars.from_df
 
 ## from_csv
 

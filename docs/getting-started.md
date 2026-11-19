@@ -72,6 +72,9 @@ print(lp.comparison[["c", "z"]].round(3))
 island has no species, `con` (default 1) is added to every richness value so the
 logs exist, and `predict()` takes it off again. `plot_lin_pow(lp)` draws the data
 and the line on log-log axes.
+`load_galap()` is one of four bundled datasets; `load_aegean()`, `load_aegean2()` and
+`load_niering()` load the others. [Datasets](datasets.md) lists what each holds and
+where it was published.
 
 ## Comparing all 20 models
 
@@ -305,6 +308,16 @@ column before passing it.
 
 Reference: Whittaker RJ, Triantis KA, Ladle RJ (2008). A general dynamic theory of
 oceanic island biogeography. *Journal of Biogeography*, 35, 977-994.
+
+Among the three default models (ContOne, ZslopeOne and Linear), the straight line has the
+lowest AICc on the 16 Galápagos islands. The 173 Aegean islands of `load_aegean2()` favour
+a threshold:
+
+```python
+th = sars.sar_threshold(sars.load_aegean2())
+print(th)
+# ThresholdFit(best='ContOne', breakpoint=2.305 (ln area), breakpoint_area=10.02)
+```
 
 ## Bringing your own data
 
