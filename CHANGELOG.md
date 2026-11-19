@@ -102,12 +102,26 @@ reconstructed from the commit history and the
   log-log power fit beside `sar_power`, compares all twenty models, and takes the model
   average through a bootstrap interval, a prediction for an unstudied site and a threshold
   check (#127)
+- A worked example of `from_geodataframe` in the documentation: outlines of ten southern
+  Appalachian counties from Natural Earth, joined to published amphibian counts,
+  reprojected to an equal-area coordinate system, with the computed areas compared against
+  the published ones and a model fitted to them (#128)
 
 ### Fixed
 
 - The warm-start test compared weibull4's AICc on the Galápagos data to 1e-6, tighter than
   that fit's flat ridge allows, and failed on Python 3.10; it now allows the tolerance the
   R-reference tests use for fits on a ridge (#136)
+- `from_geodataframe` no longer returns meaningless areas for polygons in a geographic
+  coordinate system. It used to compute them in squared degrees and divide by a million,
+  so an island of 1,000 km² came back as 0.00000008. It now raises `ValueError` and says to
+  reproject, for any coordinate system that isn't projected and for a GeoDataFrame with no
+  coordinate system whose coordinates look like longitude and latitude; other
+  GeoDataFrames with no coordinate system get a warning and are taken to be in metres. It
+  also reads the length unit from a projected coordinate system, so one in feet gives the
+  same areas as one in metres, and raises `ValueError`, naming the rows, for geometries
+  that are missing, empty or have no area (points, lines, degenerate polygons), which used
+  to count as zero area. Passing `area_col` is unaffected (#128)
 
 ## [0.9.0] - 2026-11-19
 

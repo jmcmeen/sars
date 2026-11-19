@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.resources
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -267,6 +268,12 @@ def from_geodataframe(
     Computes area from polygon geometries if no area column is specified.
     Requires geopandas and shapely (install with ``pip install sars[geo]``).
 
+    Areas are measured in the GeoDataFrame's own coordinate reference system
+    (CRS), so it must be a projected one: reproject longitude/latitude data
+    first, e.g. ``gdf.to_crs("EPSG:6933")``. Use an equal-area projection.
+    A projected CRS that isn't equal-area (Web Mercator, or UTM far from its
+    zone) is accepted but distorts the areas, and this function cannot tell.
+
     Parameters
     ----------
     gdf : geopandas.GeoDataFrame
@@ -277,8 +284,9 @@ def from_geodataframe(
         Column name for pre-computed area values. If None, area is
         computed from geometries.
     crs_units : str
-        Unit conversion for computed areas. "km2" divides by 1e6 (assumes
-        CRS in metres), "m2" uses raw area, "ha" divides by 1e4.
+        Unit of the computed areas: "km2" (default), "ha" or "m2". The CRS's
+        own length unit is read from the CRS, so a CRS in feet gives the same
+        areas as one in metres. Ignored when ``area_col`` is given.
 
     Returns
     -------
@@ -292,7 +300,18 @@ def from_geodataframe(
     KeyError
         If the specified columns are not found.
     ValueError
-        If geometries are not polygons or CRS units are invalid.
+        If ``crs_units`` is not one of the units above or, when area is
+        computed from the geometries, if any geometry is missing, empty or
+        has no area (a point, a line, a degenerate polygon), if the CRS is
+        not a projected one (geographic CRSs, in degrees, included), or if
+        there is no CRS and the coordinates look like longitude and latitude
+        (all within ±180 and ±90).
+
+    Warns
+    -----
+    UserWarning
+        If area is computed from geometries that have no CRS and whose
+        coordinates don't look like degrees. They are then taken to be metres.
     """
     try:
         import geopandas as gpd  # noqa: F401
@@ -309,13 +328,67 @@ def from_geodataframe(
             raise KeyError(f"Column {area_col!r} not found. Available columns: {list(gdf.columns)}")
         areas = gdf[area_col].values
     else:
-        raw_area = gdf.geometry.area
         unit_divisors = {"km2": 1e6, "m2": 1.0, "ha": 1e4}
         if crs_units not in unit_divisors:
             raise ValueError(
                 f"Unknown crs_units {crs_units!r}. Choose from {list(unit_divisors.keys())}"
             )
-        areas = raw_area / unit_divisors[crs_units]
+        geometry = gdf.geometry
+        if geometry.isna().any() or geometry.is_empty.any():
+            raise ValueError(
+                "Some rows have a missing or empty geometry, which has no area. Drop them, "
+                "or pass area_col to use areas from a column."
+            )
+        # Squared degrees are not an area: a degree of longitude shrinks towards the
+        # poles. Dividing them by 1e6 would give numbers that look like tiny islands.
+        reproject = (
+            'Reproject to an equal-area projected CRS first, e.g. gdf.to_crs("EPSG:6933"), '
+            "or pass area_col to use areas from a column."
+        )
+        crs = gdf.crs
+        if crs is None:
+            min_x, min_y, max_x, max_y = geometry.total_bounds
+            if min_x >= -180 and max_x <= 180 and min_y >= -90 and max_y <= 90:
+                # Projected coordinates this close to their origin are rare; longitude
+                # and latitude saved without a CRS are not.
+                raise ValueError(
+                    "The GeoDataFrame has no CRS and every coordinate lies within ±180 and "
+                    "±90, so they look like longitude and latitude in degrees, and areas "
+                    "computed from them would be meaningless. Set the CRS with "
+                    f'gdf.set_crs("EPSG:4326") if that is what they are. {reproject}'
+                )
+            warnings.warn(
+                "The GeoDataFrame has no CRS, so its coordinates are taken to be metres. "
+                "Set one with gdf.set_crs() to be sure of the units.",
+                UserWarning,
+                stacklevel=2,
+            )
+            metres_per_unit = 1.0
+        elif not crs.is_projected:
+            # Geographic (degrees), but also geocentric and engineering systems, whose
+            # coordinates don't lie on a map plane either.
+            kind = (
+                "geographic: its coordinates are degrees" if crs.is_geographic else "not projected"
+            )
+            raise ValueError(
+                f"The GeoDataFrame's CRS ({crs.name}) is {kind}, and areas computed from "
+                f"it are meaningless. {reproject}"
+            )
+        else:
+            # State plane and some national grids are in feet, not metres.
+            metres_per_unit = crs.axis_info[0].unit_conversion_factor
+        raw_area = geometry.area
+        # A point, a line, or a polygon whose outline encloses nothing has area zero,
+        # which would otherwise pass for a very small island.
+        no_area = ~(raw_area > 0)
+        if no_area.any():
+            kinds = sorted(set(geometry[no_area].geom_type))
+            raise ValueError(
+                f"Rows {list(gdf.index[no_area])} have no area (geometry type {kinds}). Area "
+                "can only be computed from valid polygons: fix or drop these rows, or pass "
+                "area_col to use areas from a column."
+            )
+        areas = raw_area * metres_per_unit**2 / unit_divisors[crs_units]
 
     return pd.DataFrame(
         {

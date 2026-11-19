@@ -234,8 +234,10 @@ class TestFromGeoDataFrame:
             from shapely.geometry import box
         except ImportError:
             pytest.skip("geopandas/shapely not installed")
-        # Squares with areas 1e6, 4e6, 9e6 m^2 = 1, 4, 9 km^2
-        polys = [box(0, 0, 1000, 1000), box(0, 0, 2000, 2000), box(0, 0, 3000, 3000)]
+        # Squares with areas 1e6, 4e6, 9e6 m^2 = 1, 4, 9 km^2, at the middle of the UTM
+        # zone (easting 500 km) and off the equator, as real projected data would be.
+        x, y = 500_000, 4_000_000
+        polys = [box(x, y, x + side, y + side) for side in (1000, 2000, 3000)]
         return gpd.GeoDataFrame(
             {"species": [10, 25, 40], "geometry": polys},
             crs="EPSG:32617",
@@ -272,6 +274,108 @@ class TestFromGeoDataFrame:
     def test_invalid_crs_units(self, simple_gdf):
         with pytest.raises(ValueError, match="crs_units"):
             sars.from_geodataframe(simple_gdf, crs_units="acres")
+
+    def test_geographic_crs_is_refused(self, simple_gdf):
+        """Longitude/latitude coordinates give areas in squared degrees, which used to be
+        divided by 1e6 and returned as km²."""
+        lonlat = simple_gdf.to_crs("EPSG:4326")
+        with pytest.raises(ValueError, match="geographic.*to_crs"):
+            sars.from_geodataframe(lonlat)
+
+    def test_geographic_crs_with_area_col(self, simple_gdf):
+        """The CRS doesn't matter when the areas come from a column."""
+        lonlat = simple_gdf.to_crs("EPSG:4326")
+        lonlat["my_area"] = [1.0, 4.0, 9.0]
+        df = sars.from_geodataframe(lonlat, area_col="my_area")
+        assert df["area"].tolist() == [1.0, 4.0, 9.0]
+
+    def test_reprojected_to_equal_area(self, simple_gdf):
+        """Reprojecting to an equal-area CRS recovers the areas. The squares sit on UTM's
+        central meridian, where its scale factor of 0.9996 shrinks areas by 0.08%."""
+        df = sars.from_geodataframe(simple_gdf.to_crs("EPSG:6933"))
+        assert df["area"].tolist() == pytest.approx([1.0, 4.0, 9.0], rel=2e-3)
+        assert df["area"].tolist() == pytest.approx(
+            [a / 0.9996**2 for a in (1.0, 4.0, 9.0)], rel=1e-4
+        )
+
+    def test_crs_in_feet(self):
+        """Areas come out in the unit asked for whatever the CRS's own length unit."""
+        gpd = pytest.importorskip("geopandas")
+        from shapely.geometry import box
+
+        # North Carolina state plane, in US survey feet (1200/3937 m).
+        foot = 1200 / 3937
+        side = 1000 / foot  # a 1 km square
+        gdf = gpd.GeoDataFrame(
+            {"species": [10], "geometry": [box(2e6, 5e5, 2e6 + side, 5e5 + side)]},
+            crs="EPSG:2264",
+        )
+        assert sars.from_geodataframe(gdf)["area"].iloc[0] == pytest.approx(1.0)
+        assert sars.from_geodataframe(gdf, crs_units="ha")["area"].iloc[0] == pytest.approx(100.0)
+
+    def test_missing_crs_warns(self, simple_gdf):
+        gpd = pytest.importorskip("geopandas")
+        no_crs = gpd.GeoDataFrame(
+            {"species": simple_gdf["species"]}, geometry=list(simple_gdf.geometry)
+        )
+        assert no_crs.crs is None
+        with pytest.warns(UserWarning, match="no CRS"):
+            df = sars.from_geodataframe(no_crs)
+        assert df["area"].iloc[0] == pytest.approx(1.0)
+
+    def test_missing_crs_with_degree_like_coordinates(self):
+        """Longitude/latitude saved without a CRS must not come back as km² either."""
+        gpd = pytest.importorskip("geopandas")
+        from shapely.geometry import box
+
+        lonlat = gpd.GeoDataFrame(
+            {"species": [10, 20]}, geometry=[box(-91, -1, -90, 0), box(-90, 0, -89.5, 0.5)]
+        )
+        with pytest.raises(ValueError, match="no CRS.*longitude and latitude"):
+            sars.from_geodataframe(lonlat)
+        lonlat["my_area"] = [3.0, 1.0]
+        assert sars.from_geodataframe(lonlat, area_col="my_area")["area"].tolist() == [3.0, 1.0]
+
+    def test_unprojected_crs_is_refused(self, simple_gdf):
+        """A geocentric CRS is not geographic, but its coordinates aren't on a map plane."""
+        geocentric = simple_gdf.to_crs("EPSG:4978")
+        with pytest.raises(ValueError, match="not projected"):
+            sars.from_geodataframe(geocentric)
+
+    def test_non_polygon_geometry(self, simple_gdf):
+        """A point has area zero, which must not pass for an island."""
+        points = simple_gdf.set_geometry(simple_gdf.centroid)
+        with pytest.raises(ValueError, match=r"Rows \[0, 1, 2\] have no area.*Point"):
+            sars.from_geodataframe(points)
+
+    def test_degenerate_polygons(self, simple_gdf):
+        """A bow-tie whose lobes cancel and a polygon with collinear vertices have area
+        zero though their type is Polygon. The error names their rows."""
+        from shapely.geometry import Polygon
+
+        x, y = 500_000, 4_000_000
+        simple_gdf.loc[0, "geometry"] = Polygon(
+            [(x, y), (x + 1000, y + 1000), (x + 1000, y), (x, y + 1000)]
+        )
+        simple_gdf.loc[2, "geometry"] = Polygon([(x, y), (x + 500, y), (x + 1000, y)])
+        with pytest.raises(ValueError, match=r"Rows \[0, 2\] have no area"):
+            sars.from_geodataframe(simple_gdf)
+
+    def test_missing_geometry(self, simple_gdf):
+        simple_gdf.loc[1, "geometry"] = None
+        with pytest.raises(ValueError, match="missing or empty"):
+            sars.from_geodataframe(simple_gdf)
+
+    def test_multipolygon(self, simple_gdf):
+        """An island with an islet is one row; its area is the sum of the parts."""
+        from shapely.geometry import MultiPolygon, box
+
+        x, y = 500_000, 4_000_000
+        simple_gdf.loc[0, "geometry"] = MultiPolygon(
+            [box(x, y, x + 1000, y + 1000), box(x + 5000, y, x + 6000, y + 1000)]
+        )
+        df = sars.from_geodataframe(simple_gdf)
+        assert df["area"].iloc[0] == pytest.approx(2.0)
 
     def test_import_error(self, monkeypatch):
         """Should raise ImportError if geopandas not available."""

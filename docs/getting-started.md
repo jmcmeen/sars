@@ -438,3 +438,11 @@ data = sars.from_csv("my_islands.csv", area_col="island_area", species_col="rich
 # From a GeoDataFrame (computes area from geometries)
 data = sars.from_geodataframe(gdf, species_col="n_species")
 ```
+
+`from_geodataframe` needs the `geo` extra (`pip install sars[geo]`). It measures each
+polygon in the GeoDataFrame's own coordinate system, so reproject longitude/latitude
+data to an equal-area projection first, for example `gdf.to_crs("EPSG:6933")`; it raises
+an error for coordinates in degrees, whose "areas" mean nothing. `crs_units` chooses
+km² (the default), hectares or m². The
+[areas from polygons](examples/geodataframe.ipynb) example works through it with real
+county outlines.

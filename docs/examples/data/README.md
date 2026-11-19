@@ -22,3 +22,21 @@ Attribution-NonCommercial 4.0 International License (CC BY-NC 4.0). The table is
 reproduced here by one of its authors. Cite the paper if you use it.
 
 Used by `appalachian.ipynb`.
+
+## `appalachian_counties.geojson`
+
+Outlines of ten counties in Tennessee, North Carolina and Georgia, in longitude and
+latitude (WGS 84): the ten sites of `appalachian_island.csv` that are counties.
+
+The polygons are from [Natural Earth](https://www.naturalearthdata.com/)'s 1:10m cultural
+vectors, admin 2 counties layer (`ne_10m_admin_2_counties`). Natural Earth is in the
+public domain: no permission is needed to use, modify or redistribute it. Coordinates
+are rounded to five decimal places, about a metre.
+
+| Property | Meaning |
+| --- | --- |
+| `county` | County name, Natural Earth's `NAME` |
+| `state` | Two-letter state abbreviation, Natural Earth's `REGION` |
+
+The file holds no species counts. `geodataframe.ipynb` joins it to
+`appalachian_island.csv` by county name and state.

@@ -62,6 +62,10 @@ published counts from 26 independent sites, read from a CSV. It compares the cla
 log–log power fit with the non-linear one, predicts richness for an unstudied site and
 shows what a weak fit and a wide bootstrap interval look like.
 
+[Areas from polygons](examples/geodataframe.ipynb) reads county outlines with geopandas,
+reprojects them to an equal-area coordinate system, and builds the dataset with
+`from_geodataframe`, checking the computed areas against published ones.
+
 ## Support and contributing
 
 Bug reports, questions, and feature requests go in the

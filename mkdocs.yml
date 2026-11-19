@@ -60,6 +60,7 @@ nav:
   - Examples:
       - Galápagos plants: examples/galapagos.ipynb
       - Appalachian amphibians: examples/appalachian.ipynb
+      - Areas from polygons: examples/geodataframe.ipynb
   - API Reference:
       - Models: api/models.md
       - Multi-model Inference: api/inference.md
