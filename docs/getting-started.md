@@ -32,7 +32,8 @@ print(fit)
 ```
 
 The returned `SARFit` object contains fitted parameters, goodness-of-fit
-statistics, and a `predict()` method:
+statistics, a `predict()` method, and `param_table()` for the parameters'
+standard errors (see [Parameter uncertainty](#parameter-uncertainty)):
 
 ```python
 fit.params      # {'c': 33.1803, 'z': 0.2832}
@@ -75,6 +76,47 @@ and the line on log-log axes.
 `load_galap()` is one of four bundled datasets; `load_aegean()`, `load_aegean2()` and
 `load_niering()` load the others. [Datasets](datasets.md) lists what each holds and
 where it was published.
+## Parameter uncertainty
+
+`param_table()` gives each parameter's standard error, a t test against zero, and a
+confidence interval:
+
+```python
+fit.param_table().round(4)
+#            estimate  std_error  t_value  p_value  ci_lower  ci_upper
+# parameter
+# c           33.1803    19.2423   1.7243   0.1066   -8.0903   74.4509
+# z            0.2832     0.0994   2.8499   0.0129    0.0701    0.4963
+
+fit.param_table(conf=0.9)  # 90% intervals
+```
+
+These come from the usual nonlinear least-squares approximation: the covariance of the
+parameters is `sigma² (JᵀJ)⁻¹`, where `J` is the Jacobian of the model at the fitted
+values and `sigma² = RSS / (n - p)` for `n` islands and `p` parameters. The t test and the
+interval use the t distribution with `n - p` degrees of freedom.
+
+The standard errors, t values and p values are the ones R `sars` reports (a fit's
+`sigConf`). R's interval columns are the estimate ± 2 standard errors whatever the sample
+size, where this package uses the t quantile, so the intervals here are slightly wider
+for small samples (± 2.14 standard errors for the 16 Galápagos islands).
+
+Some fits can't support a standard error. When the data don't identify a parameter (the
+curve stays the same as it changes, or as it and another parameter change together along
+a flat ridge), its standard error is `NaN` and `param_table()` warns, naming the model and
+the parameters. The same goes for a parameter the curve can't be differentiated
+reliably in, and any other whose standard error depends on it, which is where a ridge
+leads: `sar_weibull4` on the Galápagos data, where `c` falls to 1e-15 as `z` grows. A fit
+with as many parameters as islands has `NaN` too, without a warning. A large but finite standard error is the
+ordinary case of a parameter the data only weakly determine.
+
+The table is computed from the fit's `data`, which is the DataFrame you passed in, so
+`param_table()` raises `ValueError` if that DataFrame has been changed since the fit.
+
+The standard errors assume the fitted curve is close to linear in its parameters near the
+optimum, so treat them as approximate for small samples, and an interval can include
+values the model doesn't allow. For uncertainty in the curve itself, use
+[`bootstrap_ci`](#bootstrap-confidence-intervals).
 
 ## Comparing all 20 models
 

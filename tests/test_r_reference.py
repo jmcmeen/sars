@@ -22,6 +22,13 @@ Every model on each dataset has an expected outcome:
 - a GitHub issue reference: a known difference, expected to fail the ``MATCH``
   checks until that issue is fixed (strict xfail, so the fix must update it).
 
+Each matching model's parameter table (``SARFit.param_table``) is checked
+against R's ``sigConf``: standard errors, t values and p values, to ``TABLE_RTOL``.
+The two packages' optima differ in the fourth digit or so, which moves these
+numbers more than the error in either's numerical Jacobian. R's interval columns
+are the estimate ± 2 standard errors, not a t quantile, so they aren't compared.
+Fits listed in ``TABLE_NOT_COMPARED`` are left out.
+
 Averaging is checked on the models that match: R's weights and curve, rebuilt
 from R's own AICc and fitted values. Over all models the average differs from
 R's by what the per-model differences imply.
@@ -66,6 +73,8 @@ RIDGE_TOL = 1e-2
 R2_TOL = 1e-6
 PARAM_RTOL = 5e-3
 PARAM_ATOL = 1e-5
+TABLE_RTOL = 1e-2
+P_VALUE_ATOL = 1e-3
 
 MATCH = "match"
 BETTER = "better"
@@ -211,6 +220,70 @@ def test_asymp_keeps_its_asymptote_where_r_does_not(stem, model, fits):
     r_params = _r_params(_read(f"all_models_{stem}.csv").set_index("model").loc[model, "params"])
     assert r_params["z"] > 1
     assert fits[stem][model].params["z"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Parameter tables
+# ---------------------------------------------------------------------------
+
+
+# Matching fits whose tables aren't compared with R's.
+TABLE_NOT_COMPARED = {
+    # The fit sits on a bound (p1's d and heleg's f at 0), where the two
+    # packages stop at different tiny values and the usual standard errors
+    # don't apply. This package's agree with the analytic Jacobian there; R's
+    # differ from them by 3% (p1) and up to 60% (heleg).
+    ("galap7", "p1"): "d is on its bound of 0",
+    ("galap7", "heleg"): "f is on its bound of 0",
+    ("galap7", "ratio"): "R gives no table (sigConf is NA)",
+}
+
+
+@pytest.mark.parametrize(
+    ("stem", "model"),
+    [
+        pytest.param(stem, model, id=f"{stem}-{model}")
+        for stem, models in EXPECTED.items()
+        for model, outcome in models.items()
+        if outcome == MATCH and (stem, model) not in TABLE_NOT_COMPARED
+    ],
+)
+def test_param_table_matches_r(stem, model, fits):
+    ref = _read(f"param_table_{stem}.csv")
+    ref = ref[ref["model"] == model].set_index("param")
+    table = fits[stem][model].param_table()
+    assert set(table.index) == set(ref.index)
+    for name, r in ref.iterrows():
+        mine = table.loc[name]
+        if model == "asymp" and name == "z":
+            # R's z is exp(-z) here, so its standard error is this one times
+            # exp(-z) (the delta method). The t test asks a different question
+            # of each form (z = 0 here, exp(-z) = 0 in R), so it isn't compared.
+            r_form = np.exp(-mine["estimate"])
+            assert r_form * mine["std_error"] == pytest.approx(r["std_error"], rel=TABLE_RTOL)
+            continue
+        assert mine["std_error"] == pytest.approx(r["std_error"], rel=TABLE_RTOL), name
+        assert mine["t_value"] == pytest.approx(r["t_value"], rel=TABLE_RTOL), name
+        assert mine["p_value"] == pytest.approx(r["p_value"], rel=TABLE_RTOL, abs=P_VALUE_ATOL), (
+            name
+        )
+
+
+def test_tables_not_compared_are_matching_fits():
+    for stem, model in TABLE_NOT_COMPARED:
+        assert EXPECTED[stem][model] == MATCH
+
+
+def test_r_reports_a_standard_error_on_the_ridge_where_this_package_gives_nan(fits):
+    """On weibull4's flat ridge R's table has a standard error for z a ten
+    millionth of the estimate, which the fit can't support (R's own z differs
+    from this package's in the third digit). This package reports NaN."""
+    ref = _read("param_table_galap.csv")
+    r = ref[ref["model"] == "weibull4"].set_index("param").loc["z"]
+    assert r["std_error"] < 1e-5 * r["estimate"]
+    with pytest.warns(UserWarning, match="weibull4"):
+        table = fits["galap"]["weibull4"].param_table()
+    assert np.isnan(table.loc["z", "std_error"])
 
 
 # ---------------------------------------------------------------------------

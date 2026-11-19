@@ -14,6 +14,7 @@ A conceptual mirror of the R [`sars`](https://cran.r-project.org/package=sars) p
 - **20 SAR models** -- power, logarithmic, asymptotic, sigmoid, and more
 - **Log-log power model** -- the classic straight-line fit of log S on log A, with standard errors and p values
 - **Multi-model inference** -- fit all models at once, ranked by AICc with Akaike weights
+- **Parameter uncertainty** -- standard errors, t tests and confidence intervals for each fitted parameter
 - **Model averaging** -- weighted-average predictions across candidate models
 - **Prediction** -- a table of predicted richness at any areas, from any fit
 - **Residual checks** -- normality, homoscedasticity and negative-prediction checks on each fit, optionally leaving out the models that fail before averaging

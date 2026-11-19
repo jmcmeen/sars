@@ -2,6 +2,10 @@
 
 ## SARFit
 
+A fit holds the parameters and goodness-of-fit statistics. `predict` evaluates the fitted
+curve, and `param_table` gives the parameters' standard errors, t tests and confidence
+intervals.
+
 ::: sars.SARFit
 
 ## lin_pow

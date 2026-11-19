@@ -29,10 +29,12 @@ models <- c("power","powerR","epm1","epm2","p1","p2","loga","koba",
 
 fit_all <- function(data, stem) {
   results <- list()
+  tables <- list()
   fitted <- data.frame(area = data$a)
   for (m in models) {
     fn <- tryCatch(get(paste0("sar_", m)), error = function(e) NULL)
     if (is.null(fn)) next
+    fit <- NULL
     tryCatch({
       set.seed(SEED)
       fit <- suppressWarnings(fn(data = data))
@@ -50,6 +52,26 @@ fit_all <- function(data, stem) {
     }, error = function(e) {
       results[[m]] <<- data.frame(model=m, converged=FALSE,
                                   r2=NA, aic=NA, aicc=NA, bic=NA, params=NA)
+      fit <<- NULL
+    })
+    # The parameter table: sigConf's first four columns (its rows aren't always
+    # named, so the names come from the parameters). sigConf is NA where R
+    # couldn't compute it; those models have no rows. Guarded on its own, so
+    # that a table of some other shape can't mark a good fit as failed above.
+    tryCatch({
+      sc <- fit$sigConf
+      if (is.matrix(sc)) {
+        tables[[m]] <- data.frame(
+          model     = m,
+          param     = names(fit$par),
+          estimate  = sc[, "Estimate"],
+          std_error = sc[, "Std. Error"],
+          t_value   = sc[, "t value"],
+          p_value   = sc[, "Pr(>|t|)"]
+        )
+      }
+    }, error = function(e) {
+      cat("No parameter table for", m, "on", stem, ":", conditionMessage(e), "\n")
     })
   }
   write.csv(do.call(rbind, results), out(paste0("all_models_", stem, ".csv")),
@@ -57,6 +79,9 @@ fit_all <- function(data, stem) {
   # Each model's fitted values at the data's areas, so averaging can be
   # checked from R's own fits.
   write.csv(fitted, out(paste0("fitted_", stem, ".csv")), row.names = FALSE)
+  # Each parameter's standard error, t value and p value.
+  write.csv(do.call(rbind, tables), out(paste0("param_table_", stem, ".csv")),
+            row.names = FALSE)
 }
 
 fit_all(galap, "galap")

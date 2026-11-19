@@ -89,5 +89,9 @@ fit; only their richness is rescaled.
 If fitting fails for all starting values, a `SARFit` with `converged=False`
 is returned rather than raising an exception.
 
+`SARFit.param_table()` gives the parameters' standard errors, t tests and confidence
+intervals, with `NaN` for parameters the data don't identify (see
+[Getting Started](getting-started.md#parameter-uncertainty)).
+
 Information criteria (AIC, AICc, BIC) are computed using the normal
 log-likelihood convention, consistent with the R `sars` package.

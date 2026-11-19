@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from itertools import product
 
 import numpy as np
 import pandas as pd
+from scipy import special
 from scipy.optimize import least_squares
 
 from sars._checks import CheckOptions, ResidualChecks, run_checks
@@ -44,6 +46,11 @@ class SARFit:
         Whether the NLS solver converged.
     data : pd.DataFrame
         Original data (columns: area, species).
+
+    See Also
+    --------
+    SARFit.param_table : standard errors, t tests and confidence intervals
+        for the fitted parameters.
     """
 
     model: str
@@ -162,6 +169,157 @@ class SARFit:
         area = self.data["area"].to_numpy(dtype=float)
         species = self.data["species"].to_numpy(dtype=float)
         return run_checks(self.model, area, species, self.predict(area), options)
+
+    def param_table(self, conf: float = 0.95) -> pd.DataFrame:
+        """Standard errors, t tests and confidence intervals for the parameters.
+
+        The usual large-sample (Wald) inference for nonlinear least squares:
+        with ``J`` the Jacobian of the model with respect to its parameters at
+        the fitted values, ``n`` observations and ``p`` parameters, the
+        parameters' covariance is ``sigma^2 (J'J)^-1`` with
+        ``sigma^2 = RSS / (n - p)``. Each parameter's t value is its estimate
+        over its standard error, tested against zero on ``n - p`` degrees of
+        freedom (two-sided), and its interval is
+        ``estimate ± t(1 - (1 - conf) / 2, n - p) * std_error``.
+
+        The table is computed on each call from the fit's data and parameters.
+        The Jacobian is numerical (central differences).
+
+        Parameters
+        ----------
+        conf : float, default 0.95
+            Confidence level of the interval, between 0 and 1.
+
+        Returns
+        -------
+        pd.DataFrame
+            One row per parameter (the index, in the model's parameter order),
+            with columns ``estimate``, ``std_error``, ``t_value``, ``p_value``,
+            ``ci_lower`` and ``ci_upper``.
+
+        Warns
+        -----
+        UserWarning
+            If the data don't identify some of the parameters: the model's
+            curve doesn't change when they do, or changes the same way as when
+            other parameters do (a flat ridge in the fit). Their standard
+            errors, and the columns computed from them, are NaN. Likewise for
+            a parameter the curve can't be differentiated reliably in at the
+            fitted values, and any other whose standard error depends on it.
+            That is where a ridge leads: ``sar_weibull4`` on the Galápagos
+            data trades ``c`` down to 1e-15 against a growing ``z``, where the
+            curve is no longer computed precisely enough.
+
+        Raises
+        ------
+        ValueError
+            If ``conf`` is not between 0 and 1, or if ``data`` has changed
+            since the fit (the table is computed from it).
+
+        Notes
+        -----
+        Every column but ``estimate`` is NaN when the fit has no residual
+        degrees of freedom (``n <= p``), and the whole table is NaN for a fit
+        that did not converge.
+
+        The standard errors, t values and p values are the ones R ``sars``
+        reports in a fit's ``sigConf``. Its interval columns are
+        ``estimate ± 2 * std_error`` whatever the sample size; the t quantile
+        used here is larger than 2 for small samples (2.14 for 16 islands and
+        two parameters), so these intervals are slightly wider.
+
+        These are approximations that assume the curve is close to linear in
+        the parameters near the optimum, and that the optimum is not on one of
+        the bounds the fit searches within. An interval can extend past values
+        the model allows (a negative ``c`` for the power model). For
+        uncertainty in the fitted curve itself, see ``bootstrap_ci``.
+
+        Examples
+        --------
+        >>> import sars
+        >>> fit = sars.sar_power(sars.load_galap())
+        >>> fit.param_table().round(4)
+                   estimate  std_error  t_value  p_value  ci_lower  ci_upper
+        parameter
+        c           33.1803    19.2423   1.7243   0.1066   -8.0903   74.4509
+        z            0.2832     0.0994   2.8499   0.0129    0.0701    0.4963
+        """
+        if not 0.0 < conf < 1.0:
+            raise ValueError(f"conf must be between 0 and 1, got {conf}")
+        names = list(self.params)
+        estimate = np.array([self.params[k] for k in names], dtype=float)
+        std_error = np.full(len(names), np.nan)
+        dof = self.n - len(names)
+        if self.converged and dof > 0:
+            spec = _MODEL_REGISTRY.get(self.model)
+            if spec is None:
+                raise NotImplementedError(f"param_table not yet implemented for '{self.model}'")
+            area, species = self._fitted_data(spec)
+            std_error, rough = _param_std_errors(spec.func, area, species, estimate)
+            missing = [n for n, se in zip(names, std_error, strict=True) if np.isnan(se)]
+            if rough.any():
+                which = ", ".join(n for n, bad in zip(names, rough, strict=True) if bad)
+                warnings.warn(
+                    f"Model '{self.model}': the curve can't be differentiated reliably with "
+                    f"respect to {which} at the fitted values, as happens far along a flat "
+                    f"ridge of the fit, so {', '.join(missing)} have no standard error "
+                    f"(NaN in param_table)",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            elif missing:
+                warnings.warn(
+                    f"Model '{self.model}': the data don't identify {', '.join(missing)}, "
+                    f"so no standard error can be given (NaN in param_table)",
+                    UserWarning,
+                    stacklevel=2,
+                )
+        # A perfect fit has standard errors of 0, and so infinite t values.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            t_value = estimate / std_error
+        if dof > 0:
+            # Student's t from scipy.special: scipy.stats would add a tenth of a
+            # second to every import of the package.
+            p_value = 2.0 * special.stdtr(dof, -np.abs(t_value))
+            half_width = special.stdtrit(dof, 0.5 + conf / 2.0) * std_error
+        else:
+            p_value = half_width = np.full(len(names), np.nan)
+        return pd.DataFrame(
+            {
+                "estimate": estimate,
+                "std_error": std_error,
+                "t_value": t_value,
+                "p_value": p_value,
+                "ci_lower": estimate - half_width,
+                "ci_upper": estimate + half_width,
+            },
+            index=pd.Index(names, name="parameter"),
+        )
+
+    def _fitted_data(self, spec: _ModelSpec) -> tuple[np.ndarray, np.ndarray]:
+        """The area and richness the model was fitted to, as arrays.
+
+        ``data`` is the caller's DataFrame, not a copy, so it can have changed
+        since the fit. Statistics computed from data the parameters weren't
+        fitted to would be wrong without any sign of it, so this raises instead.
+        """
+        area = np.asarray(self.data["area"], dtype=float)
+        species = np.asarray(self.data["species"], dtype=float)
+        changed = len(area) != self.n
+        if not changed and np.isfinite(self.r_squared):
+            # The fit's R² is reproduced exactly by the data it was fitted to.
+            with np.errstate(all="ignore"):
+                values = [self.params[k] for k in spec.param_names]
+                rss = float(np.sum((species - spec.func(area, *values)) ** 2))
+                ss_tot = float(np.sum((species - np.mean(species)) ** 2))
+                r_squared = 1.0 - rss / ss_tot if ss_tot > 0 else np.nan
+            changed = not np.isclose(r_squared, self.r_squared, rtol=1e-9, atol=1e-9)
+        if changed:
+            raise ValueError(
+                f"the data of this '{self.model}' fit have changed since it was fitted "
+                f"({self.n} observations, R² {self.r_squared:.6g}); fit the model again"
+            )
+        return area, species
 
     def __repr__(self) -> str:
         p = "  ".join(f"{k}={v:.4f}" for k, v in self.params.items())
@@ -1453,3 +1611,224 @@ def sar_heleg(data: pd.DataFrame) -> SARFit:
     SARFit
     """
     return _fit_nls("heleg", data)
+
+
+# A finite difference is taken over a step that moves the curve by between
+# these fractions of the richness values: enough for the difference to be more
+# than rounding noise (about 1e-16 of them), and little enough that the curve's
+# bending over the step doesn't show.
+_JAC_MIN_RESPONSE = 1e-7
+
+
+_JAC_MAX_RESPONSE = 1e-5
+
+
+# The first step tried, relative to the parameter.
+_JAC_REL_STEP = float(np.finfo(float).eps ** (1.0 / 3.0))
+
+
+# Two step sizes must agree this closely for a derivative to be trusted.
+_JAC_AGREE_TOL = 1e-6
+
+
+# The agreement of a derivative of a smooth curve is no better than this,
+# whatever the two steps happen to give.
+_JAC_BEST_AGREEMENT = 1e-9
+
+
+# A direction in parameter space is undetermined when the curve responds to it
+# this much less than to the best-determined one. Standard errors that depend
+# on such a direction are reported as unknown rather than as huge numbers.
+_IDENT_RCOND = 1e-4
+
+
+def _difference(
+    func: _SARFunc, area: np.ndarray, values: np.ndarray, i: int, base: np.ndarray, h: float
+) -> tuple[np.ndarray, float, int] | None:
+    """A second-order difference of the curve in parameter ``i`` with step ``h``.
+
+    Central where the curve is defined on both sides. Where a step one way
+    leaves the model's domain (a positive parameter stepped past zero), the
+    three-point difference on the other side. Returns the derivative, the size
+    of the change in the curve it was taken over, and which side it used (0 for
+    central), or None if the curve isn't defined a step away on either side.
+    """
+
+    def at(step: float) -> np.ndarray:
+        moved = values.copy()
+        moved[i] += step
+        return np.asarray(func(area, *moved), dtype=float)
+
+    up, down = at(h), at(-h)
+    up_ok, down_ok = bool(np.all(np.isfinite(up))), bool(np.all(np.isfinite(down)))
+    if up_ok and down_ok:
+        return (up - down) / (2.0 * h), float(np.linalg.norm(up - down)) / 2.0, 0
+    for side, near, ok in ((1, up, up_ok), (-1, down, down_ok)):
+        if ok:
+            far = at(2.0 * side * h)
+            if np.all(np.isfinite(far)):
+                slope = side * (-3.0 * base + 4.0 * near - far) / (2.0 * h)
+                return slope, float(np.linalg.norm(near - base)), side
+    return None
+
+
+def _jacobian_column(
+    func: _SARFunc, area: np.ndarray, values: np.ndarray, i: int, base: np.ndarray, scale: float
+) -> tuple[np.ndarray, np.ndarray, float] | None:
+    """Derivative of the model's curve with respect to parameter ``i``.
+
+    Returns two estimates of it, from a step and from half that step, and how
+    far apart they are relative to their size; the second estimate is the
+    better one, and is extrapolated from both when they agree. A parameter the
+    curve doesn't respond to gets zeros. None means no step was found at which
+    the curve could be differenced.
+    """
+    # The right step is the one the curve responds to by the right amount,
+    # which the parameter's own size doesn't tell: p1's d can sit at 0 or 1e-42
+    # on its bound with a derivative of thousands, and a log-scale parameter
+    # at 1e-300. So the step is searched for, growing or shrinking from a first
+    # guess in proportion to how far the response is from the one wanted, and
+    # bisecting once it has been both too small and too large.
+    lowest, highest = _JAC_MIN_RESPONSE * scale, _JAC_MAX_RESPONSE * scale
+    wanted = float(np.sqrt(lowest * highest))
+    h = _JAC_REL_STEP * abs(values[i])
+    if not (np.isfinite(h) and h > 0):
+        h = _JAC_REL_STEP
+    too_small, too_big = 0.0, np.inf
+    coarse = None
+    for _ in range(200):
+        found = _difference(func, area, values, i, base, h)
+        response = found[1] if found is not None else np.inf
+        if lowest <= response <= highest:
+            coarse = found
+            break
+        if response < lowest:
+            too_small = h
+            h *= min(wanted / response, 1e8) if response > 0 else 1e8
+            h = max(h, 2.0 * too_small)
+        else:
+            too_big = h
+            h *= max(wanted / response, 1e-8) if np.isfinite(response) else 1e-3
+            h = min(h, 0.5 * too_big)
+        if np.isinf(h):
+            # No step moves the curve: it ignores this parameter.
+            zeros = np.zeros(len(area))
+            return zeros, zeros, 0.0
+        if not too_small < h < too_big:
+            h = float(np.sqrt(too_small * too_big))
+            if not too_small < h < too_big:
+                # No step between one too small and the next one up: the curve
+                # jumps there, or stops being defined.
+                return None
+    fine = _difference(func, area, values, i, base, h / 2.0)
+    if coarse is None or fine is None:
+        return None
+    size = float(np.linalg.norm(fine[0]))
+    apart = float(np.linalg.norm(fine[0] - coarse[0])) / size if size > 0 else np.inf
+    best = fine[0]
+    if apart <= _JAC_AGREE_TOL and fine[2] == coarse[2]:
+        # Both have an error proportional to the step squared, so Richardson
+        # extrapolation removes most of it.
+        best = (4.0 * fine[0] - coarse[0]) / 3.0
+    return coarse[0], best, apart
+
+
+def _std_errors_from_jacobian(jac: np.ndarray, sigma2: float, accuracy: float) -> np.ndarray:
+    """sqrt(diag(sigma^2 (J'J)^-1)), NaN for parameters the Jacobian doesn't identify.
+
+    ``accuracy`` is the relative accuracy of the Jacobian's columns.
+    """
+    std_error = np.full(jac.shape[1], np.nan)
+    # A parameter the curve ignores has no standard error; the others' are the
+    # ones they'd have with it held fixed.
+    norms = np.linalg.norm(jac, axis=0)
+    live = norms > 0
+    if not live.any():
+        return std_error
+    # Columns are scaled to unit length so that the test for an undetermined
+    # direction doesn't depend on the parameters' units.
+    _, sing, vt = np.linalg.svd(jac[:, live] / norms[live], full_matrices=False)
+    weak = sing < _IDENT_RCOND * sing[0]
+    # Each parameter's variance is a sum over the singular directions, of its
+    # squared loading on the direction over the squared singular value.
+    loadings = vt.T
+    known = ((loadings[:, ~weak] / sing[~weak]) ** 2).sum(axis=1)
+    variance = known
+    lost = np.zeros(len(known), dtype=bool)
+    if weak.any():
+        # A parameter whose variance comes mostly from weak directions is
+        # unidentified: two parameters on a ridge, say. A third that merely
+        # shares the model with them isn't, though its loading on the ridge is
+        # rarely exactly zero. What the weak directions add to its variance is
+        # judged with what the Jacobian's accuracy allows to be known: a
+        # loading within the error of the singular vectors is taken as zero,
+        # and a singular value isn't taken to be smaller than could be
+        # resolved. If that is the smaller part, it is counted in, unless more
+        # than 1% of the variance would come from directions whose singular
+        # values are too small to have two good digits.
+        loading_error = accuracy * sing[0] / sing[~weak].min()
+        resolved = np.where(np.abs(loadings[:, weak]) > loading_error, loadings[:, weak], 0.0)
+        parts = (resolved / np.maximum(sing[weak], accuracy * sing[0])) ** 2
+        unsure = sing[weak] < 100.0 * accuracy * sing[0]
+        lost = (parts.sum(axis=1) > known) | (parts[:, unsure].sum(axis=1) > 0.01 * known)
+        variance = known + parts.sum(axis=1)
+    std_error[live] = np.where(lost, np.nan, np.sqrt(sigma2 * variance) / norms[live])
+    return std_error
+
+
+def _param_std_errors(
+    func: _SARFunc, area: np.ndarray, species: np.ndarray, values: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Standard errors of fitted parameters, from sigma^2 (J'J)^-1.
+
+    Parameters
+    ----------
+    func : callable
+        The model function, ``f(area, *params)``.
+    area, species : np.ndarray
+        The data the model was fitted to.
+    values : np.ndarray
+        The fitted parameters, in the function's order. There must be fewer of
+        them than observations.
+
+    Returns
+    -------
+    std_error : np.ndarray
+        One per parameter; NaN where none can be given.
+    rough : np.ndarray of bool
+        The parameters the curve couldn't be differentiated reliably in. They
+        have no standard error, and neither do any that depend on them.
+    """
+    n, p = len(area), len(values)
+    nan = np.full(p, np.nan)
+    with np.errstate(all="ignore"):
+        base = np.asarray(func(area, *values), dtype=float)
+        if not np.all(np.isfinite(base)):
+            return nan, np.ones(p, dtype=bool)
+        scale = float(np.linalg.norm(species)) or float(np.linalg.norm(base)) or 1.0
+        columns = [_jacobian_column(func, area, values, i, base, scale) for i in range(p)]
+    undefined = np.array([c is None for c in columns])
+    if undefined.any():
+        # With no estimate at all of a column, nothing can be said of how the
+        # other parameters depend on it.
+        return nan, undefined
+    found = [c for c in columns if c is not None]
+    apart = np.array([c[2] for c in found])
+    rough = apart > _JAC_AGREE_TOL
+    accuracy = float(np.clip(apart[~rough].max(initial=0.0), _JAC_BEST_AGREEMENT, _JAC_AGREE_TOL))
+    residuals = species - base
+    sigma2 = float(residuals @ residuals) / (n - p)
+    std_error = _std_errors_from_jacobian(np.column_stack([c[1] for c in found]), sigma2, accuracy)
+    if rough.any():
+        # A parameter whose derivative is rough has no standard error. Another
+        # keeps its own only if it doesn't depend on that derivative: it must
+        # come out the same from the other estimate of the rough columns, and
+        # with the rough parameters held fixed instead (noise in a column can
+        # hide a ridge the parameter lies on).
+        best = np.column_stack([c[1] for c in found])
+        for alternative in (np.column_stack([c[0] for c in found]), np.zeros_like(best)):
+            other = _std_errors_from_jacobian(np.where(rough, alternative, best), sigma2, accuracy)
+            with np.errstate(invalid="ignore"):
+                same = np.abs(other - std_error) <= 0.01 * std_error
+            std_error = np.where(same & ~rough, std_error, np.nan)
+    return std_error, rough

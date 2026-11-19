@@ -88,6 +88,15 @@ reconstructed from the commit history and the
   `"kolmogorov"` uses a normal distribution with the residuals' mean and standard deviation
   (R's `"kolmo"` uses a standard normal, which depends on the units of richness), and R's
   Lilliefors test is not offered (#121)
+- `SARFit.param_table()` gives each fitted parameter's standard error, t value, p value
+  and confidence interval, from the Jacobian of the model at the fitted values
+  (covariance `sigma² (JᵀJ)⁻¹`, with `n - p` degrees of freedom). The standard errors,
+  t values and p values match R `sars`'s `sigConf` on the Galápagos data. The interval
+  uses the t distribution at the level `conf` (default 0.95), so it is slightly wider
+  for small samples than R's estimate ± 2 standard errors. Parameters the data don't
+  identify, and those that depend on a derivative of the curve that can't be computed
+  reliably (`sar_weibull4`'s on the Galápagos data), get `NaN` and a `UserWarning`
+  instead of a meaningless number (#120)
 
 ### Fixed
 
