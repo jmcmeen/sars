@@ -21,6 +21,7 @@ pip install sars
 - **Multi-model inference** — fit all models at once, ranked by AICc with Akaike weights
 - **Model averaging** — weighted-average predictions across candidate models
 - **Bootstrap confidence intervals** — percentile-based CIs for averaged predictions
+- **Threshold models** — piecewise regression for detecting breakpoints (small island effect), with bootstrap confidence intervals for the breakpoints
 - **R-validated** — fits, AICc weights, model averaging and threshold models are checked against R `sars` reference output, with every known difference listed in `tests/test_r_reference.py`
 
 ## Quick start
@@ -118,3 +119,4 @@ This package is a Python implementation inspired by the R [`sars`](https://githu
 ### Threshold models
 
 - Matthews TJ, Rigal F (2021). Thresholds and the species-area relationship. *Frontiers of Biogeography*, 13, e49404.
+- Toms JD, Lesperance ML (2003). Piecewise regression: a tool for identifying ecological thresholds. *Ecology*, 84, 2034-2041. (`threshold_ci`)

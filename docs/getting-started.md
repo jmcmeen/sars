@@ -109,6 +109,47 @@ print(th.summary)
 print(th.all_fits["ContTwo"]["breakpoints"])
 ```
 
+### Confidence intervals for a breakpoint
+
+`threshold_ci` gives a model's breakpoints bootstrap confidence intervals (Toms &
+Lesperance 2003). It resamples the model's residuals onto its fitted values, reruns the
+breakpoint search on each resample, and takes percentiles of the breakpoints found:
+
+```python
+import numpy as np
+
+ci = sars.threshold_ci(th, model="ContOne", rng=np.random.default_rng(1))
+print(ci)                             # estimate [lower, upper] in area units
+print(ci.estimates, ci.lower, ci.upper)   # on the fitted scale (ln area)
+print(ci.lower_area, ci.upper_area)
+```
+
+Without `model` it takes the best model that has a breakpoint; Linear has none. A
+two-threshold model gets an interval for each breakpoint. The default 1000 resamples are
+scored together for the models searched over a grid, so they cost about as much as a few
+fits of the model for ContOne and ZslopeOne (a fraction of a second) and roughly ten fits
+for ContTwo and ZslopeTwo (a few seconds on the 16 Galápagos islands). DiscOne and DiscTwo
+are searched one resample at a time: a second or a few on tens of islands, some tens of
+seconds for DiscTwo on a hundred. `ci.samples` holds every resample's breakpoints.
+
+Read the intervals with the data in mind. With few islands they are wide: a bound at the
+third-smallest or third-largest area (the edge of the search) means the data don't place
+the breakpoint on that side. A discontinuous model's breakpoint is always an observed
+area, so its bounds are too, and when one jump dominates every resample can land on the
+same island, giving an interval of no width. That says the resamples agree, not that the
+threshold is known exactly. Percentile intervals for a breakpoint also run a little narrow:
+in simulations of 40 islands with one true breakpoint, 95% intervals covered it about 85 to
+90% of the time. R `sars`'s `threshold_ci` offers the bootstrap for ContOne and
+ZslopeOne only; its draws differ, so its intervals agree with these only roughly.
+
+`plot_threshold` draws a model on the scale it was fitted on, with its breakpoints marked
+and, given `ci`, their intervals shaded:
+
+```python
+sars.plot_threshold(th, ci=ci)
+sars.plot_threshold(th, model="DiscOne")   # separate lines either side of the jump
+```
+
 ## Bringing your own data
 
 `sars` expects a DataFrame with `area` and `species` columns:

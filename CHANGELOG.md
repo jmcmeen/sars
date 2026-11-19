@@ -17,6 +17,19 @@ reconstructed from the commit history and the
   ("convex", "sigmoid", "linear" or "none"), from how its slope changes. The `shape`
   column still gives the model's general shape, which for five models is "convex/sigmoid"
   and doesn't say which a fit took (#116)
+- `threshold_ci` gives the breakpoints of a fitted threshold model bootstrap confidence
+  intervals: it resamples the model's residuals onto its fitted values, reruns that model's
+  breakpoint search on each resample (same grid, same scale) and takes percentiles of the
+  breakpoints found (Toms & Lesperance 2003). It works for all six models with a breakpoint,
+  where R `sars`'s `threshold_ci` covers ContOne and ZslopeOne, and returns a `ThresholdCI`
+  with the estimates and bounds on the fitted scale and in area units, plus every resample's
+  breakpoints. The resamples of a model searched over a grid are scored together, so the
+  default 1000 cost about as much as a few fits of the model for ContOne and ZslopeOne and
+  roughly ten for ContTwo and ZslopeTwo. `ThresholdFit` gains an `interval` attribute, the
+  grid spacing its search used (#119)
+- `plot_threshold` plots a threshold model on the scale it was fitted on: the data, the
+  fitted segments (a discontinuous model's drawn apart at each jump), a line at each
+  breakpoint and, given a `ThresholdCI`, its interval shaded (#119)
 
 ### Fixed
 

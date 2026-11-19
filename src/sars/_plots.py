@@ -9,9 +9,11 @@ import numpy as np
 
 from sars._inference import AveragedSAR, MultiSARFit
 from sars._models import SARFit
+from sars._threshold import _fitted_data
 
 if TYPE_CHECKING:
     from sars._inference import BootstrappedCI
+    from sars._threshold import ThresholdCI, ThresholdFit
 
 
 def plot_fit(
@@ -237,4 +239,121 @@ def plot_residuals(
     ax.set_xlabel("Fitted values")
     ax.set_ylabel("Residuals")
     ax.set_title(f"Residuals: {fit.model}")
+    return ax
+
+
+def plot_threshold(
+    fit: ThresholdFit,
+    model: str | None = None,
+    ci: ThresholdCI | None = None,
+    ax: plt.Axes | None = None,
+    scatter_kw: dict | None = None,
+    line_kw: dict | None = None,
+) -> plt.Axes:
+    """Plot a threshold model: the data, its fitted segments and its breakpoints.
+
+    The x axis is the scale the model was fitted on: the natural log of area
+    by default, area itself for a fit made with ``log_area=False``. A
+    continuous model is drawn as one bending line; a discontinuous model as a
+    separate line for each segment, with nothing drawn across a jump: a
+    breakpoint belongs to the segment on its left, so the next segment starts
+    at the first area above it. A dashed vertical line marks each breakpoint,
+    and with ``ci`` each breakpoint's confidence interval is shaded.
+
+    Parameters
+    ----------
+    fit : ThresholdFit
+        Result of ``sar_threshold()``.
+    model : str, optional
+        Which of the fit's models to draw. Default: the model ``ci`` is for
+        when ``ci`` is given, the best model by AICc otherwise.
+    ci : ThresholdCI, optional
+        Breakpoint confidence intervals from ``threshold_ci()`` for the same
+        fit and model.
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on. If None, creates a new figure.
+    scatter_kw : dict, optional
+        Extra keyword arguments passed to ``ax.scatter()`` for the
+        observed data points.
+    line_kw : dict, optional
+        Extra keyword arguments passed to ``ax.plot()`` for the fitted
+        segments.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+
+    Raises
+    ------
+    ValueError
+        If ``model`` isn't among the fit's models, if ``ci`` is for another
+        model, scale or fit than the one drawn, or if the fit's data have
+        changed since it was fitted.
+    """
+    if model is None:
+        model = ci.model if ci is not None else fit.best_model
+    if model not in fit.all_fits:
+        raise ValueError(
+            f"{model} is not among this fit's models ({', '.join(fit.all_fits)}); "
+            f"include it in sar_threshold's models."
+        )
+    if ci is not None and ci.model != model:
+        raise ValueError(f"ci is for {ci.model}, not {model}.")
+    if ci is not None and ci.log_area != fit.log_area:
+        raise ValueError("ci and fit are on different scales (one on ln(area), one on area).")
+    fitted = fit.all_fits[model]
+    if ci is not None and not (
+        len(ci.estimates) == len(fitted["breakpoints"])
+        and np.allclose(ci.estimates, fitted["breakpoints"])
+    ):
+        raise ValueError(f"ci is for another fit: its breakpoints aren't this fit's for {model}.")
+    _, x, species = _fitted_data(fit, model)
+    if ax is None:
+        _, ax = plt.subplots()
+
+    s_defaults = {"color": "black", "zorder": 3, "label": "Observed"}
+    ax.scatter(x, species, **{**s_defaults, **(scatter_kw or {})})
+
+    l_defaults = {
+        "color": "dodgerblue",
+        "linewidth": 2,
+        "label": f"{model} (R²={fitted['r2']:.3f})",
+    }
+    line = {**l_defaults, **(line_kw or {})}
+    # Each segment is a straight line, so its two ends draw it. Continuous
+    # segments share their ends and join up. A discontinuous model's breakpoint
+    # is the last area of the segment on its left, so the next segment is drawn
+    # from the first area above it, not back across the gap it never fitted.
+    for i, seg in enumerate(fitted["segments"]):
+        start = seg["x_min"]
+        if i > 0 and model.startswith("Disc"):
+            start = x[x > start].min()
+        ends = np.array([start, seg["x_max"]])
+        if i > 0:  # one legend entry for the whole model
+            line = {**line, "label": "_nolegend_"}
+        ax.plot(ends, seg["intercept"] + seg["slope"] * ends, **line)
+
+    for i, t in enumerate(fitted["breakpoints"]):
+        ax.axvline(
+            t,
+            color="red",
+            linestyle="--",
+            linewidth=1,
+            label="Breakpoint" if i == 0 else "_nolegend_",
+        )
+    if ci is not None:
+        for i, (lo, hi) in enumerate(zip(ci.lower, ci.upper, strict=True)):
+            ax.axvspan(
+                lo,
+                hi,
+                alpha=0.15,
+                color="red",
+                linewidth=0,
+                label=f"{ci.conf * 100:g}% CI" if i == 0 else "_nolegend_",
+            )
+
+    ax.set_xlabel("ln(Area)" if fit.log_area else "Area")
+    ax.set_ylabel("Species")
+    ax.set_title(f"Threshold model: {model}")
+    ax.legend()
     return ax

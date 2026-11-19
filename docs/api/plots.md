@@ -15,3 +15,7 @@
 ## plot_residuals
 
 ::: sars.plot_residuals
+
+## plot_threshold
+
+::: sars.plot_threshold

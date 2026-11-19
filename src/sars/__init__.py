@@ -51,8 +51,8 @@ from sars._models import (
     sar_weibull3,
     sar_weibull4,
 )
-from sars._plots import plot_average, plot_fit, plot_multi, plot_residuals
-from sars._threshold import ThresholdFit, sar_threshold
+from sars._plots import plot_average, plot_fit, plot_multi, plot_residuals, plot_threshold
+from sars._threshold import ThresholdCI, ThresholdFit, sar_threshold, threshold_ci
 
 __all__ = [
     "__version__",
@@ -60,6 +60,7 @@ __all__ = [
     "BootstrappedCI",
     "MultiSARFit",
     "SARFit",
+    "ThresholdCI",
     "ThresholdFit",
     "aicc",
     "akaike_weights",
@@ -72,10 +73,12 @@ __all__ = [
     "sar_average",
     "sar_multi",
     "sar_threshold",
+    "threshold_ci",
     "plot_average",
     "plot_fit",
     "plot_multi",
     "plot_residuals",
+    "plot_threshold",
     "sar_asymp",
     "sar_betap",
     "sar_chapman",

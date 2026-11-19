@@ -15,7 +15,7 @@ A conceptual mirror of the R [`sars`](https://cran.r-project.org/package=sars) p
 - **Multi-model inference** -- fit all models at once, ranked by AICc with Akaike weights
 - **Model averaging** -- weighted-average predictions across candidate models
 - **Bootstrap confidence intervals** -- percentile-based CIs for averaged predictions
-- **Threshold models** -- piecewise regression for detecting breakpoints (small island effect)
+- **Threshold models** -- piecewise regression for detecting breakpoints (small island effect), with bootstrap confidence intervals for the breakpoints
 - **I/O adapters** -- load from CSV, GeoDataFrame, or pyiNaturalist summaries
 - **R-validated** -- fits, AICc weights, model averaging and threshold models are checked against R `sars` reference output, with every known difference listed in `tests/test_r_reference.py`
 
