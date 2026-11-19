@@ -8,9 +8,11 @@ import numpy as np
 import pytest
 
 from sars import (
+    coleman,
     lin_pow,
     load_galap,
     plot_average,
+    plot_coleman,
     plot_fit,
     plot_lin_pow,
     plot_multi,
@@ -343,4 +345,88 @@ class TestPlotLinPow:
         result = plot_lin_pow(lin_pow(load_galap()), ax=ax, line_kw={"color": "red"})
         assert result is ax
         assert ax.lines[0].get_color() == "red"
+        plt.close("all")
+
+
+@pytest.fixture
+def coleman_fit():
+    rng = np.random.default_rng(3)
+    area = np.array([1.0, 2.0, 4.0, 8.0, 15.0, 30.0, 60.0, 120.0])
+    totals = rng.geometric(0.05, size=30)
+    counts = np.array([rng.multinomial(n, area / area.sum()) for n in totals])
+    return coleman(counts, area)
+
+
+class TestPlotColeman:
+    def test_returns_axes(self, coleman_fit):
+        ax = plot_coleman(coleman_fit)
+        assert isinstance(ax, plt.Axes)
+        plt.close("all")
+
+    def test_accepts_existing_axes(self, coleman_fit):
+        fig, ax = plt.subplots()
+        assert plot_coleman(coleman_fit, ax=ax) is ax
+        plt.close("all")
+
+    def test_log_area_axis_by_default(self, coleman_fit):
+        ax = plot_coleman(coleman_fit)
+        assert ax.get_xscale() == "log"
+        assert ax.get_yscale() == "linear"
+        assert plot_coleman(coleman_fit, log=False).get_xscale() == "linear"
+        plt.close("all")
+
+    def test_draws_points_curve_and_band(self, coleman_fit):
+        ax = plot_coleman(coleman_fit)
+        sites = coleman_fit.sites
+        # The observed points, at relative area.
+        points = ax.collections[0].get_offsets()
+        np.testing.assert_allclose(points[:, 0], sites["relative_area"])
+        np.testing.assert_allclose(points[:, 1], sites["observed"])
+        # The expected curve spans the sites and is the model's.
+        (line,) = ax.lines
+        x, y = line.get_data()
+        assert x[0] == pytest.approx(sites["relative_area"].min())
+        assert x[-1] == pytest.approx(sites["relative_area"].max())
+        np.testing.assert_allclose(y, coleman_fit.predict(x * coleman_fit.total_area))
+        # The band is one standard deviation either side of it.
+        assert len(ax.collections) == 2
+        band = ax.collections[1].get_paths()[0].vertices
+        sd = coleman_fit.predict_sd(x * coleman_fit.total_area)
+        assert band[:, 1].max() == pytest.approx((y + sd).max())
+        assert band[:, 1].min() == pytest.approx((y - sd).min())
+        labels = [t.get_text() for t in ax.get_legend().get_texts()]
+        assert labels == ["Observed", "Random placement", "±1 sd"]
+        plt.close("all")
+
+    @pytest.mark.parametrize("log", [True, False])
+    def test_equal_area_sites_still_get_a_curve(self, log):
+        """Sites of one size share a relative area, so there is no range between
+        them; the curve and band are drawn around that area instead."""
+        rng = np.random.default_rng(3)
+        totals = rng.geometric(0.05, size=30)
+        fit = coleman(np.array([rng.multinomial(n, [0.2] * 5) for n in totals]), [4.0] * 5)
+        ax = plot_coleman(fit, log=log)
+        x, y = ax.lines[0].get_data()
+        assert x[0] < 0.2 < x[-1] <= 1.0
+        assert x[-1] / x[0] >= 10
+        assert np.ptp(y) > 1
+        np.testing.assert_allclose(y, fit.predict(np.minimum(x, 1.0) * fit.total_area))
+        band = ax.collections[1].get_paths()[0].vertices
+        assert np.ptp(band[:, 0]) == pytest.approx(x[-1] - x[0])
+        plt.close("all")
+
+    def test_title_gives_the_verdict(self, coleman_fit):
+        assert plot_coleman(coleman_fit).get_title().endswith(": not rejected")
+        plt.close("all")
+
+    def test_keyword_overrides(self, coleman_fit):
+        ax = plot_coleman(
+            coleman_fit,
+            scatter_kw={"label": "Islands"},
+            line_kw={"color": "red"},
+            fill_kw={"alpha": 0.5},
+        )
+        assert ax.lines[0].get_color() == "red"
+        assert ax.collections[1].get_alpha() == 0.5
+        assert ax.get_legend().get_texts()[0].get_text() == "Islands"
         plt.close("all")

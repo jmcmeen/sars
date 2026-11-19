@@ -24,7 +24,8 @@ pip install sars
 - **Prediction** — a table of predicted richness at any areas, from any fit
 - **Bootstrap confidence intervals** — percentile-based CIs for averaged predictions
 - **Threshold models** — piecewise regression for detecting breakpoints (small island effect), with bootstrap confidence intervals for the breakpoints
-- **R-validated** — fits, AICc weights, model averaging and threshold models are checked against R `sars` reference output, with every known difference listed in `tests/test_r_reference.py`
+- **Random placement** — Coleman's null model for richness from a species-by-site abundance table
+- **R-validated** — fits, AICc weights, model averaging, threshold models and random placement are checked against R `sars` reference output, with every known difference listed in `tests/test_r_reference.py`
 
 ## Quick start
 

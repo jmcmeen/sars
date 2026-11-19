@@ -23,3 +23,6 @@
 ## plot_threshold
 
 ::: sars.plot_threshold
+## plot_coleman
+
+::: sars.plot_coleman

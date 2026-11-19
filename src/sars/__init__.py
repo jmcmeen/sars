@@ -11,6 +11,7 @@ try:
 except PackageNotFoundError:
     __version__ = "0.0.0.dev0"
 
+from sars._coleman import ColemanFit, coleman
 from sars._inference import (
     AveragedSAR,
     BootstrappedCI,
@@ -54,6 +55,7 @@ from sars._models import (
 )
 from sars._plots import (
     plot_average,
+    plot_coleman,
     plot_fit,
     plot_lin_pow,
     plot_multi,
@@ -68,6 +70,7 @@ __all__ = [
     "AveragedSAR",
     "BootstrappedCI",
     "LinPowFit",
+    "ColemanFit",
     "MultiSARFit",
     "SARFit",
     "ThresholdCI",
@@ -75,6 +78,7 @@ __all__ = [
     "aicc",
     "akaike_weights",
     "bootstrap_ci",
+    "coleman",
     "from_csv",
     "from_df",
     "from_geodataframe",
@@ -87,6 +91,7 @@ __all__ = [
     "sar_threshold",
     "threshold_ci",
     "plot_average",
+    "plot_coleman",
     "plot_fit",
     "plot_lin_pow",
     "plot_multi",

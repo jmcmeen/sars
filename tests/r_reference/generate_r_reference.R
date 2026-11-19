@@ -171,6 +171,20 @@ pred_av <- sar_pred(suppressWarnings(sar_average(obj = pred_models, data = galap
 pred_rows[[length(pred_rows) + 1]] <- data.frame(model = "average", area = pred_av$Area,
                                                  prediction = pred_av$Prediction)
 write.csv(do.call(rbind, pred_rows), out("pred_galap.csv"), row.names = FALSE)
+# 7. Coleman's random placement model on R's simulated abundance matrix
+#    (22 species in rows, 11 sites in columns). The matrix and site areas are
+#    written out as the test input; R's expected richness, its standard
+#    deviation, the relative areas and the observed richness are the reference.
+data(cole_sim)
+write.csv(cole_sim[[1]], out("coleman_abundance.csv"), row.names = FALSE)
+cole <- coleman(cole_sim[[1]], cole_sim[[2]])
+write.csv(data.frame(site = names(cole_sim[[2]]),
+                     area = unname(cole_sim[[2]]),
+                     relative_area = unname(cole$Relative_areas),
+                     observed = unname(cole$Species_richness),
+                     expected = cole$Predicted_values,
+                     sd = cole$Standard_deviation),
+          out("coleman_sites.csv"), row.names = FALSE)
 
 cat("Reference tables written.\n\nPower law:\n")
 print(sar_power(galap))

@@ -205,6 +205,52 @@ and, given `ci`, their intervals shaded:
 sars.plot_threshold(th, ci=ci)
 sars.plot_threshold(th, model="DiscOne")   # separate lines either side of the jump
 ```
+## Random placement
+
+Coleman's (1981) random placement model asks whether species-area data need any ecology at
+all: if every individual lands on a site by chance, in proportion to the site's area, how
+many species should each site hold? The answer depends only on each species' total
+abundance, so nothing is fitted. `coleman()` takes a species-by-site abundance table,
+**species in rows and sites in columns** (as R `sars` does; transpose a sites-by-species
+table with `.T`), and the site areas in column order. Areas in a `pd.Series` labelled
+with the table's column names are matched by name instead, whatever their order.
+
+This example simulates a community by random placement, so the model should hold:
+
+```python
+import numpy as np
+import pandas as pd
+import sars
+
+rng = np.random.default_rng(3)
+area = np.array([1.0, 2.0, 4.0, 8.0, 15.0, 30.0, 60.0, 120.0])
+totals = rng.geometric(0.05, size=30)  # total abundance of each of 30 species
+# Each individual lands on a site with probability equal to its share of the area.
+counts = np.array([rng.multinomial(n, area / area.sum()) for n in totals])
+abundance = pd.DataFrame(counts, columns=[f"site{i + 1}" for i in range(len(area))])
+
+fit = sars.coleman(abundance, area)
+print(fit)
+# ColemanFit(30 species, 8 sites, 1 outside ±1 sd (12%), random placement not rejected)
+print(fit.sites)
+```
+
+`fit.sites` has a row per site: `area`, `relative_area`, `observed` and `expected`
+richness, the standard deviation `sd`, and `within_sd`. Random placement is rejected
+(`fit.rejected`) when more than a third of the sites lie more than one standard deviation
+from the expected curve; `fit.fraction_outside` is that share. `fit.predict(area)` and
+`fit.predict_sd(area)` give the curve and its standard deviation at any area up to the
+total, and `sars.plot_coleman(fit)` draws both with the observed points.
+
+Treat the verdict as a rough guide. One standard deviation either side holds about two
+thirds of a roughly normal spread, so close to a third of the sites are expected outside
+it even when placement really is random, and with few sites the rule often rejects such
+data: rerun the simulation above with other seeds to see it happen. Look at the plot and at
+which sites fall outside (the small ones, the large ones, all on one side) before reading
+much into `rejected`.
+
+The model needs counts of individuals. Presence-absence data won't do, and species absent
+from every site are ignored.
 
 ## Bringing your own data
 

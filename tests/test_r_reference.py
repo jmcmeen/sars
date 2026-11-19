@@ -31,6 +31,10 @@ The threshold models match R's fits. For DiscOne and DiscTwo, R's
 breakpoint as the one ``nisl - 1`` places lower, and both let the last segment
 hold ``nisl - 1`` islands. Their reference breakpoints are therefore searched in
 the generator with R's own model functions, over the window this package uses.
+
+Coleman's random placement model is checked on R's simulated abundance matrix,
+which the generator writes out alongside R's expected richness and standard
+deviations.
 """
 
 from functools import cache
@@ -256,3 +260,32 @@ def test_threshold_models_match_r():
         expected = [t for t in (r["threshold"], r["threshold2"]) if not np.isnan(t)]
         assert mine["breakpoints"] == pytest.approx(tuple(expected), abs=1e-9), model
     assert fit.best_model == ref.drop("Intercept")["aicc"].idxmin()
+
+
+# ---------------------------------------------------------------------------
+# Coleman's random placement model
+# ---------------------------------------------------------------------------
+
+
+def test_coleman_matches_r():
+    """R's simulated abundance matrix (22 species in rows, 11 sites in columns).
+    R returns the expected richness, its standard deviation, the relative areas
+    and the observed richness; the verdict follows from those."""
+    abundance = _read("coleman_abundance.csv")
+    ref = _read("coleman_sites.csv").set_index("site")
+    assert abundance.shape == (22, 11)
+
+    fit = sars.coleman(abundance, ref["area"].to_numpy())
+    assert fit.sites.index.tolist() == ref.index.tolist()
+    np.testing.assert_allclose(fit.sites["relative_area"], ref["relative_area"], rtol=1e-12)
+    np.testing.assert_array_equal(fit.sites["observed"], ref["observed"])
+    np.testing.assert_allclose(fit.sites["expected"], ref["expected"], rtol=1e-10)
+    np.testing.assert_allclose(fit.sites["sd"], ref["sd"], rtol=1e-10)
+
+    # The one-third rule applied to R's own numbers: 9 of the 11 sites lie
+    # more than one standard deviation out, so random placement is rejected.
+    outside = (ref["observed"] - ref["expected"]).abs() > ref["sd"]
+    assert outside.sum() == 9
+    assert (~fit.sites["within_sd"]).tolist() == outside.tolist()
+    assert fit.fraction_outside == pytest.approx(9 / 11)
+    assert fit.rejected

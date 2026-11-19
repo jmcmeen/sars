@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import matplotlib.pyplot as plt
 import numpy as np
 
+from sars._coleman import ColemanFit
 from sars._inference import AveragedSAR, MultiSARFit
 from sars._linpow import LinPowFit
 from sars._models import SARFit
@@ -411,5 +412,80 @@ def plot_lin_pow(
     ax.set_xlabel("Area")
     ax.set_ylabel(f"Species + {fit.con:g}" if fit.con else "Species")
     ax.set_title("Log-log power model")
+    ax.legend()
+    return ax
+
+
+def plot_coleman(
+    fit: ColemanFit,
+    ax: plt.Axes | None = None,
+    log: bool = True,
+    scatter_kw: dict | None = None,
+    line_kw: dict | None = None,
+    fill_kw: dict | None = None,
+) -> plt.Axes:
+    """Plot Coleman's random placement model against observed richness.
+
+    Draws the expected richness against relative area (a site's share of the
+    total area), a band one standard deviation either side of it, and the
+    observed richness of each site. Random placement is rejected when more
+    than a third of the points fall outside the band.
+
+    Parameters
+    ----------
+    fit : ColemanFit
+        Result of ``coleman()``.
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on. If None, creates a new figure.
+    log : bool
+        If True (the default), put relative area on a log axis, the usual
+        way to draw this plot. Richness stays on a linear axis.
+    scatter_kw : dict, optional
+        Extra keyword arguments passed to ``ax.scatter()`` for the
+        observed data points.
+    line_kw : dict, optional
+        Extra keyword arguments passed to ``ax.plot()`` for the expected
+        curve.
+    fill_kw : dict, optional
+        Extra keyword arguments passed to ``ax.fill_between()`` for the
+        band of one standard deviation.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
+    if ax is None:
+        _, ax = plt.subplots()
+
+    alpha = fit.sites["relative_area"].to_numpy(dtype=float)
+    observed = fit.sites["observed"].to_numpy(dtype=float)
+
+    s_defaults = {"color": "black", "zorder": 3, "label": "Observed"}
+    ax.scatter(alpha, observed, **{**s_defaults, **(scatter_kw or {})})
+
+    lo, hi = float(alpha.min()), float(alpha.max())
+    if np.isclose(lo, hi):
+        # Sites of one size (a common design) give a single relative area and
+        # no range to draw over, so show the curve a factor of ten either side
+        # of it, stopping at the whole area.
+        lo, hi = lo / 10, min(1.0, hi * 10)
+    # Evenly spaced on the axis in use, so the curve is smooth at the small
+    # sites on a log axis too.
+    grid = np.geomspace(lo, hi, 200) if log else np.linspace(lo, hi, 200)
+    # The grid's top can round a hair above 1; _curve allows for that.
+    expected, sd = fit._curve(grid * fit.total_area)
+
+    l_defaults = {"color": "dodgerblue", "linewidth": 2, "label": "Random placement"}
+    ax.plot(grid, expected, **{**l_defaults, **(line_kw or {})})
+    f_defaults = {"alpha": 0.2, "color": "dodgerblue", "label": "±1 sd"}
+    ax.fill_between(grid, expected - sd, expected + sd, **{**f_defaults, **(fill_kw or {})})
+
+    if log:
+        ax.set_xscale("log")
+
+    ax.set_xlabel("Relative area")
+    ax.set_ylabel("Species")
+    verdict = "rejected" if fit.rejected else "not rejected"
+    ax.set_title(f"Coleman's random placement: {verdict}")
     ax.legend()
     return ax

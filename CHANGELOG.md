@@ -47,6 +47,16 @@ reconstructed from the commit history and the
   Predictions for power, loga and negexpo
   match R on the Galápagos data; an averaged prediction matches R's when both average the
   same models (#125)
+- `coleman(abundance, area)` compares site richness with Coleman's (1981) random placement
+  model, as R `sars`'s `coleman` does. It takes a species-by-site abundance table (species in
+  rows, sites in columns) and the site areas, and returns a `ColemanFit`: a per-site table
+  of area, relative area, observed richness, expected richness, its standard deviation and
+  whether the site lies within one standard deviation; the share of sites outside it
+  (`fraction_outside`); and the verdict (`rejected`, True when that share is over a third).
+  Areas given as a labelled `pd.Series` are matched to the table's columns by label.
+  `predict` and `predict_sd` give the expected curve at any area, and `plot_coleman` draws
+  it with its band and the observed points. Expected richness and standard deviations match
+  R's on its simulated matrix (#123)
 
 ### Fixed
 
