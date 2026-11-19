@@ -3,6 +3,7 @@ import pandas as pd
 import pytest
 
 import sars  # noqa: I001
+from sars._inference import ALL_MODEL_NAMES
 
 # ---------------------------------------------------------------------------
 # Input validation (applies to all sar_* functions via _fit_nls)
@@ -187,3 +188,86 @@ def test_a_warm_start_must_be_positive_for_a_log_scale_parameter(galap):
 
     with pytest.raises(ValueError, match="must be positive"):
         _fit_nls("epm1", galap, start_from={"c": -1.0, "z": 0.3, "d": 0.1})
+
+
+# Models whose form survives a change of units: rescaling area or richness
+# changes their parameters, not their fit. epm1 and epm2's exponents depend on
+# the area itself, so their fit changes with the area units.
+UNIT_FREE = [m for m in ALL_MODEL_NAMES if m not in {"epm1", "epm2"}]
+
+
+@pytest.mark.parametrize("model", UNIT_FREE)
+def test_a_fit_is_the_same_in_any_units(galap, galap_fits, model):
+    """Areas in m² instead of km², richness ten times larger: the same fit. Before
+    the fit ran on rescaled data, negexpo, asymp, gompertz and chapman fitted
+    nothing (R² 0) in m², and their fixed start values and bounds were the cause."""
+    from sars._models import _fit_nls
+
+    in_km2 = galap_fits[model]
+    in_m2 = _fit_nls(model, galap.assign(area=galap["area"] * 1e6, species=galap["species"] * 10))
+    assert in_m2.converged
+    if model == "weibull4":
+        # Its likelihood is flat along a ridge: the solver stops at a slightly
+        # different point on it, as good a fit to 1e-4 in R², a curve up to 2% apart.
+        assert in_m2.r_squared == pytest.approx(in_km2.r_squared, abs=1e-4)
+        return
+    assert in_m2.r_squared == pytest.approx(in_km2.r_squared, abs=1e-6)
+    areas = galap["area"].to_numpy()
+    np.testing.assert_allclose(in_m2.predict(areas * 1e6), 10 * in_km2.predict(areas), rtol=1e-4)
+
+
+@pytest.mark.parametrize("model", ALL_MODEL_NAMES)
+def test_rescaling_converts_parameters_both_ways(model):
+    """Each model's rescaled parameters convert to the data's units and back, and
+    the curve is the same: S(A) = s * S'(A / a)."""
+    from sars._models import _AREA_UNSCALED, _MODEL_REGISTRY, _RESCALE
+
+    spec = _MODEL_REGISTRY[model]
+    to_natural, to_scaled = _RESCALE[model]
+    a = 1.0 if model in _AREA_UNSCALED else 37.0
+    s, rng = 250.0, np.random.default_rng(0)
+    scaled = np.array([np.mean(g) for g in spec.start_grid]) * rng.uniform(
+        0.8, 1.2, len(spec.start_grid)
+    )
+    natural = np.array(to_natural(scaled, a, s))
+    np.testing.assert_allclose(to_scaled(natural, a, s), scaled, rtol=1e-10)
+    areas = np.geomspace(0.5, 2000, 9)
+    np.testing.assert_allclose(
+        spec.func(areas, *natural), s * spec.func(areas / a, *scaled), rtol=1e-9
+    )
+
+
+def test_a_fit_whose_parameters_overflow_in_the_data_units_fails(galap, monkeypatch):
+    from sars import _models
+
+    to_natural, to_scaled = _models._RESCALE["power"]
+    monkeypatch.setitem(_models._RESCALE, "power", (lambda p, a, s: [np.inf, p[1]], to_scaled))
+    fit = _models._fit_nls("power", galap)
+    assert fit.converged is False and np.isnan(fit.r_squared)
+
+
+def test_a_warm_start_that_cant_be_rescaled_falls_back_to_the_grid(galap, monkeypatch):
+    from sars import _models
+
+    to_natural, _ = _models._RESCALE["power"]
+    monkeypatch.setitem(_models._RESCALE, "power", (to_natural, lambda p, a, s: [np.inf, p[1]]))
+    fit = _models._fit_nls("power", galap, start_from={"c": 30.0, "z": 0.3})
+    assert fit.converged and fit.r_squared == pytest.approx(0.491247, abs=1e-5)
+
+
+def test_r_squared_is_nan_when_richness_doesnt_vary():
+    data = pd.DataFrame({"area": [1.0, 2.0, 5.0, 10.0], "species": [7.0] * 4})
+    fit = sars.sar_power(data)
+    assert np.isnan(fit.r_squared)
+
+
+def test_a_model_needs_a_rescaling_entry():
+    from sars import _models
+
+    with pytest.raises(ValueError, match="rescaling entry"):
+        _models._register(
+            _models._ModelSpec(
+                name="unknown", func=lambda a, c: c + 0 * a, param_names=["c"],
+                bounds_lower=[0.0], bounds_upper=[1.0], start_grid=[[0.5]],
+            )
+        )  # fmt: skip

@@ -39,37 +39,31 @@ ALL_MODEL_NAMES: list[str] = [
     "linear",
 ]
 
-# Static shape classification for each model.
-#
-# NOTE: This is a simplification. The R sars package classifies shape
-# dynamically based on fitted parameter values — a model can exhibit
-# convex, sigmoid, or other curvature depending on the data. Here we
-# assign each model its *typical* shape class. In particular, several
-# asymptotic models listed as "convex" (koba, monod, negexpo, asymp,
-# ratio) can produce sigmoid curves for certain parameter combinations,
-# and some sigmoid models can appear convex. Users needing the dynamic
-# classification from R should inspect the fitted curve directly.
+# Each model's general shape, as classified by Matthews et al. (2019, Table 1)
+# with the corrections R sars has made since: "convex/sigmoid" where the
+# parameters decide which. It describes the model, not the fitted curve; a
+# convex model's fit can still look nearly linear over the observed range.
 _MODEL_SHAPE: dict[str, str] = {
     "power": "convex",
     "powerR": "convex",
     "loga": "convex",
     "linear": "linear",
-    "epm1": "convex",
+    "epm1": "convex/sigmoid",
     "epm2": "sigmoid",
-    "p1": "convex",
-    "p2": "convex",
+    "p1": "convex/sigmoid",
+    "p2": "sigmoid",
     "koba": "convex",
     "monod": "convex",
     "negexpo": "convex",
-    "asymp": "convex",
+    "asymp": "convex/sigmoid",
     "ratio": "convex",
-    "mmf": "sigmoid",
+    "mmf": "convex/sigmoid",
     "gompertz": "sigmoid",
     "weibull3": "sigmoid",
     "weibull4": "sigmoid",
     "chapman": "sigmoid",
     "betap": "sigmoid",
-    "heleg": "sigmoid",
+    "heleg": "convex/sigmoid",
 }
 
 # Models that have an asymptote parameter (d)
@@ -181,10 +175,11 @@ class MultiSARFit:
         Original data.
     summary : pd.DataFrame
         Summary table with columns: model, R2, AIC, AICc, BIC, delta_AICc,
-        weight, shape, asymptote. Sorted by AICc ascending. The ``shape``
-        column is a static classification based on each model's typical
-        curvature (see ``_MODEL_SHAPE``), not a dynamic assessment of the
-        fitted curve.
+        weight, shape, asymptote. Sorted by AICc ascending. ``shape`` is the
+        model's general shape as classified by Matthews et al. (2019, Table 1):
+        "convex", "sigmoid", "convex/sigmoid" (the parameters decide) or
+        "linear". It describes the model, not the fitted curve: plot a fit
+        (``plot_fit``, ``plot_multi``) to see which shape it took.
     """
 
     fits: list[SARFit]
@@ -267,7 +262,7 @@ def _build_summary(fits: list[SARFit]) -> pd.DataFrame:
                 "AIC": fit.aic,
                 "AICc": fit.aicc,
                 "BIC": fit.bic,
-                "shape": _MODEL_SHAPE.get(fit.model, "unknown"),
+                "shape": _MODEL_SHAPE[fit.model],
                 "asymptote": asym,
             }
         )
@@ -398,7 +393,8 @@ class BootstrappedCI:
         Area values at which predictions were made.
     mean : np.ndarray
         Mean prediction across bootstrap replicates. A few resamples whose
-        prediction runs away can dominate it; ``median`` is the robust centre.
+        prediction runs away can dominate it; for a central curve use the
+        averaged fit's own prediction, or ``median`` as the interval's centre.
     lower : np.ndarray
         Lower confidence bound.
     upper : np.ndarray
@@ -628,7 +624,8 @@ def bootstrap_ci(
         warnings.warn(
             f"The bootstrap mean is outside the central 95% of the resample "
             f"predictions at {outside} of {len(area_grid)} areas: a few resamples' "
-            f"predictions run away there. Use the median as the central curve.",
+            f"predictions run away there. Use the averaged fit's own prediction as the "
+            f"central curve, or the median as the interval's centre.",
             stacklevel=2,
         )
     return BootstrappedCI(

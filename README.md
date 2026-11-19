@@ -55,9 +55,13 @@ For a complete analysis of these data, see the
 
 | Type | Models |
 | ------ | -------- |
-| Non-asymptotic | `power`, `powerR`, `loga`, `linear`, `epm1`, `epm2`, `p1`, `p2` |
-| Asymptotic convex | `koba`, `monod`, `negexpo`, `asymp`, `ratio` |
-| Asymptotic sigmoid | `mmf`, `gompertz`, `weibull3`, `weibull4`, `chapman`, `betap`, `heleg` |
+| Linear | `linear` |
+| Non-asymptotic, convex | `power`, `powerR`, `loga`, `koba` |
+| Non-asymptotic, convex or sigmoid | `epm1`, `p1` |
+| Non-asymptotic, sigmoid | `epm2`, `p2` |
+| Asymptotic, convex | `monod`, `negexpo`, `ratio` |
+| Asymptotic, convex or sigmoid | `asymp`, `mmf`, `heleg` |
+| Asymptotic, sigmoid | `gompertz`, `weibull3`, `weibull4`, `chapman`, `betap` |
 
 Each model has a dedicated function (e.g. `sars.sar_power()`, `sars.sar_negexpo()`) and returns a `SARFit` object with parameters, R², AIC, AICc, and BIC.
 
@@ -106,6 +110,10 @@ This package is a Python implementation inspired by the R [`sars`](https://githu
 - Ulrich W, Buszko J (2003). Self-similarity and the species-area relation of Polish butterflies. *Basic and Applied Ecology*, 4, 263-270. (`p1`, `p2`)
 - Weibull W (1951). A statistical distribution function of wide applicability. *Journal of Applied Mechanics*, 18, 293-297. (`weibull3`, `weibull4`)
 - Minami M, Lennert-Cody CE, Gao W, Roman-Verdesoto M (2007). Modeling shark bycatch: the zero-inflated negative binomial regression model with smoothing. *Fisheries Research*, 84, 210-221. (`betap`)
+
+### Data
+
+- Preston FW (1962). The canonical distribution of commonness and rarity. *Ecology*, 43, 185-215, 410-432. (the bundled Galápagos dataset, `load_galap`)
 
 ### Threshold models
 

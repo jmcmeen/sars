@@ -4,49 +4,49 @@
 dedicated fitting function (e.g., `sars.sar_power()`) that returns a `SARFit`
 object.
 
+Each model's general shape is as classified by Matthews et al. (2019, Table 1), with the
+corrections R `sars` has made since: convex (decelerating), sigmoid (S-shaped, with an
+inflection point), or convex/sigmoid where the parameters decide which. It is the `shape`
+column of `sar_multi`'s summary: a property of the model, not a test of the fitted curve,
+so plot a fit (`plot_fit`, `plot_multi`) to see which shape it took.
+
 ## Non-asymptotic models
 
-These models increase without bound as area increases.
+These models have no asymptote parameter. Most increase without bound as area
+increases; p1 can peak and then fall, and epm1 levels off at c when d > 0. The sigmoid
+ones (epm2, p2) have an inflection point but no asymptote.
 
-| Function | Formula | Parameters |
-|----------|---------|------------|
-| `sar_power` | S = c &middot; A^z | c, z |
-| `sar_powerR` | S = f + c &middot; A^z | f, c, z |
-| `sar_loga` | S = c + z &middot; log(A) | c, z |
-| `sar_linear` | S = c + m &middot; A | c, m |
-| `sar_epm1` | S = c &middot; A^(z &middot; A^-d) | c, z, d |
-| `sar_epm2` | S = c &middot; A^(z - d / A) | c, z (0 to 1), d |
-| `sar_p1` | S = c &middot; A^z &middot; exp(-d &middot; A) | c, z, d |
-| `sar_p2` | S = c &middot; A^z &middot; exp(-d / A) | c, z, d |
+| Function | Formula | Parameters | Shape |
+|----------|---------|------------|-------|
+| `sar_power` | S = c &middot; A^z | c, z | convex |
+| `sar_powerR` | S = f + c &middot; A^z | f, c, z | convex |
+| `sar_loga` | S = c + z &middot; log(A) | c, z | convex |
+| `sar_koba` | S = c &middot; log(1 + A/z) | c, z | convex |
+| `sar_linear` | S = c + m &middot; A | c, m | linear |
+| `sar_epm1` | S = c &middot; A^(z &middot; A^-d) | c, z, d | convex/sigmoid |
+| `sar_epm2` | S = c &middot; A^(z - d / A) | c, z (0 to 1), d | sigmoid |
+| `sar_p1` | S = c &middot; A^z &middot; exp(-d &middot; A) | c, z, d | convex/sigmoid |
+| `sar_p2` | S = c &middot; A^z &middot; exp(-d / A) | c, z, d | sigmoid |
 
-## Asymptotic convex models
+## Asymptotic models
 
-These models approach a finite asymptote with a convex (decelerating) curve.
+These models approach a finite asymptote as area increases.
 
-| Function | Formula | Parameters |
-|----------|---------|------------|
-| `sar_koba` | S = c &middot; log(1 + A/z) | c, z |
-| `sar_monod` | S = d &middot; A / (c + A) | d, c |
-| `sar_negexpo` | S = d &middot; (1 - exp(-z &middot; A)) | d, z |
-| `sar_asymp` | S = d - c &middot; exp(-z &middot; A) | d, c, z |
-| `sar_ratio` | S = (c + z &middot; A) / (1 + d &middot; A) | c, z, d |
+| Function | Formula | Parameters | Shape |
+|----------|---------|------------|-------|
+| `sar_monod` | S = d &middot; A / (c + A) | d, c | convex |
+| `sar_negexpo` | S = d &middot; (1 - exp(-z &middot; A)) | d, z | convex |
+| `sar_ratio` | S = (c + z &middot; A) / (1 + d &middot; A) | c, z, d | convex |
+| `sar_asymp` | S = d - c &middot; exp(-z &middot; A) | d, c, z | convex/sigmoid |
+| `sar_mmf` | S = d / (1 + c &middot; A^(-z)) | d, c, z | convex/sigmoid |
+| `sar_heleg` | S = c / (f + A^(-z)) | c, f, z | convex/sigmoid |
+| `sar_gompertz` | S = d &middot; exp(-exp(-z &middot; (A - c))) | d, z, c | sigmoid |
+| `sar_weibull3` | S = d &middot; (1 - exp(-c &middot; A^z)) | d, c, z | sigmoid |
+| `sar_weibull4` | S = d &middot; (1 - exp(-c &middot; A^z))^f | d, c, z, f | sigmoid |
+| `sar_chapman` | S = d &middot; (1 - exp(-z &middot; A))^c | d, z, c | sigmoid |
+| `sar_betap` | S = d &middot; (1 - (1 + (A/c)^z)^(-f)) | d, c, z, f | sigmoid |
 
 R `sars` writes asymp as S = d - c &middot; z^A, so R's z is exp(-z) here.
-
-## Asymptotic sigmoid models
-
-These models have an S-shaped curve, approaching an asymptote via an
-inflection point.
-
-| Function | Formula | Parameters |
-|----------|---------|------------|
-| `sar_mmf` | S = d / (1 + c &middot; A^(-z)) | d, c, z |
-| `sar_gompertz` | S = d &middot; exp(-exp(-z &middot; (A - c))) | d, z, c |
-| `sar_weibull3` | S = d &middot; (1 - exp(-c &middot; A^z)) | d, c, z |
-| `sar_weibull4` | S = d &middot; (1 - exp(-c &middot; A^z))^f | d, c, z, f |
-| `sar_chapman` | S = d &middot; (1 - exp(-z &middot; A))^c | d, z, c |
-| `sar_betap` | S = d &middot; (1 - (1 + (A/c)^z)^(-f)) | d, c, z, f |
-| `sar_heleg` | S = d / (1 + slope^log(c / A)) | d, slope, c |
 
 ## Fitting details
 
@@ -56,6 +56,15 @@ with a multi-start grid of initial values to avoid local minima:
 - **2-parameter models**: &ge;36 starting points
 - **3-parameter models**: &ge;100 starting points
 - **4-parameter models**: &ge;200 starting points
+
+The fit runs on rescaled data: area divided by its geometric mean and richness by its
+maximum, with the parameters converted back afterwards. The starting values and bounds
+are therefore near 1 whatever your units, and every model except epm1 and epm2 gives the
+same fit in km² or m², for tens of species or thousands. (weibull4's likelihood is flat
+along a ridge, so its solver can stop at a slightly different point on it: an equally good
+fit, with R² the same to about 1e-4.) epm1 and epm2 are the exception
+because their exponent depends on area itself, so a change of area units changes their
+fit; only their richness is rescaled.
 
 If fitting fails for all starting values, a `SARFit` with `converged=False`
 is returned rather than raising an exception.

@@ -15,8 +15,10 @@ if TYPE_CHECKING:
 def load_galap() -> pd.DataFrame:
     """Load the Galapagos plant species-area dataset.
 
-    Returns the Preston (1962) 16-island dataset as shipped in the R sars
-    package (Albemarle/Isabela excluded).
+    Returns the 16-island dataset of plant species counts and island area
+    (km²) as shipped in the R sars package (Albemarle/Isabela excluded), from
+    Preston FW (1962), The canonical distribution of commonness and rarity,
+    Ecology 43, 185-215 and 410-432.
 
     Returns
     -------

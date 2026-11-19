@@ -79,20 +79,50 @@ average_ref <- function(data, stem) {
 average_ref(galap, "galap")
 average_ref(galap7, "galap7")
 
-# 4. Threshold models on ln(area). nisl = 3 keeps three islands on each side
-#    of a breakpoint, the same window Python searches; interval = 0.01 is R's
-#    default step on the log scale.
-th <- sar_threshold(galap, mod = c("ContOne", "ZslopeOne"), non_th_models = TRUE,
-                    interval = 0.01, nisl = 3)
-# summary() rounds its table, so take the RSS from each lm and the parameter
-# count (including the threshold and sigma) from the table.
-pars <- summary(th)$Model_table[th[[2]], "Pars"]
-rss <- sapply(th[[1]], function(m) sum(residuals(m)^2))
+# 4. Threshold models on ln(area). nisl = 3 keeps three islands in the first
+#    and last segments, the same window Python searches; interval = 0.01 is
+#    R's default step on the log scale. The two-threshold continuous searches
+#    take about a minute.
+th <- sar_threshold(galap, mod = c("ContOne", "ZslopeOne", "ContTwo", "ZslopeTwo"),
+                    non_th_models = TRUE, interval = 0.01, nisl = 3)
+# R's search for the discontinuous models doesn't keep to nisl: DiscOne scores
+# each candidate breakpoint as the one nisl - 1 places lower (it indexes x
+# where it means the window), and both let the last segment hold nisl - 1
+# islands. So their breakpoints are searched here, over the observed areas
+# with three islands in the first and last segments, scoring each with R's
+# own model function, and the models refitted as sar_threshold fits them.
+x <- sort(log(galap$a))
+y <- galap$s[order(galap$a)]
+cand <- unique(x)
+n_left <- sapply(cand, function(t) sum(x <= t))
+first_ok <- n_left >= 3
+last_ok <- length(x) - n_left >= 3
+one <- cand[first_ok & last_ok]
+disc_one <- one[which.min(sapply(one, sars:::fct_disc_one, x = x, y = y))]
+pairs <- expand.grid(t1 = cand[first_ok], t2 = cand[last_ok])
+pairs <- pairs[pairs$t1 < pairs$t2, ]
+rss2 <- mapply(sars:::fct_disc_two, pairs$t1, pairs$t2, MoreArgs = list(x = x, y = y))
+disc_two <- unlist(pairs[which.min(rss2), ])
+fits <- c(th[[1]], list(
+  lm(y ~ x * (x <= disc_one) + x * (x > disc_one)),
+  lm(y ~ x * (x <= disc_two[1]) + x * (x > disc_two[1] & x <= disc_two[2]) +
+       x * (x > disc_two[2]))
+))
+names_th <- c(th[[2]], "DiscOne", "DiscTwo")
+ths <- c(th[[3]], list(disc_one, disc_two))
+# Parameters as R's summary.sars counts them (each coefficient, threshold and
+# sigma); RSS from each lm, since summary() rounds its table.
+k <- c(ContOne = 5, ZslopeOne = 4, DiscOne = 6, ContTwo = 7, ZslopeTwo = 6,
+       DiscTwo = 9, Linear = 3, Intercept = 2)
+pars <- k[names_th]
+rss <- sapply(fits, function(m) sum(residuals(m)^2))
 n <- nrow(galap)
 ll <- -n / 2 * (log(2 * pi * rss / n) + 1)
 aic <- -2 * ll + 2 * pars
-write.csv(data.frame(model = th[[2]], threshold = unlist(th[[3]]), k = pars,
-                     rss = rss, aic = aic,
+write.csv(data.frame(model = names_th,
+                     threshold = sapply(ths, function(t) t[1]),
+                     threshold2 = sapply(ths, function(t) if (length(t) > 1) t[2] else NA),
+                     k = pars, rss = rss, aic = aic,
                      aicc = aic + 2 * pars * (pars + 1) / (n - pars - 1),
                      r2 = 1 - rss / sum((galap$s - mean(galap$s))^2)),
           out("threshold_galap.csv"), row.names = FALSE)

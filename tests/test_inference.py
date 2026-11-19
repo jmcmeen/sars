@@ -132,21 +132,27 @@ class TestSarMulti:
             sars.sar_multi(galap, models=["power", "nonexistent"])
 
     def test_shape_column(self, galap_multi):
-        shapes = set(galap_multi.summary["shape"])
-        assert shapes <= {"convex", "sigmoid", "linear"}
+        """Each model's general shape: Matthews et al. (2019, Table 1), as corrected
+        in R sars."""
+        expected = {
+            "power": "convex", "powerR": "convex", "loga": "convex", "koba": "convex",
+            "linear": "linear", "epm1": "convex/sigmoid", "epm2": "sigmoid",
+            "p1": "convex/sigmoid", "p2": "sigmoid", "monod": "convex",
+            "negexpo": "convex", "ratio": "convex", "asymp": "convex/sigmoid",
+            "mmf": "convex/sigmoid", "heleg": "convex/sigmoid", "gompertz": "sigmoid",
+            "weibull3": "sigmoid", "weibull4": "sigmoid", "chapman": "sigmoid",
+            "betap": "sigmoid",
+        }  # fmt: skip
+        shapes = galap_multi.summary.set_index("model")["shape"].to_dict()
+        assert shapes == {m: expected[m] for m in shapes}
 
     def test_asymptote_column(self, galap_multi):
-        """Asymptotic models should have finite asymptote values."""
+        """Models with an asymptote report it; the others (koba among them) don't."""
+        asymptotic = {"monod", "negexpo", "ratio", "asymp", "mmf", "heleg", "gompertz",
+                      "weibull3", "weibull4", "chapman", "betap"}  # fmt: skip
         for _, row in galap_multi.summary.iterrows():
-            if row["shape"] == "sigmoid" or row["model"] in {
-                "monod",
-                "negexpo",
-                "asymp",
-                "ratio",
-                "koba",
-            }:
-                if row["model"] != "koba":
-                    assert row["asymptote"] is not None
+            has_one = not pd.isna(row["asymptote"])
+            assert has_one is (row["model"] in asymptotic), row["model"]
 
     def test_all_20_converge(self, galap_multi):
         """All 20 models should converge on galap."""

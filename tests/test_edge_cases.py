@@ -134,8 +134,14 @@ class TestSolverSuccessFlag:
         calls = self._patch_solver(monkeypatch, success=False)
         fit = _fit_nls("power", galap, start_from={"c": 30.0, "z": 0.3})
         assert fit.converged is False
-        # The warm start must be the only solver call, not the grid.
-        assert calls == [[30.0, 0.3]]
+        # The warm start must be the only solver call, not the grid; the solver
+        # sees it on the rescaled data, so convert it back to compare.
+        from sars._models import _RESCALE
+
+        a = float(np.exp(np.mean(np.log(galap["area"]))))
+        s = float(galap["species"].max())
+        assert len(calls) == 1
+        assert _RESCALE["power"][0](np.array(calls[0]), a, s) == pytest.approx([30.0, 0.3])
 
     def test_successful_solver_still_converges(self, galap, monkeypatch):
         self._patch_solver(monkeypatch, success=True)

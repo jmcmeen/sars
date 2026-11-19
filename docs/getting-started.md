@@ -67,7 +67,8 @@ avg.predict([1.0, 10.0, 100.0, 1000.0])
 
 ```python
 ci = sars.bootstrap_ci(galap, n_boot=100)
-# ci.median (the central curve), ci.lower and ci.upper are arrays over ci.area_grid
+# ci.lower, ci.median and ci.upper are arrays over ci.area_grid; for a central
+# curve use the averaged fit's prediction (sars.sar_average(galap).predict(ci.area_grid))
 ```
 
 By default, `bootstrap_ci` uses `method="fast"`, which fits all models once on
@@ -94,6 +95,18 @@ The models are fitted on the natural log of area, as in R `sars`, so `best_break
 and the summary's `breakpoint` column are on that scale. `breakpoint_area` (the attribute
 and the column next to it) gives the same point in your area units. Pass `log_area=False`
 to fit on area itself.
+
+R `sars`'s other threshold models are available too: DiscOne, ContTwo, ZslopeTwo and DiscTwo.
+Choose models with `models=`. The summary's `breakpoint2` columns hold a two-threshold
+model's second breakpoint. `best_breakpoints` and `breakpoints_area` give all of the best
+model's breakpoints:
+
+```python
+models = ["ContOne", "ZslopeOne", "DiscOne", "ContTwo", "ZslopeTwo", "DiscTwo", "Linear"]
+th = sars.sar_threshold(galap, models=models)
+print(th.summary)
+print(th.all_fits["ContTwo"]["breakpoints"])
+```
 
 ## Bringing your own data
 

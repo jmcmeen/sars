@@ -25,6 +25,12 @@ Every model on each dataset has an expected outcome:
 Averaging is checked on the models that match: R's weights and curve, rebuilt
 from R's own AICc and fitted values. Over all models the average differs from
 R's by what the per-model differences imply.
+
+The threshold models match R's fits. For DiscOne and DiscTwo, R's
+``sar_threshold`` searches outside its ``nisl`` window: DiscOne scores each
+breakpoint as the one ``nisl - 1`` places lower, and both let the last segment
+hold ``nisl - 1`` islands. Their reference breakpoints are therefore searched in
+the generator with R's own model functions, over the window this package uses.
 """
 
 from functools import cache
@@ -231,17 +237,22 @@ def _threshold_ref() -> pd.DataFrame:
 
 def test_threshold_models_match_r():
     """R searched ln(area) in steps of 0.01 (its default, and this package's) with
-    three islands kept on each side (nisl = 3), the window this package searches."""
+    three islands kept in the first and last segments (nisl = 3), the window this
+    package searches. R's own search for DiscOne and DiscTwo strays from that
+    window, so the reference searches the observed areas with R's model functions
+    (see generate_r_reference.R)."""
     data = _data("galap")
-    fit = sars.sar_threshold(data)
+    models = ["ContOne", "ZslopeOne", "DiscOne", "ContTwo", "ZslopeTwo", "DiscTwo", "Linear"]
+    fit = sars.sar_threshold(data, models=models)
     ref = _threshold_ref()
-    for model in ["ContOne", "ZslopeOne", "Linear"]:
+    for model in models:
         mine = fit.all_fits[model]
         r = ref.loc[model]
+        assert mine["k"] == r["k"], model
         assert mine["rss"] == pytest.approx(r["rss"], rel=1e-9), model
         assert mine["aicc"] == pytest.approx(r["aicc"], abs=1e-6), model
         assert mine["aic"] == pytest.approx(r["aic"], abs=1e-6), model
         assert mine["r2"] == pytest.approx(r["r2"], abs=1e-9), model
-        if model != "Linear":
-            assert mine["breakpoint"] == pytest.approx(r["threshold"], abs=1e-9), model
+        expected = [t for t in (r["threshold"], r["threshold2"]) if not np.isnan(t)]
+        assert mine["breakpoints"] == pytest.approx(tuple(expected), abs=1e-9), model
     assert fit.best_model == ref.drop("Intercept")["aicc"].idxmin()

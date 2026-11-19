@@ -10,6 +10,49 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- `sar_threshold` fits the rest of R `sars`'s threshold models: DiscOne (a separate line
+  either side of a breakpoint at an observed area), ContTwo (three joined segments),
+  ZslopeTwo (a flat segment, then two joined sloping ones) and DiscTwo (three separate
+  lines), with R's parameter counts (6, 7, 6 and 9). Choose them with `models=`; the default
+  stays ContOne, ZslopeOne and Linear. Two-threshold fits report both breakpoints in
+  `ThresholdFit.best_breakpoints` and `breakpoints_area`, and in new `breakpoint2` and
+  `breakpoint2_area` columns of `summary`. ContTwo and ZslopeTwo match R's `sar_threshold`
+  on the Galápagos data. For DiscOne and DiscTwo, R's own search strays outside its `nisl`
+  window, so this package keeps three islands in the first and last segments, as `nisl = 3`
+  documents; their RSS matches R's model functions over that window (#109)
+- `sar_threshold` warns when AICc is undefined for some of the models it fits (a model of k
+  parameters needs more than k + 1 observations), as R's `summary` does, and raises
+  `ValueError` when that's true of every model, instead of naming one of them best (#109)
+
+### Changed
+
+- **Behavior change:** the `shape` column of `sar_multi`'s summary follows Matthews et al.
+  (2019, Table 1) with R `sars`'s later corrections. p2 is now "sigmoid" (was "convex");
+  epm1, p1 and asymp are "convex/sigmoid" (were "convex"), and mmf and heleg are
+  "convex/sigmoid" (were "sigmoid"), for models whose parameters decide the shape. Code
+  that filters on `shape` gets different models. The model reference and README give each
+  model's shape (#113)
+
+### Fixed
+
+- Fits no longer depend on the data's units. The start grids and bounds were fixed numbers,
+  many of them the Galápagos fit's own values, so in other units fits went wrong while still
+  reporting convergence. With areas in m², negexpo, asymp, gompertz and chapman fitted
+  nothing (R² 0) and p1 did worse than a flat line. Each model is now fitted on rescaled data
+  (area over its geometric mean, richness over its maximum) from neutral start values, and
+  its parameters converted back. Every model except epm1 and epm2, whose form changes with
+  the area units, gives the same fit in any units (weibull4 to within its flat ridge). Fitting all 20 models on Galápagos is
+  about a third faster (#111)
+- `SARFit.r_squared` is NaN, not `-inf` or NaN with a warning, when every island has the
+  same richness, where R² is undefined (#111)
+- Docs: heleg's formula in the model reference (`c / (f + A^(-z))`, as fitted), koba
+  listed with the non-asymptotic models (it has no asymptote), the full Preston (1962)
+  citation for the bundled Galápagos data, and two statements in the Galápagos notebook:
+  `summary`'s shape column is each model's typical shape, and the bootstrap's central
+  curve (#112)
+
 ## [0.8.1] - 2026-11-10
 
 ### Fixed
