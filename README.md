@@ -25,7 +25,8 @@ pip install sars
 - **Bootstrap confidence intervals** — percentile-based CIs for averaged predictions
 - **Threshold models** — piecewise regression for detecting breakpoints (small island effect), with bootstrap confidence intervals for the breakpoints
 - **Random placement** — Coleman's null model for richness from a species-by-site abundance table
-- **R-validated** — fits, AICc weights, model averaging, threshold models and random placement are checked against R `sars` reference output, with every known difference listed in `tests/test_r_reference.py`
+- **General dynamic model** — richness as a function of island area and a hump in island age (Whittaker et al. 2008), with nested-model comparison
+- **R-validated** — fits, AICc weights, model averaging, threshold models, random placement and the general dynamic model are checked against R `sars` reference output, with every known difference listed in `tests/test_r_reference.py`
 
 ## Quick start
 
@@ -123,3 +124,7 @@ This package is a Python implementation inspired by the R [`sars`](https://githu
 
 - Matthews TJ, Rigal F (2021). Thresholds and the species-area relationship. *Frontiers of Biogeography*, 13, e49404.
 - Toms JD, Lesperance ML (2003). Piecewise regression: a tool for identifying ecological thresholds. *Ecology*, 84, 2034-2041. (`threshold_ci`)
+
+### General dynamic model
+
+- Whittaker RJ, Triantis KA, Ladle RJ (2008). A general dynamic theory of oceanic island biogeography. *Journal of Biogeography*, 35, 977-994. (`sar_gdm`)

@@ -20,7 +20,8 @@ A conceptual mirror of the R [`sars`](https://cran.r-project.org/package=sars) p
 - **Threshold models** -- piecewise regression for detecting breakpoints (small island effect), with bootstrap confidence intervals for the breakpoints
 - **Random placement** -- Coleman's null model for richness from a species-by-site abundance table
 - **I/O adapters** -- load from CSV, GeoDataFrame, or pyiNaturalist summaries
-- **R-validated** -- fits, AICc weights, model averaging, threshold models and random placement are checked against R `sars` reference output, with every known difference listed in `tests/test_r_reference.py`
+- **General dynamic model** -- richness as a function of island area and a hump in island age (Whittaker et al. 2008), with nested-model comparison
+- **R-validated** -- fits, AICc weights, model averaging, threshold models, random placement and the general dynamic model are checked against R `sars` reference output, with every known difference listed in `tests/test_r_reference.py`
 
 ## Quick start
 

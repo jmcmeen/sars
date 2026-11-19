@@ -35,6 +35,19 @@ the generator with R's own model functions, over the window this package uses.
 Coleman's random placement model is checked on R's simulated abundance matrix,
 which the generator writes out alongside R's expected richness and standard
 deviations.
+The general dynamic model (``sar_gdm``) is checked against R's ``gdm`` in
+``tests/test_gdm.py`` (``TestAgainstR``), from ``gdm_galap.csv`` and
+``gdm_fitted_galap.csv``: every form and nested candidate matches R's fit. The
+known differences are in what is reported, not in the fits:
+
+- The intercept-only candidate of the power forms. R fits it as the mean
+  richness for every form, so its ``Int`` is that mean; this package reports it
+  as ``exp(Int)`` like the other power-form candidates, so ``Int`` is the log of
+  the mean. Same fitted values and criteria.
+- The comparison tables are sorted by AICc, R's by AIC. Both criteria, their
+  deltas and their weights are in the table.
+- R's ``"ATT2"`` option (the logarithmic form fitted by ``lm``) is ``"loga"``
+  here: the same fit.
 """
 
 from functools import cache

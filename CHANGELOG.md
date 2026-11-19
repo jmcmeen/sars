@@ -57,6 +57,16 @@ reconstructed from the commit history and the
   `predict` and `predict_sd` give the expected curve at any area, and `plot_coleman` draws
   it with its band and the observed points. Expected richness and standard deviations match
   R's on its simulated matrix (#123)
+- `sar_gdm` fits the general dynamic model of oceanic island biogeography (Whittaker,
+  Triantis & Ladle 2008): richness as a function of island area plus a hump-shaped function
+  of island age (time and time squared). `model=` chooses the form, with the four of R
+  `sars`'s `gdm`: "loga" (the original ATT² model) and "linear", fitted by ordinary least
+  squares, and "power_area" and "power_area_time", fitted by nonlinear least squares on
+  richness; "all" fits the four and ranks them. `mod_sel=True` compares the GDM with the
+  simpler area + time, area-only and intercept-only models by AIC and AICc. The returned
+  `GDMFit` has the coefficients with standard errors and p values, fitted values, R², AIC,
+  AICc, BIC and `predict(area, time)`. The fit doesn't depend on the units of area or age.
+  Coefficients and AIC match R on the example from its help page (#124)
 
 ### Fixed
 

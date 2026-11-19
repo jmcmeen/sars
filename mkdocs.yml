@@ -63,5 +63,6 @@ nav:
       - Multi-model Inference: api/inference.md
       - Threshold Models: api/threshold.md
       - Random Placement: api/coleman.md
+      - General Dynamic Model: api/gdm.md
       - Plotting: api/plots.md
       - I/O Adapters: api/io.md

@@ -251,6 +251,60 @@ much into `rejected`.
 
 The model needs counts of individuals. Presence-absence data won't do, and species absent
 from every site are ignored.
+## The general dynamic model
+
+On oceanic islands richness depends on island age as well as area: it rises while a
+volcanic island is being built and falls as the island erodes and subsides. The general
+dynamic model (GDM) of Whittaker, Triantis & Ladle (2008) therefore adds a hump-shaped
+function of age to the species-area relationship: area, time and time squared, their
+"ATT²" model. `sar_gdm` fits it to a DataFrame with a column of island ages:
+
+```python
+islands = sars.load_galap()
+# Illustrative ages, from the example in R sars's gdm help page (not real island ages)
+islands["time"] = [4, 1, 13, 16, 15, 2, 6, 4, 5, 11, 3, 9, 8, 10, 12, 7]
+
+gdm = sars.sar_gdm(islands, model="loga", mod_sel=True)
+print(gdm)             # coefficients Int, A, Ti, Ti2
+print(gdm.p_values)    # also gdm.std_errors, gdm.fitted, gdm.r_squared, gdm.aic
+print(gdm.comparison)  # the GDM against simpler models
+gdm.predict(area=100, time=[2, 8, 14])
+```
+
+A hump in age shows as a positive `Ti` (time) and a negative `Ti2` (time squared).
+`mod_sel=True` checks whether the data support it, ranking the GDM by AICc against three
+simpler models: area and time ("A + T"), area only ("A") and an intercept only. The
+table has both AIC and AICc, with their differences and weights. If the solver doesn't
+converge for a power-form candidate, `sar_gdm` warns, naming it, and lists it last with no
+weight.
+
+`model` chooses how area enters, with the forms and parameter names of R `sars`'s `gdm`:
+
+| `model` | Equation | Fitted by |
+|---------|----------|-----------|
+| `"loga"` (default) | S = Int + A·log(area) + Ti·T + Ti2·T² | ordinary least squares |
+| `"linear"` | S = Int + A·area + Ti·T + Ti2·T² | ordinary least squares |
+| `"power_area"` | S = exp(Int + A·log(area) + Ti·T + Ti2·T²) | nonlinear least squares |
+| `"power_area_time"` | S = exp(Int + A·log(area) + Ti·log(T) + Ti2·log(T)²) | nonlinear least squares |
+
+`"loga"` is the original ATT² model (R's `"loga"` and `"ATT2"` are the same fit). The power
+forms are fitted to richness itself, not to its log, so all four share a response and can
+be compared by AIC. Their coefficients, `Int` included, are on the log scale.
+`model="all"` fits the four and ranks them:
+
+```python
+every = sars.sar_gdm(islands, model="all")
+print(every.summary)
+print(every.fits["power_area"])   # or every.best
+```
+
+Use `area_col`, `species_col` and `time_col` if your columns have other names. The fit
+doesn't depend on the units of area or age (years or millions of years). To fit a
+variant with log-transformed richness or age (Steinbauer et al. 2013), transform the
+column before passing it.
+
+Reference: Whittaker RJ, Triantis KA, Ladle RJ (2008). A general dynamic theory of
+oceanic island biogeography. *Journal of Biogeography*, 35, 977-994.
 
 ## Bringing your own data
 

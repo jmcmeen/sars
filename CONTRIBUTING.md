@@ -63,6 +63,8 @@ src/sars/
   _inference.py   sar_multi, sar_average, bootstrap_ci, information criteria
   _predict.py     sar_pred, a table of predictions from any fit
   _threshold.py   piecewise (small-island-effect) models
+  _coleman.py     coleman, Coleman's random placement model
+  _gdm.py         sar_gdm, the general dynamic model (area and island age)
   _io.py          from_csv, from_df, from_geodataframe, from_pyinaturalist, load_galap
   _plots.py       matplotlib helpers
   data/           bundled Galapagos dataset

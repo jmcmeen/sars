@@ -185,6 +185,49 @@ write.csv(data.frame(site = names(cole_sim[[2]]),
                      expected = cole$Predicted_values,
                      sd = cole$Standard_deviation),
           out("coleman_sites.csv"), row.names = FALSE)
+# 8. The general dynamic model (gdm), on the example from its help page:
+#    galap with an island age column. Each of the four forms is fitted with
+#    mod_sel = TRUE, which returns the GDM and its three simpler candidates
+#    (area + time, area, intercept) in that order. The fits are nls or lm
+#    objects, so coefficients, standard errors, p values, RSS and AIC are read
+#    from them; AICc is AIC plus the small-sample term with k = coefficients
+#    + 1, which reproduces the table gdm prints. The intercept-only candidate
+#    is an lm of richness, so its Int is the mean richness for every form.
+galap_t <- galap
+galap_t$t <- c(4, 1, 13, 16, 15, 2, 6, 4, 5, 11, 3, 9, 8, 10, 12, 7)
+gdm_forms <- c("loga", "linear", "power_area", "power_area_time")
+gdm_candidates <- c("GDM", "A + T", "A", "Intercept")
+gdm_pars <- c("Int", "A", "Ti", "Ti2")
+gdm_rows <- list()
+# The ages are kept beside R's fitted values, so the tests read them from here.
+gdm_fitted <- data.frame(area = galap_t$a, species = galap_t$s, time = galap_t$t)
+tss <- sum((galap_t$s - mean(galap_t$s))^2)
+for (m in gdm_forms) {
+  g <- gdm(galap_t, model = m, mod_sel = TRUE)
+  for (i in seq_along(gdm_candidates)) {
+    f <- g[[i]]
+    cf <- coef(summary(f))
+    rownames(cf)[rownames(cf) == "(Intercept)"] <- "Int"
+    k <- nrow(cf) + 1
+    rss <- sum(residuals(f)^2)
+    row <- data.frame(model = m, candidate = gdm_candidates[i], k = k, rss = rss,
+                      r2 = 1 - rss / tss, aic = AIC(f),
+                      aicc = AIC(f) + 2 * k * (k + 1) / (n - k - 1), bic = BIC(f))
+    for (p in gdm_pars) {
+      has <- p %in% rownames(cf)
+      row[[p]] <- if (has) cf[p, "Estimate"] else NA
+      row[[paste0("se_", p)]] <- if (has) cf[p, "Std. Error"] else NA
+      row[[paste0("p_", p)]] <- if (has) cf[p, "Pr(>|t|)"] else NA
+    }
+    gdm_rows[[length(gdm_rows) + 1]] <- row
+  }
+  gdm_fitted[[m]] <- as.numeric(fitted(g[[1]]))
+}
+write.csv(do.call(rbind, gdm_rows), out("gdm_galap.csv"), row.names = FALSE)
+write.csv(gdm_fitted, out("gdm_fitted_galap.csv"), row.names = FALSE)
+# model = "all" ranks the four forms; its printed table is kept as the record
+# that the ranking below comes from the same fits.
+print(gdm(galap_t, model = "all", mod_sel = FALSE))
 
 cat("Reference tables written.\n\nPower law:\n")
 print(sar_power(galap))
