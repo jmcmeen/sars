@@ -18,10 +18,18 @@ pip install sars
 ## Features
 
 - **20 SAR models** — power, logarithmic, asymptotic, sigmoid, and more
+- **Log-log power model** — the classic straight-line fit of log S on log A, with standard errors and p values
 - **Multi-model inference** — fit all models at once, ranked by AICc with Akaike weights
+- **Parameter uncertainty** — standard errors, t tests and confidence intervals for each fitted parameter
 - **Model averaging** — weighted-average predictions across candidate models
+- **Prediction** — a table of predicted richness at any areas, from any fit
+- **Residual checks** — normality, homoscedasticity and negative-prediction checks on each fit, optionally leaving out the models that fail before averaging
 - **Bootstrap confidence intervals** — percentile-based CIs for averaged predictions
-- **R-validated** — fits, AICc weights, model averaging and threshold models are checked against R `sars` reference output, with every known difference listed in `tests/test_r_reference.py`
+- **Threshold models** — piecewise regression for detecting breakpoints (small island effect), with bootstrap confidence intervals for the breakpoints
+- **Random placement** — Coleman's null model for richness from a species-by-site abundance table
+- **General dynamic model** — richness as a function of island area and a hump in island age (Whittaker et al. 2008), with nested-model comparison
+- **Bundled datasets** — four published island datasets: `load_galap`, `load_aegean`, `load_aegean2`, `load_niering`
+- **R-validated** — fits, AICc weights, model averaging, threshold models, random placement and the general dynamic model are checked against R `sars` reference output, with every known difference listed in `tests/test_r_reference.py`
 
 ## Quick start
 
@@ -34,7 +42,7 @@ galap = sars.load_galap()
 # Fit a single model
 fit = sars.sar_power(galap)
 print(fit)
-# SARFit(model='power', c=33.1792  z=0.2832, R²=0.4912, AICc=189.03)
+# SARFit(model='power', c=33.1803  z=0.2832, R²=0.4912, AICc=189.03)
 
 # Fit all 20 models and compare
 multi = sars.sar_multi(galap)
@@ -50,6 +58,11 @@ ci = sars.bootstrap_ci(galap, n_boot=100)
 
 For a complete analysis of these data, see the
 [worked example](https://jmcmeen.github.io/sars/examples/galapagos/) in the documentation.
+A [second example](https://jmcmeen.github.io/sars/examples/appalachian/) takes published
+amphibian counts from 26 southern Appalachian sites, read from a CSV, through the same
+steps, and compares the classical log-log power fit with the non-linear one. A
+[third](https://jmcmeen.github.io/sars/examples/geodataframe/) computes site areas from
+polygons with `from_geodataframe`.
 
 ## Available models
 
@@ -113,8 +126,16 @@ This package is a Python implementation inspired by the R [`sars`](https://githu
 
 ### Data
 
-- Preston FW (1962). The canonical distribution of commonness and rarity. *Ecology*, 43, 185-215, 410-432. (the bundled Galápagos dataset, `load_galap`)
+- Preston FW (1962). The canonical distribution of commonness and rarity. *Ecology*, 43, 185-215, 410-432. (the bundled Galápagos plant dataset, `load_galap`; areas in km²)
+- Sfenthourakis S, Triantis KA (2009). Habitat diversity, ecological requirements of species and the Small Island Effect. *Diversity and Distributions*, 15, 131-140. (terrestrial isopods on 90 Aegean islands, `load_aegean`; areas in km²)
+- Matthews TJ, Rigal F, Kougioumoutzis K, Trigas P, Triantis KA (2020). Unravelling the small-island effect through phylogenetic community ecology. *Journal of Biogeography*, 47, 2341-2352. (plants on 173 Aegean islands, `load_aegean2`; areas in km²)
+- Niering WA (1963). Terrestrial ecology of Kapingamarangi Atoll, Caroline Islands. *Ecological Monographs*, 33, 131-160. (plants on 32 islands of Kapingamarangi Atoll, `load_niering`; areas in km²)
 
 ### Threshold models
 
 - Matthews TJ, Rigal F (2021). Thresholds and the species-area relationship. *Frontiers of Biogeography*, 13, e49404.
+- Toms JD, Lesperance ML (2003). Piecewise regression: a tool for identifying ecological thresholds. *Ecology*, 84, 2034-2041. (`threshold_ci`)
+
+### General dynamic model
+
+- Whittaker RJ, Triantis KA, Ladle RJ (2008). A general dynamic theory of oceanic island biogeography. *Journal of Biogeography*, 35, 977-994. (`sar_gdm`)

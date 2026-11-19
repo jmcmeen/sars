@@ -11,6 +11,9 @@ try:
 except PackageNotFoundError:
     __version__ = "0.0.0.dev0"
 
+from sars._checks import ResidualChecks
+from sars._coleman import ColemanFit, coleman
+from sars._gdm import GDMFit, GDMMultiFit, sar_gdm
 from sars._inference import (
     AveragedSAR,
     BootstrappedCI,
@@ -26,8 +29,12 @@ from sars._io import (
     from_df,
     from_geodataframe,
     from_pyinaturalist,
+    load_aegean,
+    load_aegean2,
     load_galap,
+    load_niering,
 )
+from sars._linpow import LinPowFit, lin_pow
 from sars._models import (
     SARFit,
     sar_asymp,
@@ -51,31 +58,57 @@ from sars._models import (
     sar_weibull3,
     sar_weibull4,
 )
-from sars._plots import plot_average, plot_fit, plot_multi, plot_residuals
-from sars._threshold import ThresholdFit, sar_threshold
+from sars._plots import (
+    plot_average,
+    plot_coleman,
+    plot_fit,
+    plot_lin_pow,
+    plot_multi,
+    plot_residuals,
+    plot_threshold,
+)
+from sars._predict import sar_pred
+from sars._threshold import ThresholdCI, ThresholdFit, sar_threshold, threshold_ci
 
 __all__ = [
     "__version__",
     "AveragedSAR",
     "BootstrappedCI",
+    "LinPowFit",
+    "ColemanFit",
+    "GDMFit",
+    "GDMMultiFit",
     "MultiSARFit",
+    "ResidualChecks",
     "SARFit",
+    "ThresholdCI",
     "ThresholdFit",
     "aicc",
     "akaike_weights",
     "bootstrap_ci",
+    "coleman",
     "from_csv",
     "from_df",
     "from_geodataframe",
     "from_pyinaturalist",
+    "lin_pow",
+    "load_aegean",
+    "load_aegean2",
     "load_galap",
+    "load_niering",
     "sar_average",
+    "sar_gdm",
     "sar_multi",
+    "sar_pred",
     "sar_threshold",
+    "threshold_ci",
     "plot_average",
+    "plot_coleman",
     "plot_fit",
+    "plot_lin_pow",
     "plot_multi",
     "plot_residuals",
+    "plot_threshold",
     "sar_asymp",
     "sar_betap",
     "sar_chapman",

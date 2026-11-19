@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.resources
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -10,6 +11,31 @@ import pandas as pd
 
 if TYPE_CHECKING:
     from geopandas import GeoDataFrame
+
+
+def _load_dataset(name: str) -> pd.DataFrame:
+    """Read a bundled dataset, ``sars/data/<name>.csv``, as an area/species frame.
+
+    The files keep the column names R sars uses (``a``, ``s``) and its row
+    order, so they can be compared with R's copies line for line.
+    """
+    filename = f"{name}.csv"
+    # Only the lookup is guarded: an error from parsing a file that is there
+    # is a different problem, and shouldn't be reported as a missing file.
+    try:
+        ref = importlib.resources.files("sars.data").joinpath(filename)
+        found = ref.is_file()
+    except (TypeError, ModuleNotFoundError):
+        found = False
+    if not found:
+        raise FileNotFoundError(
+            f"{filename} is not available. The sars package data may not "
+            "have been installed correctly. Try reinstalling with: "
+            "pip install --force-reinstall sars"
+        )
+    with importlib.resources.as_file(ref) as path:
+        df = pd.read_csv(path)
+    return df.rename(columns={"a": "area", "s": "species"})
 
 
 def load_galap() -> pd.DataFrame:
@@ -25,18 +51,85 @@ def load_galap() -> pd.DataFrame:
     pd.DataFrame
         DataFrame with columns 'area' and 'species'.
     """
-    try:
-        ref = importlib.resources.files("sars.data").joinpath("galap.csv")
-        with importlib.resources.as_file(ref) as path:
-            df = pd.read_csv(path)
-    except (TypeError, FileNotFoundError, ModuleNotFoundError) as exc:
-        raise FileNotFoundError(
-            "galap.csv is not available. The sars package data may not "
-            "have been installed correctly. Try reinstalling with: "
-            "pip install --force-reinstall sars"
-        ) from exc
-    df = df.rename(columns={"a": "area", "s": "species"})
-    return df
+    return _load_dataset("galap")
+
+
+def load_aegean() -> pd.DataFrame:
+    """Load the Aegean terrestrial isopod species-area dataset.
+
+    Terrestrial isopod species counts and island area (km²) for 90 islands
+    of the Aegean Sea, Greece, from Crete (8261 km²) down to islets of a few
+    thousand square metres. The values are those shipped in the R sars
+    package; rows are in its order, largest island first. Every island has
+    at least one species (1 to 34), so the data can go straight to the
+    fitting functions.
+
+    The source used these islands to study the small-island effect, which
+    makes them a common example for `sar_threshold`.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns 'area' and 'species'.
+
+    References
+    ----------
+    Sfenthourakis S, Triantis KA (2009). Habitat diversity, ecological
+    requirements of species and the Small Island Effect. Diversity and
+    Distributions 15, 131-140.
+    """
+    return _load_dataset("aegean")
+
+
+def load_aegean2() -> pd.DataFrame:
+    """Load the Aegean plant species-area dataset.
+
+    Plant species counts and island area (km²) for 173 islands of the Aegean
+    Sea, Greece, from islets of 600 m² (0.0006 km²) up to Crete (8270 km²).
+    The values are those shipped in the R sars package; rows are in its
+    order, smallest island first. Every island has at least one species (2
+    to 1751), so the data can go straight to the fitting functions.
+
+    A different set of islands from `load_aegean`: the two come from separate
+    studies of different taxa. With areas spanning seven orders of magnitude
+    this is the usual example for `sar_threshold`.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns 'area' and 'species'.
+
+    References
+    ----------
+    Matthews TJ, Rigal F, Kougioumoutzis K, Trigas P, Triantis KA (2020).
+    Unravelling the small-island effect through phylogenetic community
+    ecology. Journal of Biogeography 47, 2341-2352.
+    """
+    return _load_dataset("aegean2")
+
+
+def load_niering() -> pd.DataFrame:
+    """Load the Kapingamarangi Atoll plant species-area dataset.
+
+    Plant species counts and island area (km²) for 32 islands of
+    Kapingamarangi Atoll in the Caroline Islands, Micronesia. The islands are
+    tiny, 0.00012 to 0.318 km² (120 m² to 32 ha), so a model fitted to them
+    has its parameters in those units. The values are those shipped in the R
+    sars package; rows are in its order, smallest island first. Every island
+    has at least one species (5 to 60), so the data can go straight to the
+    fitting functions.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns 'area' and 'species'.
+
+    References
+    ----------
+    Niering WA (1963). Terrestrial ecology of Kapingamarangi Atoll, Caroline
+    Islands. Ecological Monographs 33, 131-160.
+    """
+    return _load_dataset("niering")
 
 
 def from_df(
@@ -175,6 +268,12 @@ def from_geodataframe(
     Computes area from polygon geometries if no area column is specified.
     Requires geopandas and shapely (install with ``pip install sars[geo]``).
 
+    Areas are measured in the GeoDataFrame's own coordinate reference system
+    (CRS), so it must be a projected one: reproject longitude/latitude data
+    first, e.g. ``gdf.to_crs("EPSG:6933")``. Use an equal-area projection.
+    A projected CRS that isn't equal-area (Web Mercator, or UTM far from its
+    zone) is accepted but distorts the areas, and this function cannot tell.
+
     Parameters
     ----------
     gdf : geopandas.GeoDataFrame
@@ -185,8 +284,9 @@ def from_geodataframe(
         Column name for pre-computed area values. If None, area is
         computed from geometries.
     crs_units : str
-        Unit conversion for computed areas. "km2" divides by 1e6 (assumes
-        CRS in metres), "m2" uses raw area, "ha" divides by 1e4.
+        Unit of the computed areas: "km2" (default), "ha" or "m2". The CRS's
+        own length unit is read from the CRS, so a CRS in feet gives the same
+        areas as one in metres. Ignored when ``area_col`` is given.
 
     Returns
     -------
@@ -200,7 +300,18 @@ def from_geodataframe(
     KeyError
         If the specified columns are not found.
     ValueError
-        If geometries are not polygons or CRS units are invalid.
+        If ``crs_units`` is not one of the units above or, when area is
+        computed from the geometries, if any geometry is missing, empty or
+        has no area (a point, a line, a degenerate polygon), if the CRS is
+        not a projected one (geographic CRSs, in degrees, included), or if
+        there is no CRS and the coordinates look like longitude and latitude
+        (all within ±180 and ±90).
+
+    Warns
+    -----
+    UserWarning
+        If area is computed from geometries that have no CRS and whose
+        coordinates don't look like degrees. They are then taken to be metres.
     """
     try:
         import geopandas as gpd  # noqa: F401
@@ -217,13 +328,67 @@ def from_geodataframe(
             raise KeyError(f"Column {area_col!r} not found. Available columns: {list(gdf.columns)}")
         areas = gdf[area_col].values
     else:
-        raw_area = gdf.geometry.area
         unit_divisors = {"km2": 1e6, "m2": 1.0, "ha": 1e4}
         if crs_units not in unit_divisors:
             raise ValueError(
                 f"Unknown crs_units {crs_units!r}. Choose from {list(unit_divisors.keys())}"
             )
-        areas = raw_area / unit_divisors[crs_units]
+        geometry = gdf.geometry
+        if geometry.isna().any() or geometry.is_empty.any():
+            raise ValueError(
+                "Some rows have a missing or empty geometry, which has no area. Drop them, "
+                "or pass area_col to use areas from a column."
+            )
+        # Squared degrees are not an area: a degree of longitude shrinks towards the
+        # poles. Dividing them by 1e6 would give numbers that look like tiny islands.
+        reproject = (
+            'Reproject to an equal-area projected CRS first, e.g. gdf.to_crs("EPSG:6933"), '
+            "or pass area_col to use areas from a column."
+        )
+        crs = gdf.crs
+        if crs is None:
+            min_x, min_y, max_x, max_y = geometry.total_bounds
+            if min_x >= -180 and max_x <= 180 and min_y >= -90 and max_y <= 90:
+                # Projected coordinates this close to their origin are rare; longitude
+                # and latitude saved without a CRS are not.
+                raise ValueError(
+                    "The GeoDataFrame has no CRS and every coordinate lies within ±180 and "
+                    "±90, so they look like longitude and latitude in degrees, and areas "
+                    "computed from them would be meaningless. Set the CRS with "
+                    f'gdf.set_crs("EPSG:4326") if that is what they are. {reproject}'
+                )
+            warnings.warn(
+                "The GeoDataFrame has no CRS, so its coordinates are taken to be metres. "
+                "Set one with gdf.set_crs() to be sure of the units.",
+                UserWarning,
+                stacklevel=2,
+            )
+            metres_per_unit = 1.0
+        elif not crs.is_projected:
+            # Geographic (degrees), but also geocentric and engineering systems, whose
+            # coordinates don't lie on a map plane either.
+            kind = (
+                "geographic: its coordinates are degrees" if crs.is_geographic else "not projected"
+            )
+            raise ValueError(
+                f"The GeoDataFrame's CRS ({crs.name}) is {kind}, and areas computed from "
+                f"it are meaningless. {reproject}"
+            )
+        else:
+            # State plane and some national grids are in feet, not metres.
+            metres_per_unit = crs.axis_info[0].unit_conversion_factor
+        raw_area = geometry.area
+        # A point, a line, or a polygon whose outline encloses nothing has area zero,
+        # which would otherwise pass for a very small island.
+        no_area = ~(raw_area > 0)
+        if no_area.any():
+            kinds = sorted(set(geometry[no_area].geom_type))
+            raise ValueError(
+                f"Rows {list(gdf.index[no_area])} have no area (geometry type {kinds}). Area "
+                "can only be computed from valid polygons: fix or drop these rows, or pass "
+                "area_col to use areas from a column."
+            )
+        areas = raw_area * metres_per_unit**2 / unit_divisors[crs_units]
 
     return pd.DataFrame(
         {

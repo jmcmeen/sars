@@ -7,11 +7,15 @@ from typing import TYPE_CHECKING
 import matplotlib.pyplot as plt
 import numpy as np
 
+from sars._coleman import ColemanFit
 from sars._inference import AveragedSAR, MultiSARFit
+from sars._linpow import LinPowFit
 from sars._models import SARFit
+from sars._threshold import _fitted_data
 
 if TYPE_CHECKING:
     from sars._inference import BootstrappedCI
+    from sars._threshold import ThresholdCI, ThresholdFit
 
 
 def plot_fit(
@@ -237,4 +241,251 @@ def plot_residuals(
     ax.set_xlabel("Fitted values")
     ax.set_ylabel("Residuals")
     ax.set_title(f"Residuals: {fit.model}")
+    return ax
+
+
+def plot_threshold(
+    fit: ThresholdFit,
+    model: str | None = None,
+    ci: ThresholdCI | None = None,
+    ax: plt.Axes | None = None,
+    scatter_kw: dict | None = None,
+    line_kw: dict | None = None,
+) -> plt.Axes:
+    """Plot a threshold model: the data, its fitted segments and its breakpoints.
+
+    The x axis is the scale the model was fitted on: the natural log of area
+    by default, area itself for a fit made with ``log_area=False``. A
+    continuous model is drawn as one bending line; a discontinuous model as a
+    separate line for each segment, with nothing drawn across a jump: a
+    breakpoint belongs to the segment on its left, so the next segment starts
+    at the first area above it. A dashed vertical line marks each breakpoint,
+    and with ``ci`` each breakpoint's confidence interval is shaded.
+
+    Parameters
+    ----------
+    fit : ThresholdFit
+        Result of ``sar_threshold()``.
+    model : str, optional
+        Which of the fit's models to draw. Default: the model ``ci`` is for
+        when ``ci`` is given, the best model by AICc otherwise.
+    ci : ThresholdCI, optional
+        Breakpoint confidence intervals from ``threshold_ci()`` for the same
+        fit and model.
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on. If None, creates a new figure.
+    scatter_kw : dict, optional
+        Extra keyword arguments passed to ``ax.scatter()`` for the
+        observed data points.
+    line_kw : dict, optional
+        Extra keyword arguments passed to ``ax.plot()`` for the fitted
+        segments.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+
+    Raises
+    ------
+    ValueError
+        If ``model`` isn't among the fit's models, if ``ci`` is for another
+        model, scale or fit than the one drawn, or if the fit's data have
+        changed since it was fitted.
+    """
+    if model is None:
+        model = ci.model if ci is not None else fit.best_model
+    if model not in fit.all_fits:
+        raise ValueError(
+            f"{model} is not among this fit's models ({', '.join(fit.all_fits)}); "
+            f"include it in sar_threshold's models."
+        )
+    if ci is not None and ci.model != model:
+        raise ValueError(f"ci is for {ci.model}, not {model}.")
+    if ci is not None and ci.log_area != fit.log_area:
+        raise ValueError("ci and fit are on different scales (one on ln(area), one on area).")
+    fitted = fit.all_fits[model]
+    if ci is not None and not (
+        len(ci.estimates) == len(fitted["breakpoints"])
+        and np.allclose(ci.estimates, fitted["breakpoints"])
+    ):
+        raise ValueError(f"ci is for another fit: its breakpoints aren't this fit's for {model}.")
+    _, x, species = _fitted_data(fit, model)
+    if ax is None:
+        _, ax = plt.subplots()
+
+    s_defaults = {"color": "black", "zorder": 3, "label": "Observed"}
+    ax.scatter(x, species, **{**s_defaults, **(scatter_kw or {})})
+
+    l_defaults = {
+        "color": "dodgerblue",
+        "linewidth": 2,
+        "label": f"{model} (R²={fitted['r2']:.3f})",
+    }
+    line = {**l_defaults, **(line_kw or {})}
+    # Each segment is a straight line, so its two ends draw it. Continuous
+    # segments share their ends and join up. A discontinuous model's breakpoint
+    # is the last area of the segment on its left, so the next segment is drawn
+    # from the first area above it, not back across the gap it never fitted.
+    for i, seg in enumerate(fitted["segments"]):
+        start = seg["x_min"]
+        if i > 0 and model.startswith("Disc"):
+            start = x[x > start].min()
+        ends = np.array([start, seg["x_max"]])
+        if i > 0:  # one legend entry for the whole model
+            line = {**line, "label": "_nolegend_"}
+        ax.plot(ends, seg["intercept"] + seg["slope"] * ends, **line)
+
+    for i, t in enumerate(fitted["breakpoints"]):
+        ax.axvline(
+            t,
+            color="red",
+            linestyle="--",
+            linewidth=1,
+            label="Breakpoint" if i == 0 else "_nolegend_",
+        )
+    if ci is not None:
+        for i, (lo, hi) in enumerate(zip(ci.lower, ci.upper, strict=True)):
+            ax.axvspan(
+                lo,
+                hi,
+                alpha=0.15,
+                color="red",
+                linewidth=0,
+                label=f"{ci.conf * 100:g}% CI" if i == 0 else "_nolegend_",
+            )
+
+    ax.set_xlabel("ln(Area)" if fit.log_area else "Area")
+    ax.set_ylabel("Species")
+    ax.set_title(f"Threshold model: {model}")
+    ax.legend()
+    return ax
+
+
+def plot_lin_pow(
+    fit: LinPowFit,
+    ax: plt.Axes | None = None,
+    scatter_kw: dict | None = None,
+    line_kw: dict | None = None,
+) -> plt.Axes:
+    """Plot a log-log power model fit: the data and the fitted line on log-log axes.
+
+    Parameters
+    ----------
+    fit : LinPowFit
+        A fitted log-log power model.
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on. If None, creates a new figure.
+    scatter_kw : dict, optional
+        Extra keyword arguments passed to ``ax.scatter()`` for the
+        observed data points.
+    line_kw : dict, optional
+        Extra keyword arguments passed to ``ax.plot()`` for the fitted line.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The axes are logarithmic and labelled in area and richness units,
+        whatever the fit's log base. When a constant was added to the richness
+        (``fit.con``), the points and the line are of richness plus that
+        constant, the values the line was fitted to.
+    """
+    if ax is None:
+        _, ax = plt.subplots()
+
+    area = fit.data["area"].to_numpy(dtype=float)
+    species = fit.data["species"].to_numpy(dtype=float) + fit.con
+
+    s_defaults = {"color": "black", "zorder": 3, "label": "Observed"}
+    ax.scatter(area, species, **{**s_defaults, **(scatter_kw or {})})
+
+    # A power law is straight on log-log axes, so its two ends draw it.
+    ends = np.array([area.min(), area.max()])
+    l_defaults = {
+        "color": "dodgerblue",
+        "linewidth": 2,
+        "label": f"z={fit.z:.3f} (R²={fit.r_squared:.3f})",
+    }
+    ax.plot(ends, fit.predict(ends) + fit.con, **{**l_defaults, **(line_kw or {})})
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Area")
+    ax.set_ylabel(f"Species + {fit.con:g}" if fit.con else "Species")
+    ax.set_title("Log-log power model")
+    ax.legend()
+    return ax
+
+
+def plot_coleman(
+    fit: ColemanFit,
+    ax: plt.Axes | None = None,
+    log: bool = True,
+    scatter_kw: dict | None = None,
+    line_kw: dict | None = None,
+    fill_kw: dict | None = None,
+) -> plt.Axes:
+    """Plot Coleman's random placement model against observed richness.
+
+    Draws the expected richness against relative area (a site's share of the
+    total area), a band one standard deviation either side of it, and the
+    observed richness of each site. Random placement is rejected when more
+    than a third of the points fall outside the band.
+
+    Parameters
+    ----------
+    fit : ColemanFit
+        Result of ``coleman()``.
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on. If None, creates a new figure.
+    log : bool
+        If True (the default), put relative area on a log axis, the usual
+        way to draw this plot. Richness stays on a linear axis.
+    scatter_kw : dict, optional
+        Extra keyword arguments passed to ``ax.scatter()`` for the
+        observed data points.
+    line_kw : dict, optional
+        Extra keyword arguments passed to ``ax.plot()`` for the expected
+        curve.
+    fill_kw : dict, optional
+        Extra keyword arguments passed to ``ax.fill_between()`` for the
+        band of one standard deviation.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
+    if ax is None:
+        _, ax = plt.subplots()
+
+    alpha = fit.sites["relative_area"].to_numpy(dtype=float)
+    observed = fit.sites["observed"].to_numpy(dtype=float)
+
+    s_defaults = {"color": "black", "zorder": 3, "label": "Observed"}
+    ax.scatter(alpha, observed, **{**s_defaults, **(scatter_kw or {})})
+
+    lo, hi = float(alpha.min()), float(alpha.max())
+    if np.isclose(lo, hi):
+        # Sites of one size (a common design) give a single relative area and
+        # no range to draw over, so show the curve a factor of ten either side
+        # of it, stopping at the whole area.
+        lo, hi = lo / 10, min(1.0, hi * 10)
+    # Evenly spaced on the axis in use, so the curve is smooth at the small
+    # sites on a log axis too.
+    grid = np.geomspace(lo, hi, 200) if log else np.linspace(lo, hi, 200)
+    # The grid's top can round a hair above 1; _curve allows for that.
+    expected, sd = fit._curve(grid * fit.total_area)
+
+    l_defaults = {"color": "dodgerblue", "linewidth": 2, "label": "Random placement"}
+    ax.plot(grid, expected, **{**l_defaults, **(line_kw or {})})
+    f_defaults = {"alpha": 0.2, "color": "dodgerblue", "label": "±1 sd"}
+    ax.fill_between(grid, expected - sd, expected + sd, **{**f_defaults, **(fill_kw or {})})
+
+    if log:
+        ax.set_xscale("log")
+
+    ax.set_xlabel("Relative area")
+    ax.set_ylabel("Species")
+    verdict = "rejected" if fit.rejected else "not rejected"
+    ax.set_title(f"Coleman's random placement: {verdict}")
+    ax.legend()
     return ax

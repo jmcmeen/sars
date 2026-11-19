@@ -1,9 +1,13 @@
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
+from scipy import stats
 
 import sars  # noqa: I001
 from sars._inference import ALL_MODEL_NAMES
+from sars._models import _param_std_errors
 
 # ---------------------------------------------------------------------------
 # Input validation (applies to all sar_* functions via _fit_nls)
@@ -63,13 +67,13 @@ class TestInputValidation:
             sars.sar_power(df)
 
     def test_validation_applies_to_all_models(self):
-        """Every sar_* function should reject bad input identically."""
+        """Every function that fits the models to data should reject bad input identically."""
         bad = pd.DataFrame({"wrong": [1, 2], "columns": [3, 4]})
-        for name in dir(sars):
-            if name.startswith("sar_") and name != "sar_threshold":
-                fn = getattr(sars, name)
-                with pytest.raises(KeyError):
-                    fn(bad)
+        names = [f"sar_{model}" for model in ALL_MODEL_NAMES] + ["sar_multi", "sar_average"]
+        assert len(names) == 22
+        for name in names:
+            with pytest.raises(KeyError):
+                getattr(sars, name)(bad)
 
 
 def test_power_law_spot_check():
@@ -165,7 +169,10 @@ def test_a_warm_start_takes_natural_scale_values(galap, galap_fits):
 
     fit = galap_fits["weibull4"]
     warm = _fit_nls("weibull4", galap, start_from=fit.params)
-    assert warm.aicc == pytest.approx(fit.aicc, abs=1e-6)
+    # weibull4 sits on a flat ridge here, and where a solver stops along it varies
+    # with the platform's floating point by a few thousandths of an AICc unit. A
+    # start misread as log-scale values would be whole units away.
+    assert warm.aicc == pytest.approx(fit.aicc, abs=1e-2)
 
 
 def test_a_zero_lower_bound_becomes_the_log_floor():
@@ -271,3 +278,472 @@ def test_a_model_needs_a_rescaling_entry():
                 bounds_lower=[0.0], bounds_upper=[1.0], start_grid=[[0.5]],
             )
         )  # fmt: skip
+
+
+class TestObservedShape:
+    """Curves whose shape is known, classified on [1, 100]."""
+
+    @pytest.mark.parametrize(
+        ("curve", "expected"),
+        [
+            (lambda a: 3 + 2 * a, "linear"),
+            (lambda a: 50 - 0.2 * a, "linear"),
+            (lambda a: np.full_like(a, 7.0), "linear"),
+            (lambda a: 5 * a**0.3, "convex"),
+            (lambda a: 10 * np.log(a + 1), "convex"),
+            (lambda a: 80 * (1 - np.exp(-0.05 * a)), "convex"),
+            (lambda a: 80 / (1 + np.exp(-0.2 * (a - 40))), "sigmoid"),
+            (lambda a: 80 * np.exp(-np.exp(-0.1 * (a - 30))), "sigmoid"),
+            # The inflection point is below the range: only the decelerating part shows.
+            (lambda a: 80 / (1 + np.exp(-0.2 * (a + 20))), "convex"),
+            # ...or above it: only the accelerating part.
+            (lambda a: 80 / (1 + np.exp(-0.05 * (a - 300))), "none"),
+            (lambda a: 0.01 * a**2, "none"),
+            (lambda a: 5 * a**0.5 * np.exp(-0.02 * a), "none"),  # falls after A = 25
+            (lambda a: a + 5 * np.sin(a / 5), "none"),  # several inflection points
+            (lambda a: np.full_like(a, np.nan), "none"),
+            # Flat but for rounding noise: still a line of slope zero.
+            (lambda a: 200 + 1e-13 * np.sin(a), "linear"),
+            # A bend too small to see doesn't make a convex curve sigmoid.
+            (lambda a: 5 * a**0.3 + 1e-4 * 60 / (1 + np.exp(-(a - 3))), "convex"),
+        ],
+    )
+    def test_known_curves(self, curve, expected):
+        from sars._models import _curve_shape
+
+        assert _curve_shape(curve, 1.0, 100.0) == expected
+
+    def test_a_bend_among_the_small_islands_is_seen(self):
+        """Areas spanning eight orders of magnitude: the sigmoid's rising slope sits
+        below a thousandth of the range, where an even grid has no points."""
+        from sars._models import _curve_shape
+
+        def curve(a):
+            return 80 * a**2 / (1e-4 + a**2)
+
+        assert _curve_shape(curve, 1e-3, 1e5) == "sigmoid"
+
+    @pytest.mark.parametrize(
+        ("curve", "expected"),
+        [
+            # Among the largest islands a slope is tiny beside one among the smallest:
+            # a fall of four species there, or a tail that accelerates, must still count.
+            (lambda a: 5 * a**0.25 * np.exp(-a / 2e5), "none"),
+            (lambda a: 5 * a**0.25 + 1e-8 * a**2, "none"),
+            # ...unless it is too small to see: this tail bends up by 0.003 species.
+            (lambda a: 5 * a**0.25 + 1e-9 * a**2, "convex"),
+            (lambda a: 5 * a**0.25, "convex"),
+        ],
+    )
+    def test_areas_spanning_many_orders_of_magnitude(self, curve, expected):
+        from sars._models import _curve_shape
+
+        assert _curve_shape(curve, 1e-3, 1e5) == expected
+
+    def test_a_small_rise_on_a_large_intercept_is_still_convex(self):
+        from sars._models import _curve_shape
+
+        def curve(a):
+            return 979.316529976624 + 0.6524907527948977 * a**0.11493479713945963
+
+        assert _curve_shape(curve, 0.08536470703959534, 10.669173905822692) == "convex"
+
+    def test_rounding_noise_is_not_a_bend(self):
+        from sars._models import _curve_shape
+
+        rng = np.random.default_rng(0)
+
+        def curve(a):
+            return 5 * a**0.3 * (1 + 1e-13 * rng.standard_normal(a.shape))
+
+        assert _curve_shape(curve, 1.0, 100.0) == "convex"
+
+    def test_one_distinct_area_has_no_shape(self):
+        from sars._models import _curve_shape
+
+        assert _curve_shape(lambda a: a, 5.0, 5.0) == "none"
+
+    def test_fits_recover_the_shape_of_their_data(self):
+        area = np.geomspace(1, 1000, 25)
+        convex = pd.DataFrame({"area": area, "species": 5 * area**0.25})
+        assert sars.sar_power(convex).observed_shape() == "convex"
+        line = pd.DataFrame({"area": area, "species": 3 + 0.1 * area})
+        assert sars.sar_linear(line).observed_shape() == "linear"
+        area = np.linspace(1, 100, 25)
+        s_curve = pd.DataFrame({"area": area, "species": 80 * np.exp(-np.exp(-0.1 * (area - 30)))})
+        assert sars.sar_gompertz(s_curve).observed_shape() == "sigmoid"
+
+    def test_a_failed_fit_has_no_shape(self):
+        from sars._models import _failed_fit
+
+        data = pd.DataFrame({"area": [1.0, 2.0, 3.0], "species": [1.0, 2.0, 3.0]})
+        assert _failed_fit("power", ["c", "z"], 3, data).observed_shape() == "none"
+
+
+TABLE_COLUMNS = ["estimate", "std_error", "t_value", "p_value", "ci_lower", "ci_upper"]
+
+
+_X = np.linspace(1.0, 10.0, 12)
+
+
+_Y = 3.0 + 2.0 * _X + np.sin(5.0 * _X)  # a line plus something it can't fit
+
+
+def _wald_std_errors(jac: np.ndarray, residuals: np.ndarray) -> np.ndarray:
+    """sqrt(diag(sigma^2 (J'J)^-1)), written out for an exact Jacobian."""
+    n, p = jac.shape
+    cov = residuals @ residuals / (n - p) * np.linalg.inv(jac.T @ jac)
+    return np.sqrt(np.diag(cov))
+
+
+def _quiet_table(fit: sars.SARFit, **kwargs) -> pd.DataFrame:
+    """The table of a fit that must not warn."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        return fit.param_table(**kwargs)
+
+
+@pytest.mark.parametrize("model_name", ALL_MODEL_NAMES)
+def test_param_table_has_a_row_per_parameter(model_name, galap_fits):
+    fit = galap_fits[model_name]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        table = fit.param_table()
+    assert list(table.columns) == TABLE_COLUMNS
+    assert list(table.index) == list(fit.params)
+    assert table.index.name == "parameter"
+    assert table["estimate"].to_dict() == fit.params
+
+
+def test_param_table_matches_the_analytic_jacobian(galap, galap_fits):
+    """The power model's derivatives are known exactly: a^z and c a^z ln(a)."""
+    fit = galap_fits["power"]
+    area = galap["area"].to_numpy(float)
+    c, z = fit.params["c"], fit.params["z"]
+    jac = np.column_stack([area**z, c * area**z * np.log(area)])
+    expected = _wald_std_errors(jac, galap["species"].to_numpy(float) - fit.predict(area))
+    table = _quiet_table(fit)
+    np.testing.assert_allclose(table["std_error"], expected, rtol=1e-7)
+
+
+def test_param_table_of_the_linear_model_is_ordinary_least_squares(galap, galap_fits):
+    area = galap["area"].to_numpy(float)
+    species = galap["species"].to_numpy(float)
+    design = np.column_stack([np.ones_like(area), area])
+    coef = np.linalg.lstsq(design, species, rcond=None)[0]
+    expected = _wald_std_errors(design, species - design @ coef)
+    table = _quiet_table(galap_fits["linear"])
+    np.testing.assert_allclose(table["std_error"], expected, rtol=1e-6)
+
+
+def test_param_table_tests_and_intervals_use_the_t_distribution(galap_fits):
+    fit = galap_fits["power"]
+    table = _quiet_table(fit)
+    dof = fit.n - 2
+    np.testing.assert_allclose(table["t_value"], table["estimate"] / table["std_error"])
+    np.testing.assert_allclose(table["p_value"], 2 * stats.t.sf(table["t_value"].abs(), dof))
+    half = stats.t.ppf(0.975, dof) * table["std_error"]
+    np.testing.assert_allclose(table["ci_lower"], table["estimate"] - half)
+    np.testing.assert_allclose(table["ci_upper"], table["estimate"] + half)
+    # Wider than the estimate ± 2 standard errors R reports as its interval.
+    assert np.all(half > 2 * table["std_error"])
+
+
+def test_param_table_interval_widens_with_the_confidence_level(galap_fits):
+    fit = galap_fits["power"]
+    narrow, wide = _quiet_table(fit, conf=0.8), _quiet_table(fit, conf=0.99)
+    assert np.all(wide["ci_lower"] < narrow["ci_lower"])
+    assert np.all(wide["ci_upper"] > narrow["ci_upper"])
+    # Only the interval depends on the level.
+    pd.testing.assert_frame_equal(wide[TABLE_COLUMNS[:4]], narrow[TABLE_COLUMNS[:4]])
+    half = stats.t.ppf(0.9, fit.n - 2) * narrow["std_error"]
+    np.testing.assert_allclose(narrow["ci_upper"] - narrow["estimate"], half)
+
+
+@pytest.mark.parametrize("conf", [0.0, 1.0, 1.5, -0.1, float("nan")])
+def test_param_table_rejects_a_level_outside_0_to_1(conf, galap_fits):
+    with pytest.raises(ValueError, match="conf must be between 0 and 1"):
+        galap_fits["power"].param_table(conf=conf)
+
+
+def test_param_table_is_nan_where_the_data_dont_identify_the_parameters(galap_fits):
+    """weibull4 trades c toward 0 against a growing z on the Galápagos data: a
+    flat ridge, along which neither has a standard error."""
+    fit = galap_fits["weibull4"]
+    with pytest.warns(UserWarning, match="'weibull4'.*differentiated reliably.*c, z"):
+        table = fit.param_table()
+    assert table[TABLE_COLUMNS[1:]].isna().all(axis=None)
+    assert table["estimate"].to_dict() == fit.params
+    # No astronomically large numbers stand in for "unknown".
+    assert not np.isinf(table.to_numpy()).any()
+
+
+def test_param_table_names_the_parameters_the_data_dont_identify(monkeypatch):
+    """A model in which only c1 + c2 matters: neither has a standard error,
+    and the slope keeps its own."""
+    from sars import _models
+
+    spec = _models._ModelSpec(
+        name="ridge",
+        func=lambda a, c1, c2, m: c1 + c2 + m * a,
+        param_names=["c1", "c2", "m"],
+        bounds_lower=[-1e6] * 3,
+        bounds_upper=[1e6] * 3,
+        start_grid=[[0.0], [0.0], [1.0]],
+    )
+    monkeypatch.setitem(_models._MODEL_REGISTRY, "ridge", spec)
+    data = pd.DataFrame({"area": _X, "species": _Y})
+    fit = sars.SARFit(
+        model="ridge",
+        params={"c1": 1.0, "c2": 2.0, "m": 2.0},
+        r_squared=np.nan,
+        aic=np.nan,
+        aicc=np.nan,
+        bic=np.nan,
+        n=len(_X),
+        converged=True,
+        data=data,
+    )
+    with pytest.warns(UserWarning, match="'ridge': the data don't identify c1, c2, so"):
+        table = fit.param_table()
+    assert table.loc[["c1", "c2"], TABLE_COLUMNS[1:]].isna().all(axis=None)
+    assert table.loc["m", TABLE_COLUMNS[1:]].notna().all()
+
+
+def _hand_built_fit(model: str, data: pd.DataFrame, converged: bool = True) -> sars.SARFit:
+    return sars.SARFit(
+        model=model,
+        params={"c": 1.0, "m": 2.0},
+        r_squared=np.nan,
+        aic=np.nan,
+        aicc=np.nan,
+        bic=np.nan,
+        n=len(data),
+        converged=converged,
+        data=data,
+    )
+
+
+def test_param_table_of_an_unknown_model_says_so_like_predict():
+    data = pd.DataFrame({"area": _X, "species": _Y})
+    with pytest.raises(NotImplementedError, match="param_table not yet implemented for 'nope'"):
+        _hand_built_fit("nope", data).param_table()
+    # A failed fit has nothing to compute, whatever its model.
+    table = _quiet_table(_hand_built_fit("nope", data, converged=False))
+    assert list(table.index) == ["c", "m"]
+    assert table[TABLE_COLUMNS[1:]].isna().all(axis=None)
+
+
+@pytest.mark.parametrize("change", ["a value", "the rows"])
+def test_param_table_refuses_data_changed_since_the_fit(change):
+    """The fit keeps the caller's DataFrame, not a copy; a table computed from
+    other data than the parameters were fitted to would be silently wrong."""
+    data = pd.DataFrame({"area": _X, "species": _Y})
+    fit = sars.sar_linear(data)
+    _quiet_table(fit)
+    if change == "a value":
+        data.loc[0, "species"] += 5.0
+    else:
+        data.drop(index=0, inplace=True)
+    with pytest.raises(ValueError, match="data of this 'linear' fit have changed"):
+        fit.param_table()
+
+
+def test_param_table_has_no_standard_errors_without_degrees_of_freedom():
+    data = pd.DataFrame({"area": [1.0, 10.0], "species": [5.0, 12.0]})
+    fit = sars.sar_power(data)
+    assert fit.converged
+    table = _quiet_table(fit)
+    assert table["estimate"].to_dict() == fit.params
+    assert table[TABLE_COLUMNS[1:]].isna().all(axis=None)
+
+
+def test_param_table_of_a_failed_fit_is_all_nan(galap):
+    from sars._models import _failed_fit
+
+    fit = _failed_fit("power", ["c", "z"], len(galap), galap)
+    table = _quiet_table(fit)
+    assert list(table.index) == ["c", "z"]
+    assert table.isna().all(axis=None)
+
+
+def test_param_table_of_an_exact_fit_has_zero_standard_errors():
+    data = pd.DataFrame({"area": [1.0, 2.0, 3.0, 4.0], "species": [3.0, 5.0, 7.0, 9.0]})
+    fit = sars.SARFit(
+        model="linear",
+        params={"c": 1.0, "m": 2.0},
+        r_squared=1.0,
+        aic=np.nan,
+        aicc=np.nan,
+        bic=np.nan,
+        n=4,
+        converged=True,
+        data=data,
+    )
+    table = _quiet_table(fit)
+    assert (table["std_error"] == 0).all()
+    assert np.isinf(table["t_value"]).all()
+    assert (table["p_value"] == 0).all()
+    assert (table["ci_lower"] == table["estimate"]).all()
+
+
+def test_an_exponents_standard_error_doesnt_depend_on_the_area_units(galap, galap_fits):
+    """The power model's z has no units, so its row is the same in m² as in
+    km². (c's isn't: c absorbs the unit change through z, as c * 1e6^-z.)"""
+    metres = galap.assign(area=galap["area"] * 1e6)
+    km, m2 = _quiet_table(galap_fits["power"]), _quiet_table(sars.sar_power(metres))
+    np.testing.assert_allclose(m2.loc["z"], km.loc["z"], rtol=1e-5)
+
+
+def _line_std_errors() -> np.ndarray:
+    design = np.column_stack([np.ones_like(_X), _X])
+    return _wald_std_errors(design, _Y - (3.0 + 2.0 * _X))
+
+
+def test_a_parameter_the_curve_ignores_has_no_standard_error():
+    def func(a, c, m, unused):
+        return c + m * a
+
+    se, rough = _param_std_errors(func, _X, _Y, np.array([3.0, 2.0, 7.0]))
+    assert not rough.any()
+    assert np.isnan(se[2])
+    # The others are what they'd be with it held fixed (on n - p degrees of
+    # freedom, which count it).
+    np.testing.assert_allclose(se[:2], _line_std_errors() * np.sqrt(10 / 9), rtol=1e-6)
+
+
+def test_a_curve_that_ignores_every_parameter_has_no_standard_errors():
+    def func(a, c, m):
+        return 3.0 + 2.0 * a
+
+    se, rough = _param_std_errors(func, _X, _Y, np.array([3.0, 2.0]))
+    assert not rough.any()
+    assert np.isnan(se).all()
+
+
+def test_parameters_on_a_ridge_have_no_standard_error_but_others_do():
+    """Only c1 + c2 matters, so neither is identified; the slope still is."""
+
+    def func(a, c1, c2, m):
+        return c1 + c2 + m * a
+
+    se, rough = _param_std_errors(func, _X, _Y, np.array([1.0, 2.0, 2.0]))
+    assert not rough.any()
+    assert np.isnan(se[:2]).all()
+    assert se[2] == pytest.approx(_line_std_errors()[1] * np.sqrt(10 / 9), rel=1e-6)
+
+
+def test_a_curve_that_cant_be_differentiated_has_no_standard_errors():
+    def breaks(a, c, m):  # undefined anywhere but at the fitted slope
+        return c + m * a if m == 2.0 else np.full_like(a, np.nan)
+
+    se, rough = _param_std_errors(breaks, _X, _Y, np.array([3.0, 2.0]))
+    assert rough.tolist() == [False, True]
+    assert np.isnan(se).all()
+
+    def undefined(a, c, m):  # not even defined at the fitted values
+        return np.full_like(a, np.nan)
+
+    se, rough = _param_std_errors(undefined, _X, _Y, np.array([3.0, 2.0]))
+    assert rough.all()
+    assert np.isnan(se).all()
+
+    def breaks_nearby(a, c, m):  # defined at the first step tried, not the finer one
+        return np.full_like(a, np.nan) if 0 < abs(m - 2.0) < 1e-5 else c + m * a
+
+    se, rough = _param_std_errors(breaks_nearby, _X, _Y, np.array([3.0, 2.0]))
+    assert rough.tolist() == [False, True]
+    assert np.isnan(se).all()
+
+    rng = np.random.default_rng(0)
+
+    def noisy(a, c, m):  # rounding noise far larger than a finite-difference step
+        return c + m * a + rng.normal(scale=1e-3, size=a.shape)
+
+    se, rough = _param_std_errors(noisy, _X, _Y, np.array([3.0, 2.0]))
+    assert rough.all()
+    assert np.isnan(se).all()
+
+
+@pytest.mark.parametrize("top", [10.0, 5000.0, 5e9])
+@pytest.mark.parametrize("d", [0.0, 1e-42, 1e-310])
+def test_a_parameter_at_or_near_zero_still_gets_a_standard_error(d, top):
+    """The step has to come from how the curve responds, not from the size of
+    the parameter: p1's d reaches 1e-42 on small samples, a log-scale parameter
+    1e-300, and the response to d grows with the largest area."""
+
+    def func(a, c, z, d):
+        return c * a**z * np.exp(-d * a)
+
+    area = np.geomspace(1.0, top, 12)
+    values = np.array([4.0, 0.3, d])
+    model = func(area, *values)
+    species = model * (1.0 + 0.1 * np.sin(5.0 * _X))
+    jac = np.column_stack([model / 4.0, model * np.log(area), -area * model])
+    se, rough = _param_std_errors(func, area, species, values)
+    assert not rough.any()
+    np.testing.assert_allclose(se, _wald_std_errors(jac, species - model), rtol=1e-6)
+
+
+def test_a_step_that_would_leave_the_models_domain_is_taken_one_sided():
+    """q must not be negative, and the curve responds to it so weakly that a
+    step big enough to see is bigger than q itself."""
+
+    def func(a, c, m, q):
+        return c + m * a + 1e-8 * q * a**2 if q >= 0 else np.full_like(a, np.nan)
+
+    values = np.array([3.0, 2.0, 1e-3])
+    jac = np.column_stack([np.ones_like(_X), _X, 1e-8 * _X**2])
+    se, rough = _param_std_errors(func, _X, _Y, values)
+    assert not rough.any()
+    np.testing.assert_allclose(se, _wald_std_errors(jac, _Y - func(_X, *values)), rtol=1e-6)
+
+
+def _apart_from_the_line(values: np.ndarray) -> np.ndarray:
+    """What's left of ``values`` after regressing them on a constant and _X."""
+    design = np.column_stack([np.ones_like(_X), _X])
+    return values - design @ np.linalg.lstsq(design, values, rcond=None)[0]
+
+
+def _rough(q: float) -> float:
+    """A function of q whose slope can't be found by differencing."""
+    return q + 1e-7 * np.sin(1e9 * q)
+
+
+def test_a_rough_derivative_blanks_only_the_parameters_that_depend_on_it():
+    separate = _apart_from_the_line(_X**2)
+
+    def func(a, c, m, q):  # q's column is orthogonal to the line's
+        return c + m * a + _rough(q) * separate
+
+    se, rough = _param_std_errors(func, _X, _Y, np.array([3.0, 2.0, 0.0]))
+    assert rough.tolist() == [False, False, True]
+    assert np.isnan(se[2])
+    np.testing.assert_allclose(se[:2], _line_std_errors() * np.sqrt(10 / 9), rtol=1e-6)
+
+    def tangled(a, c, m, q):  # q's column, a^2, is correlated with the line's
+        return c + m * a + _rough(q) * a**2
+
+    se, rough = _param_std_errors(tangled, _X, _Y, np.array([3.0, 2.0, 0.0]))
+    assert rough.tolist() == [False, False, True]
+    assert np.isnan(se).all()
+
+
+def test_a_parameter_near_a_ridge_but_not_on_it_keeps_its_standard_error():
+    """c1 and c2 are all but interchangeable; the slope is correlated with what
+    little tells them apart, so its loading on the ridge isn't exactly zero,
+    but it is as well determined as in the model that names that term."""
+    wiggle = np.sin(_X)
+
+    def func(a, c1, c2, m):
+        return c1 + c2 * (1.0 + 1e-6 * wiggle) + m * a
+
+    values = np.array([1.0, 2.0, 2.0])
+    se, rough = _param_std_errors(func, _X, _Y, values)
+    assert not rough.any()
+    assert np.isnan(se[:2]).all()
+    named = np.column_stack([np.ones_like(_X), wiggle, _X])
+    expected = _wald_std_errors(named, _Y - func(_X, *values))[2]
+    assert se[2] == pytest.approx(expected, rel=1e-4)
+    # ... which is not what it would be were c1 and c2 one parameter.
+    assert abs(expected / (_line_std_errors()[1] * np.sqrt(10 / 9)) - 1) > 1e-3

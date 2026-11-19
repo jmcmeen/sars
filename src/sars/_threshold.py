@@ -23,6 +23,11 @@ put their breakpoints at observed areas, as in R.
 Meaningful threshold detection generally requires at least 7 observations
 (n >= 7). With fewer data points the grid search may find zero valid
 breakpoint candidates, leaving only the Linear baseline.
+
+``threshold_ci`` gives a fitted model's breakpoints bootstrap confidence
+intervals (Toms & Lesperance 2003, Ecology 84, 2034-2041): the model's
+residuals are resampled onto its fitted values and the breakpoint search is
+rerun on each resample.
 """
 
 from __future__ import annotations
@@ -30,6 +35,8 @@ from __future__ import annotations
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from operator import index
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -75,6 +82,12 @@ class ThresholdFit:
         All of the best model's breakpoints on the fitted scale, in order: none
         for the linear model, two for a two-threshold model.
         ``breakpoints_area`` gives them in area units.
+    interval : float | None
+        Grid spacing the breakpoint search used, on the fitted scale. None
+        means a thousandth of the breakpoint window (from the third-smallest to
+        the third-largest area), which is what ``sar_threshold`` searches on
+        the area scale unless told otherwise; on the log scale it stores its
+        0.01. ``threshold_ci`` searches its resamples with the same spacing.
     """
 
     best_model: str
@@ -85,6 +98,7 @@ class ThresholdFit:
     data: pd.DataFrame = field(repr=False)
     log_area: bool = True
     best_breakpoints: tuple[float, ...] = ()
+    interval: float | None = None
 
     def predict(self, area: float | np.ndarray) -> np.ndarray:
         """Predict species richness for given area value(s).
@@ -374,6 +388,8 @@ _MAX_CANDIDATES = 100_000
 # The two-threshold searches score the second breakpoints for each first one
 # together; past this many pairs they too would seem to hang.
 _MAX_PAIRS = 10_000_000
+# Bootstrap resamples searched together.
+_BOOT_BATCH = 500
 # Most (observation, candidate) cells a ContTwo/ZslopeTwo block scores at once
 # (8 MB per temporary array), so memory stays bounded however large the data.
 _BLOCK = 1_000_000
@@ -415,88 +431,107 @@ def _check_pairs(n_pairs: float, hint: str) -> None:
         )
 
 
-def _grid_search_breakpoint(
-    x: np.ndarray,
-    y: np.ndarray,
-    fit_func: Callable[[np.ndarray, np.ndarray, float], dict],
-    interval: float | None,
-    min_points: int = 3,
-) -> dict | None:
-    """Search the grid for the one breakpoint that minimises RSS.
+def _fit_basis(columns: list[np.ndarray]) -> np.ndarray:
+    """An orthonormal basis for the span of a fit's columns."""
+    u, s, _ = np.linalg.svd(np.column_stack(columns), full_matrices=False)
+    return u[:, s > s[0] * 1e-10]
 
-    Parameters
-    ----------
-    x : np.ndarray
-        Predictor values on the fitted scale (log-area, or area).
-    y : np.ndarray
-        Response values (species).
-    fit_func : callable
-        One of _fit_cont_one or _fit_zslope_one.
-    interval : float or None
-        Grid spacing for breakpoint candidates, on the same scale as ``x``.
-        None: a thousandth of the window the candidates can lie in.
-    min_points : int
-        Minimum number of data points required on each side.
 
-    Returns
-    -------
-    dict or None
-        Best fit result dict, or None if no valid breakpoint found.
+def _hinge_gains(x: np.ndarray, q: np.ndarray, r_ys: np.ndarray, t: np.ndarray) -> np.ndarray:
+    """How far the RSS falls when a hinge at each of ``t`` joins a fit.
+
+    ``q`` is an orthonormal basis for the fit's columns and each row of
+    ``r_ys`` a response with that fit projected out. With r_h the hinge with
+    the fit projected out too, the fall is (r_y . r_h)^2 / (r_h . r_h). One
+    row per response, one column per hinge.
     """
-    candidates = _breakpoint_grid(x, interval, min_points)
-    if candidates is None:
-        return None
-
-    best_fit = None
-    best_rss = np.inf
-
-    for t in candidates:
-        # Ensure at least min_points on each side
-        n_left = np.sum(x <= t)
-        n_right = np.sum(x > t)
-        if n_left < min_points or n_right < min_points:
-            continue
-        try:
-            result = fit_func(x, y, t)
-            if result["rss"] < best_rss:
-                best_rss = result["rss"]
-                best_fit = result
-        except Exception:
-            continue
-
-    return best_fit
-
-
-def _hinge_rss(x: np.ndarray, q: np.ndarray, r_y: np.ndarray, t2: np.ndarray) -> np.ndarray:
-    """RSS of the T1 fit (orthonormal basis ``q``, residuals ``r_y``) plus a hinge at each ``t2``."""
-    hinges = np.maximum(x[:, None] - t2[None, :], 0.0)
+    hinges = np.maximum(x[:, None] - t[None, :], 0.0)
     r_h = hinges - q @ (q.T @ hinges)
     norms = np.sum(r_h**2, axis=0)
-    # A hinge the T1 fit can already make adds nothing. The cut is far below
+    # A hinge the fit can already make adds nothing. The cut is far below
     # where its remainder stops being resolvable: rounding leaves about 1e-16
     # of the hinge in r_h, so at 1e-10 of it the gain is still good to ~1e-5.
     usable = norms > 1e-20 * np.sum(hinges**2, axis=0)
-    gain = np.zeros(len(t2))
-    gain[usable] = (r_y @ r_h[:, usable]) ** 2 / norms[usable]
-    return r_y @ r_y - gain
+    gains = np.zeros((len(r_ys), len(t)))
+    gains[:, usable] = (r_ys @ r_h[:, usable]) ** 2 / norms[usable]
+    return gains
 
 
-def _grid_search_two_breakpoints(
+def _tie(ys: np.ndarray) -> np.ndarray:
+    """For each row of ``ys``, the difference in RSS below which two candidates tie.
+
+    Candidates can fit exactly alike (two breakpoints between the same pair
+    of neighbouring areas, say), and rounding would then pick among them at
+    random, differently for one response alone and for many together. Calling
+    such fits equal, and taking the first, makes the choice the same each time.
+    """
+    return np.asarray(1e-10 * np.sum((ys - ys.mean(axis=1, keepdims=True)) ** 2, axis=1))
+
+
+def _best_hinge(
+    x: np.ndarray, q: np.ndarray, ys: np.ndarray, t: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """For each row of ``ys``, the hinge among ``t`` that leaves the least RSS
+    when added to the fit with basis ``q``: its index in ``t`` and that RSS.
+    The first wins a tie. The candidates are scored in blocks, so memory stays
+    bounded however many there are."""
+    r_ys = ys - (ys @ q) @ q.T
+    rss_without = np.sum(r_ys**2, axis=1)
+    tie = _tie(ys)
+    rows = np.arange(len(ys))
+    best_gain = np.full(len(ys), -np.inf)
+    best = np.zeros(len(ys), dtype=int)
+    n_blocks = -(-len(t) * max(len(x), len(ys)) // _BLOCK)
+    for block in np.array_split(np.arange(len(t)), n_blocks):
+        gains = _hinge_gains(x, q, r_ys, t[block])
+        k = np.argmax(gains >= (gains.max(axis=1) - tie)[:, None], axis=1)
+        better = gains[rows, k] > best_gain + tie
+        best_gain[better] = gains[rows, k][better]
+        best[better] = block[k[better]]
+    return best, rss_without - best_gain
+
+
+def _best_breakpoints(
     x: np.ndarray,
-    y: np.ndarray,
-    fit_func: Callable[[np.ndarray, np.ndarray, float, float], dict],
+    ys: np.ndarray,
     sloped_first: bool,
     interval: float | None,
     min_points: int = 3,
-) -> dict | None:
-    """Search the grid for the pair of breakpoints T1 < T2 that minimises RSS.
+) -> np.ndarray | None:
+    """For each row of ``ys``, the grid breakpoint that minimises RSS.
+
+    The candidates and what each can fit depend only on ``x``, so every
+    response is scored against them together: the bootstrap's resamples cost
+    little more than one search. At least ``min_points`` values lie on each
+    side of a candidate. None when there is no candidate.
+    """
+    grid = _breakpoint_grid(x, interval, min_points)
+    if grid is None:
+        return None
+    n_left = np.searchsorted(np.sort(x), grid, side="right")
+    grid = grid[(n_left >= min_points) & (len(x) - n_left >= min_points)]
+    if not len(grid):
+        return None
+    q = _fit_basis([np.ones(len(x))] + ([x] if sloped_first else []))
+    best, _ = _best_hinge(x, q, ys, grid)
+    return np.asarray(grid[best])
+
+
+def _best_breakpoint_pairs(
+    x: np.ndarray,
+    ys: np.ndarray,
+    sloped_first: bool,
+    interval: float | None,
+    min_points: int = 3,
+) -> np.ndarray | None:
+    """For each row of ``ys``, the pair of grid breakpoints T1 < T2 that
+    minimises RSS: one row per response, T1 then T2.
 
     The first segment (up to T1) and the last (above T2) hold at least
     ``min_points`` values each; the middle one may hold any number, as in R
-    sars. For each T1, every T2 is scored at once: the RSS falls from that of
-    the fit without the T2 term by (r_y . r_h)^2 / (r_h . r_h), where r_y and
-    r_h are y and the T2 hinge with the T1 fit's columns projected out. The
-    winning pair is then refitted with ``fit_func``.
+    sars. For each T1, every T2 is scored at once for every response, as the
+    fall in RSS from adding the T2 hinge to the fit with T1 alone. None when
+    no pair is valid.
     """
     grid = _breakpoint_grid(x, interval, min_points)
     if grid is None:
@@ -508,28 +543,49 @@ def _grid_search_two_breakpoints(
     m = len(grid)
     _check_pairs(m * (m - 1) / 2, "use a larger interval")
 
-    best_rss, best_pair = np.inf, None
+    tie = _tie(ys)
+    best_rss = np.full(len(ys), np.inf)
+    pairs = np.full((len(ys), 2), np.nan)
     for i in np.nonzero(first_ok)[0]:
         js = np.nonzero(last_ok[i + 1 :])[0] + i + 1
         if not len(js):
             continue
         columns = [np.ones(len(x))] + ([x] if sloped_first else []) + [_hinge(x, grid[i])]
-        u, s, _ = np.linalg.svd(np.column_stack(columns), full_matrices=False)
-        q = u[:, s > s[0] * 1e-10]  # an orthonormal basis for the T1 fit's columns
-        r_y = y - q @ (q.T @ y)
-        rss = np.concatenate(
-            [
-                _hinge_rss(x, q, r_y, grid[block])
-                for block in np.array_split(js, -(-len(js) * len(x) // _BLOCK))
-            ]
-        )
-        j = int(np.argmin(rss))
-        if rss[j] < best_rss:
-            best_rss, best_pair = rss[j], (grid[i], grid[js[j]])
+        j, rss = _best_hinge(x, _fit_basis(columns), ys, grid[js])
+        better = rss < best_rss - tie
+        best_rss[better] = rss[better]
+        pairs[better, 0] = grid[i]
+        pairs[better, 1] = grid[js[j[better]]]
+    return None if np.isnan(pairs).any() else pairs
 
-    if best_pair is None:
-        return None
-    return fit_func(x, y, *best_pair)
+
+def _grid_search_breakpoint(
+    x: np.ndarray,
+    y: np.ndarray,
+    fit_func: Callable[[np.ndarray, np.ndarray, float], dict],
+    sloped_first: bool,
+    interval: float | None,
+) -> dict | None:
+    """The fit at the one grid breakpoint that minimises RSS; None without a candidate.
+
+    ``fit_func`` is _fit_cont_one (``sloped_first`` True) or _fit_zslope_one
+    (False). ``interval`` is the grid spacing on the scale of ``x``; None for a
+    thousandth of the window the candidates can lie in.
+    """
+    best = _best_breakpoints(x, y[None, :], sloped_first, interval)
+    return None if best is None else fit_func(x, y, float(best[0]))
+
+
+def _grid_search_two_breakpoints(
+    x: np.ndarray,
+    y: np.ndarray,
+    fit_func: Callable[[np.ndarray, np.ndarray, float, float], dict],
+    sloped_first: bool,
+    interval: float | None,
+) -> dict | None:
+    """The fit at the pair of grid breakpoints that minimises RSS; None without a valid pair."""
+    best = _best_breakpoint_pairs(x, y[None, :], sloped_first, interval)
+    return None if best is None else fit_func(x, y, float(best[0, 0]), float(best[0, 1]))
 
 
 class _Runs:
@@ -629,6 +685,64 @@ def _search_disc_two(x: np.ndarray, y: np.ndarray, min_points: int = 3) -> dict 
     if best_pair is None:
         return None
     return _fit_disc_two(x, y, *best_pair)
+
+
+class _Search(NamedTuple):
+    """How a model's breakpoints are searched for.
+
+    ``fit`` searches one response and returns the fit (None without a valid
+    candidate). ``breakpoints``, for the models searched over a grid, finds the
+    breakpoints of many responses at once, one row each.
+    """
+
+    fit: Callable[[np.ndarray, np.ndarray, float | None], dict | None]
+    breakpoints: Callable[[np.ndarray, np.ndarray, float | None], np.ndarray | None] | None = None
+
+
+# Every model, in the order they are fitted: the baseline, then one threshold,
+# then two. ``sar_threshold`` and ``threshold_ci`` both search through here,
+# so a bootstrap resample is searched as the data were.
+_SEARCHES: dict[str, _Search] = {
+    "Linear": _Search(lambda x, y, interval: _fit_linear(x, y)),
+    "ContOne": _Search(
+        lambda x, y, interval: _grid_search_breakpoint(x, y, _fit_cont_one, True, interval),
+        lambda x, ys, interval: _best_breakpoints(x, ys, True, interval),
+    ),
+    "ZslopeOne": _Search(
+        lambda x, y, interval: _grid_search_breakpoint(x, y, _fit_zslope_one, False, interval),
+        lambda x, ys, interval: _best_breakpoints(x, ys, False, interval),
+    ),
+    "DiscOne": _Search(lambda x, y, interval: _search_disc_one(x, y)),
+    "ContTwo": _Search(
+        lambda x, y, interval: _grid_search_two_breakpoints(x, y, _fit_cont_two, True, interval),
+        lambda x, ys, interval: _best_breakpoint_pairs(x, ys, True, interval),
+    ),
+    "ZslopeTwo": _Search(
+        lambda x, y, interval: _grid_search_two_breakpoints(x, y, _fit_zslope_two, False, interval),
+        lambda x, ys, interval: _best_breakpoint_pairs(x, ys, False, interval),
+    ),
+    "DiscTwo": _Search(lambda x, y, interval: _search_disc_two(x, y)),
+}
+assert set(_SEARCHES) == set(_K)
+
+
+def _resample_breakpoints(
+    model: str, x: np.ndarray, ys: np.ndarray, interval: float | None
+) -> np.ndarray:
+    """The breakpoints the model's search finds for each row of ``ys``: one row
+    per response, one column per breakpoint. The model has a breakpoint for
+    these ``x`` (its candidates don't depend on the response)."""
+    search = _SEARCHES[model]
+    if search.breakpoints is not None:
+        found = search.breakpoints(x, ys, interval)
+        assert found is not None
+        return found.reshape(len(ys), -1)
+    rows = []
+    for y in ys:
+        fit = search.fit(x, y, interval)
+        assert fit is not None
+        rows.append(fit["breakpoints"])
+    return np.array(rows, dtype=float).reshape(len(ys), -1)
 
 
 # ---------------------------------------------------------------------------
@@ -731,8 +845,8 @@ def sar_threshold(
         models = list(_DEFAULT_MODELS)
 
     for m in models:
-        if m not in _K:
-            raise ValueError(f"Unknown threshold model: {m!r}. Choose from {sorted(_K)}")
+        if m not in _SEARCHES:
+            raise ValueError(f"Unknown threshold model: {m!r}. Choose from {sorted(_SEARCHES)}")
 
     _validate_data(data)
 
@@ -758,19 +872,10 @@ def sar_threshold(
     if interval is None and log_area:
         interval = 0.01  # as R sars; on the area scale the grid search sizes it from its window
 
-    searches: dict[str, Callable[[], dict | None]] = {
-        "Linear": lambda: _fit_linear(x, y),
-        "ContOne": lambda: _grid_search_breakpoint(x, y, _fit_cont_one, interval),
-        "ZslopeOne": lambda: _grid_search_breakpoint(x, y, _fit_zslope_one, interval),
-        "DiscOne": lambda: _search_disc_one(x, y),
-        "ContTwo": lambda: _grid_search_two_breakpoints(x, y, _fit_cont_two, True, interval),
-        "ZslopeTwo": lambda: _grid_search_two_breakpoints(x, y, _fit_zslope_two, False, interval),
-        "DiscTwo": lambda: _search_disc_two(x, y),
-    }
     all_fits: dict[str, dict] = {}
-    for name in searches:  # a fixed order, whatever order ``models`` gives
+    for name, search in _SEARCHES.items():  # a fixed order, whatever order ``models`` gives
         if name in models:
-            result = searches[name]()
+            result = search.fit(x, y, interval)
             if result is not None:
                 if name.startswith("Disc"):  # at observed areas: report them as given
                     result["breakpoints_area"] = tuple(
@@ -834,4 +939,254 @@ def sar_threshold(
         data=data,
         log_area=log_area,
         best_breakpoints=best["breakpoints"],
+        interval=interval,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Confidence intervals for the breakpoints
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ThresholdCI:
+    """Bootstrap confidence intervals for a threshold model's breakpoints.
+
+    The tuples hold one value per breakpoint, in order: one for a
+    one-threshold model, two for a two-threshold model.
+
+    Attributes
+    ----------
+    model : str
+        The threshold model the intervals are for.
+    estimates : tuple[float, ...]
+        The breakpoints fitted to the data, on the fitted scale: the natural
+        log of area when ``log_area`` is True, area itself otherwise.
+    lower : tuple[float, ...]
+        Lower confidence bounds, on the fitted scale.
+    upper : tuple[float, ...]
+        Upper confidence bounds, on the fitted scale.
+    estimates_area : tuple[float, ...]
+        The breakpoints in area units.
+    lower_area : tuple[float, ...]
+        Lower confidence bounds in area units.
+    upper_area : tuple[float, ...]
+        Upper confidence bounds in area units.
+    conf : float
+        Confidence level (e.g. 0.95).
+    n_boot : int
+        Number of bootstrap resamples.
+    samples : np.ndarray
+        The breakpoints found in each resample, on the fitted scale: one row
+        per resample, one column per breakpoint.
+    log_area : bool
+        Whether the fitted scale is the natural log of area (True) or area.
+    """
+
+    model: str
+    estimates: tuple[float, ...]
+    lower: tuple[float, ...]
+    upper: tuple[float, ...]
+    estimates_area: tuple[float, ...]
+    lower_area: tuple[float, ...]
+    upper_area: tuple[float, ...]
+    conf: float
+    n_boot: int
+    samples: np.ndarray = field(repr=False)
+    log_area: bool = True
+
+    def __repr__(self) -> str:
+        parts = ", ".join(
+            f"{est:.4g} [{lo:.4g}, {hi:.4g}]"
+            for est, lo, hi in zip(
+                self.estimates_area, self.lower_area, self.upper_area, strict=True
+            )
+        )
+        return (
+            f"ThresholdCI(model='{self.model}', breakpoints_area=({parts}), "
+            f"conf={self.conf}, n_boot={self.n_boot})"
+        )
+
+
+def _ci_model(fit: ThresholdFit, model: str | None) -> str:
+    """The model to give intervals: the one asked for, or the best that has a breakpoint."""
+    if model is None:
+        for name in fit.summary["model"]:  # best first
+            if fit.all_fits[name]["breakpoints"]:
+                return str(name)
+        raise ValueError(
+            "This fit holds no model with a breakpoint (only the Linear baseline), "
+            "so there is no breakpoint to give an interval."
+        )
+    if model not in _SEARCHES:
+        raise ValueError(f"Unknown threshold model: {model!r}. Choose from {sorted(_SEARCHES)}")
+    if model == "Linear":
+        raise ValueError("The Linear model has no breakpoint to give an interval.")
+    if model not in fit.all_fits:
+        raise ValueError(
+            f"{model} is not among this fit's models ({', '.join(fit.all_fits)}); "
+            f"include it in sar_threshold's models."
+        )
+    return model
+
+
+def _fitted_data(fit: ThresholdFit, model: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """The fit's areas, the same on the fitted scale, and its richness.
+
+    A fit holds the caller's DataFrame, not a copy, so it can have changed
+    since. Whatever is drawn or resampled from it must be what the model was
+    fitted to: the model's stored size and RSS have to come out again.
+    """
+    stored = fit.all_fits[model]
+    area = np.asarray(fit.data["area"], dtype=float)
+    y = np.asarray(fit.data["species"], dtype=float)
+    same = len(area) == stored["n"]
+    if same:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            x = np.log(area) if fit.log_area else area
+            rss = float(np.sum((y - _predict_segments(x, stored["segments"])) ** 2))
+        scale = float(np.sum((y - np.mean(y)) ** 2))
+        same = bool(np.isclose(rss, stored["rss"], rtol=1e-8, atol=1e-10 * scale))
+    if not same:
+        raise ValueError(
+            f"The fit's data no longer give {model}'s fit: the DataFrame passed to "
+            f"sar_threshold has changed since. Fit it again."
+        )
+    return area, x, y
+
+
+def threshold_ci(
+    fit: ThresholdFit,
+    model: str | None = None,
+    n_boot: int = 1000,
+    conf: float = 0.95,
+    rng: np.random.Generator | None = None,
+) -> ThresholdCI:
+    """Bootstrap confidence intervals for a threshold model's breakpoints.
+
+    A residual bootstrap, as Toms & Lesperance (2003) describe for piecewise
+    regression: the model's residuals are resampled with replacement and added
+    to its fitted values, the breakpoint search is rerun on each resample, and
+    the interval for each breakpoint runs between the percentiles of the
+    breakpoints found. The areas stay as observed, so every resample is
+    searched over the same candidates as the data were, with the same grid
+    spacing (``fit.interval``) and on the same scale.
+
+    Works for each of the six models with a breakpoint. A two-threshold model
+    gets an interval for each breakpoint, each from that breakpoint's own
+    percentiles. A discontinuous model's breakpoints sit at observed areas, so
+    its bounds are observed areas too.
+
+    The intervals assume residuals that could have fallen at any island
+    (independent, with the same spread throughout). With few islands they are
+    wide and need not be symmetric about the estimate; a bound at the edge of
+    the search window (the third-smallest or third-largest area) says the data
+    don't pin the breakpoint down on that side. A continuous model's interval
+    can't be finer than the grid: one only a step or two wide is too narrow,
+    and the fit wants a smaller ``interval``. Percentile intervals for a
+    breakpoint tend to be a little narrow: in simulations of 40 islands with
+    one true breakpoint, 95% intervals covered it about 85 to 90% of the time.
+
+    The resamples are cheap for the models searched over a grid, because the
+    candidates depend only on the areas and all the resamples are scored
+    against them together: the default 1000 cost about as much as a few
+    ``sar_threshold`` fits of the model for ContOne and ZslopeOne (a fraction
+    of a second), and roughly ten such fits for ContTwo and ZslopeTwo (a few
+    seconds on tens of islands, more on a hundred or with a finer
+    ``interval``). DiscOne and DiscTwo are searched one resample at a time,
+    each about the cost of fitting the model once: a second or a few for 1000
+    resamples on tens of islands, and some tens of seconds for DiscTwo on a
+    hundred.
+
+    Parameters
+    ----------
+    fit : ThresholdFit
+        Result of ``sar_threshold()``.
+    model : str, optional
+        Which of the fit's models to give intervals: "ContOne", "ZslopeOne",
+        "DiscOne", "ContTwo", "ZslopeTwo" or "DiscTwo". Default: the best
+        model by AICc among those with a breakpoint.
+    n_boot : int
+        Number of bootstrap resamples.
+    conf : float
+        Confidence level (default 0.95).
+    rng : np.random.Generator, optional
+        Random number generator for reproducibility.
+
+    Returns
+    -------
+    ThresholdCI
+
+    Raises
+    ------
+    ValueError
+        If ``model`` is "Linear" or isn't among the fit's models, if the fit
+        holds no model with a breakpoint, if ``n_boot`` isn't a positive whole
+        number or ``conf`` isn't between 0 and 1, or if the fit's data have
+        changed since it was fitted.
+
+    References
+    ----------
+    Toms JD & Lesperance ML (2003). Piecewise regression: a tool for
+    identifying ecological thresholds. Ecology 84(8), 2034-2041.
+    """
+    model = _ci_model(fit, model)
+    given = n_boot
+    try:  # a whole number: not True, 2.5, None, NaN or infinity
+        n_boot = 0 if isinstance(given, bool) else index(given)
+    except TypeError:
+        n_boot = 0
+    if n_boot < 1:
+        raise ValueError(f"n_boot must be a positive whole number, got {given!r}")
+    if not 0 < conf < 1:
+        raise ValueError(f"conf must be between 0 and 1, got {conf!r}")
+    if rng is None:
+        rng = np.random.default_rng()
+
+    area, x, y = _fitted_data(fit, model)
+    fitted_model = fit.all_fits[model]
+    fitted = _predict_segments(x, fitted_model["segments"])
+    # Every model has an intercept, so its residuals already average zero.
+    residuals = y - fitted
+
+    # The resamples are searched together, a batch at a time to bound memory.
+    batches = []
+    for start in range(0, n_boot, _BOOT_BATCH):
+        size = (min(_BOOT_BATCH, n_boot - start), len(y))
+        resampled = fitted + rng.choice(residuals, size=size, replace=True)
+        batches.append(_resample_breakpoints(model, x, resampled, fit.interval))
+    samples = np.concatenate(batches)
+    estimates = tuple(float(t) for t in fitted_model["breakpoints"])
+
+    tail = (1 - conf) / 2
+    discontinuous = model.startswith("Disc")
+
+    def bound(q: float) -> tuple[float, ...]:
+        if discontinuous:
+            # Breakpoints at observed areas: take the bound from the values
+            # found, not from a point interpolated between two of them.
+            values = np.quantile(samples, q, axis=0, method="inverted_cdf")
+        else:
+            values = np.quantile(samples, q, axis=0)
+        return tuple(float(v) for v in values)
+
+    lower, upper = bound(tail), bound(1 - tail)
+
+    def in_area(values: tuple[float, ...]) -> tuple[float, ...]:
+        if discontinuous:  # the observed areas as given, not exp(log(area))
+            return tuple(float(area[x == v][0]) for v in values)
+        return tuple(float(np.exp(v)) if fit.log_area else v for v in values)
+
+    return ThresholdCI(
+        model=model,
+        estimates=estimates,
+        lower=lower,
+        upper=upper,
+        estimates_area=in_area(estimates),
+        lower_area=in_area(lower),
+        upper_area=in_area(upper),
+        conf=conf,
+        n_boot=n_boot,
+        samples=samples,
+        log_area=fit.log_area,
     )

@@ -22,6 +22,13 @@ Every model on each dataset has an expected outcome:
 - a GitHub issue reference: a known difference, expected to fail the ``MATCH``
   checks until that issue is fixed (strict xfail, so the fix must update it).
 
+Each matching model's parameter table (``SARFit.param_table``) is checked
+against R's ``sigConf``: standard errors, t values and p values, to ``TABLE_RTOL``.
+The two packages' optima differ in the fourth digit or so, which moves these
+numbers more than the error in either's numerical Jacobian. R's interval columns
+are the estimate ± 2 standard errors, not a t quantile, so they aren't compared.
+Fits listed in ``TABLE_NOT_COMPARED`` are left out.
+
 Averaging is checked on the models that match: R's weights and curve, rebuilt
 from R's own AICc and fitted values. Over all models the average differs from
 R's by what the per-model differences imply.
@@ -31,6 +38,23 @@ The threshold models match R's fits. For DiscOne and DiscTwo, R's
 breakpoint as the one ``nisl - 1`` places lower, and both let the last segment
 hold ``nisl - 1`` islands. Their reference breakpoints are therefore searched in
 the generator with R's own model functions, over the window this package uses.
+
+Coleman's random placement model is checked on R's simulated abundance matrix,
+which the generator writes out alongside R's expected richness and standard
+deviations.
+The general dynamic model (``sar_gdm``) is checked against R's ``gdm`` in
+``tests/test_gdm.py`` (``TestAgainstR``), from ``gdm_galap.csv`` and
+``gdm_fitted_galap.csv``: every form and nested candidate matches R's fit. The
+known differences are in what is reported, not in the fits:
+
+- The intercept-only candidate of the power forms. R fits it as the mean
+  richness for every form, so its ``Int`` is that mean; this package reports it
+  as ``exp(Int)`` like the other power-form candidates, so ``Int`` is the log of
+  the mean. Same fitted values and criteria.
+- The comparison tables are sorted by AICc, R's by AIC. Both criteria, their
+  deltas and their weights are in the table.
+- R's ``"ATT2"`` option (the logarithmic form fitted by ``lm``) is ``"loga"``
+  here: the same fit.
 """
 
 from functools import cache
@@ -49,6 +73,8 @@ RIDGE_TOL = 1e-2
 R2_TOL = 1e-6
 PARAM_RTOL = 5e-3
 PARAM_ATOL = 1e-5
+TABLE_RTOL = 1e-2
+P_VALUE_ATOL = 1e-3
 
 MATCH = "match"
 BETTER = "better"
@@ -197,6 +223,70 @@ def test_asymp_keeps_its_asymptote_where_r_does_not(stem, model, fits):
 
 
 # ---------------------------------------------------------------------------
+# Parameter tables
+# ---------------------------------------------------------------------------
+
+
+# Matching fits whose tables aren't compared with R's.
+TABLE_NOT_COMPARED = {
+    # The fit sits on a bound (p1's d and heleg's f at 0), where the two
+    # packages stop at different tiny values and the usual standard errors
+    # don't apply. This package's agree with the analytic Jacobian there; R's
+    # differ from them by 3% (p1) and up to 60% (heleg).
+    ("galap7", "p1"): "d is on its bound of 0",
+    ("galap7", "heleg"): "f is on its bound of 0",
+    ("galap7", "ratio"): "R gives no table (sigConf is NA)",
+}
+
+
+@pytest.mark.parametrize(
+    ("stem", "model"),
+    [
+        pytest.param(stem, model, id=f"{stem}-{model}")
+        for stem, models in EXPECTED.items()
+        for model, outcome in models.items()
+        if outcome == MATCH and (stem, model) not in TABLE_NOT_COMPARED
+    ],
+)
+def test_param_table_matches_r(stem, model, fits):
+    ref = _read(f"param_table_{stem}.csv")
+    ref = ref[ref["model"] == model].set_index("param")
+    table = fits[stem][model].param_table()
+    assert set(table.index) == set(ref.index)
+    for name, r in ref.iterrows():
+        mine = table.loc[name]
+        if model == "asymp" and name == "z":
+            # R's z is exp(-z) here, so its standard error is this one times
+            # exp(-z) (the delta method). The t test asks a different question
+            # of each form (z = 0 here, exp(-z) = 0 in R), so it isn't compared.
+            r_form = np.exp(-mine["estimate"])
+            assert r_form * mine["std_error"] == pytest.approx(r["std_error"], rel=TABLE_RTOL)
+            continue
+        assert mine["std_error"] == pytest.approx(r["std_error"], rel=TABLE_RTOL), name
+        assert mine["t_value"] == pytest.approx(r["t_value"], rel=TABLE_RTOL), name
+        assert mine["p_value"] == pytest.approx(r["p_value"], rel=TABLE_RTOL, abs=P_VALUE_ATOL), (
+            name
+        )
+
+
+def test_tables_not_compared_are_matching_fits():
+    for stem, model in TABLE_NOT_COMPARED:
+        assert EXPECTED[stem][model] == MATCH
+
+
+def test_r_reports_a_standard_error_on_the_ridge_where_this_package_gives_nan(fits):
+    """On weibull4's flat ridge R's table has a standard error for z a ten
+    millionth of the estimate, which the fit can't support (R's own z differs
+    from this package's in the third digit). This package reports NaN."""
+    ref = _read("param_table_galap.csv")
+    r = ref[ref["model"] == "weibull4"].set_index("param").loc["z"]
+    assert r["std_error"] < 1e-5 * r["estimate"]
+    with pytest.warns(UserWarning, match="weibull4"):
+        table = fits["galap"]["weibull4"].param_table()
+    assert np.isnan(table.loc["z", "std_error"])
+
+
+# ---------------------------------------------------------------------------
 # Multimodel weights and averaging
 # ---------------------------------------------------------------------------
 
@@ -256,3 +346,53 @@ def test_threshold_models_match_r():
         expected = [t for t in (r["threshold"], r["threshold2"]) if not np.isnan(t)]
         assert mine["breakpoints"] == pytest.approx(tuple(expected), abs=1e-9), model
     assert fit.best_model == ref.drop("Intercept")["aicc"].idxmin()
+
+
+# ---------------------------------------------------------------------------
+# Coleman's random placement model
+# ---------------------------------------------------------------------------
+
+
+def test_coleman_matches_r():
+    """R's simulated abundance matrix (22 species in rows, 11 sites in columns).
+    R returns the expected richness, its standard deviation, the relative areas
+    and the observed richness; the verdict follows from those."""
+    abundance = _read("coleman_abundance.csv")
+    ref = _read("coleman_sites.csv").set_index("site")
+    assert abundance.shape == (22, 11)
+
+    fit = sars.coleman(abundance, ref["area"].to_numpy())
+    assert fit.sites.index.tolist() == ref.index.tolist()
+    np.testing.assert_allclose(fit.sites["relative_area"], ref["relative_area"], rtol=1e-12)
+    np.testing.assert_array_equal(fit.sites["observed"], ref["observed"])
+    np.testing.assert_allclose(fit.sites["expected"], ref["expected"], rtol=1e-10)
+    np.testing.assert_allclose(fit.sites["sd"], ref["sd"], rtol=1e-10)
+
+    # The one-third rule applied to R's own numbers: 9 of the 11 sites lie
+    # more than one standard deviation out, so random placement is rejected.
+    outside = (ref["observed"] - ref["expected"]).abs() > ref["sd"]
+    assert outside.sum() == 9
+    assert (~fit.sites["within_sd"]).tolist() == outside.tolist()
+    assert fit.fraction_outside == pytest.approx(9 / 11)
+    assert fit.rejected
+
+
+@pytest.mark.parametrize("name", ["aegean", "aegean2", "niering"])
+def test_threshold_models_match_r_on_bundled_datasets(name):
+    """The default models on the larger datasets, where thresholds are usually
+    shown: R's breakpoints, fit and ranking. On niering ContOne has the lower
+    RSS and ZslopeOne the lower AICc, so the ranking there rests on the
+    parameter counts."""
+    ref = _read("threshold_datasets.csv")
+    ref = ref[ref["dataset"] == name].set_index("model")
+    fit = sars.sar_threshold(getattr(sars, f"load_{name}")())
+    assert set(fit.all_fits) == set(ref.index)
+    for model, r in ref.iterrows():
+        mine = fit.all_fits[model]
+        assert mine["k"] == r["k"], model
+        assert mine["rss"] == pytest.approx(r["rss"], rel=1e-9), model
+        assert mine["aic"] == pytest.approx(r["aic"], abs=1e-6), model
+        assert mine["aicc"] == pytest.approx(r["aicc"], abs=1e-6), model
+        expected = () if np.isnan(r["threshold"]) else (r["threshold"],)
+        assert mine["breakpoints"] == pytest.approx(expected, abs=1e-9), model
+    assert fit.best_model == ref["aicc"].idxmin()

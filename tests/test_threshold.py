@@ -432,3 +432,255 @@ class TestMoreThresholdModels:
         data = _two_knees(n=8)
         with pytest.raises(ValueError, match="AICc is undefined for every model"):
             sars.sar_threshold(data, models=["ContTwo", "DiscTwo"])
+
+
+BREAKPOINT_MODELS = ["ContOne", "ZslopeOne", "DiscOne", "ContTwo", "ZslopeTwo", "DiscTwo"]
+# A coarse grid keeps the bootstrap tests quick; the default 0.01 is searched
+# the same way, a hundred candidates at a time instead of ten.
+COARSE = 0.1
+
+
+def _one_knee(noise: float, n: int = 40, seed: int = 0) -> pd.DataFrame:
+    """Flat at 40 species up to ln(area) = 3, then rising 8 per unit, plus noise."""
+    rng = np.random.default_rng(seed)
+    x = np.linspace(0, 8, n)
+    y = 40 + 8 * np.maximum(x - 3, 0) + rng.normal(0, noise, n)
+    return pd.DataFrame({"area": np.exp(x), "species": y})
+
+
+@pytest.fixture(scope="module")
+def galap_all(galap):
+    return sars.sar_threshold(galap, models=[*BREAKPOINT_MODELS, "Linear"], interval=COARSE)
+
+
+class TestThresholdCI:
+    @pytest.mark.parametrize("model", ["ContOne", "ZslopeOne"])
+    def test_interval_covers_a_known_breakpoint(self, model):
+        fit = sars.sar_threshold(_one_knee(noise=3.0), models=[model], interval=COARSE)
+        ci = sars.threshold_ci(fit, n_boot=200, rng=np.random.default_rng(1))
+        assert ci.lower[0] < 3.0 < ci.upper[0]
+        assert ci.lower[0] <= ci.estimates[0] <= ci.upper[0]
+        # The data pin the breakpoint down: the interval is far narrower than
+        # the window the search covers (ln(area) from 0.4 to 7.6).
+        assert ci.upper[0] - ci.lower[0] < 2.0
+
+    def test_interval_narrows_with_less_noise(self):
+        widths = []
+        for noise in (6.0, 2.0, 0.5):
+            fit = sars.sar_threshold(_one_knee(noise), models=["ContOne"], interval=COARSE)
+            ci = sars.threshold_ci(fit, n_boot=150, rng=np.random.default_rng(1))
+            widths.append(ci.upper[0] - ci.lower[0])
+        assert widths[0] > widths[1] > widths[2] > 0
+
+    def test_same_rng_gives_the_same_interval(self, galap_all):
+        a = sars.threshold_ci(galap_all, "ContOne", n_boot=30, rng=np.random.default_rng(7))
+        b = sars.threshold_ci(galap_all, "ContOne", n_boot=30, rng=np.random.default_rng(7))
+        c = sars.threshold_ci(galap_all, "ContOne", n_boot=30, rng=np.random.default_rng(8))
+        np.testing.assert_array_equal(a.samples, b.samples)
+        assert (a.lower, a.upper) == (b.lower, b.upper)
+        assert not np.array_equal(a.samples, c.samples)
+
+    @pytest.mark.parametrize("model", BREAKPOINT_MODELS)
+    def test_each_model_gets_an_interval_per_breakpoint(self, galap_all, model):
+        ci = sars.threshold_ci(galap_all, model, n_boot=40, rng=np.random.default_rng(3))
+        n_breakpoints = 2 if model.endswith("Two") else 1
+        assert ci.model == model
+        assert ci.conf == 0.95
+        assert ci.n_boot == 40
+        assert ci.samples.shape == (40, n_breakpoints)
+        assert ci.estimates == galap_all.all_fits[model]["breakpoints"]
+        assert ci.estimates_area == galap_all.all_fits[model]["breakpoints_area"]
+        for values in (ci.lower, ci.upper, ci.lower_area, ci.upper_area):
+            assert len(values) == n_breakpoints
+        assert all(lo <= hi for lo, hi in zip(ci.lower, ci.upper, strict=True))
+        # The bounds are percentiles of the breakpoints the resamples gave.
+        np.testing.assert_allclose(ci.lower, ci.samples.min(axis=0), atol=np.ptp(ci.samples))
+        assert np.all(ci.samples.min(axis=0) <= ci.lower)
+        assert np.all(ci.upper <= ci.samples.max(axis=0))
+        if n_breakpoints == 2:  # every resample's pair is in order
+            assert np.all(ci.samples[:, 0] < ci.samples[:, 1])
+
+    @pytest.mark.parametrize("model", ["ContOne", "ZslopeTwo"])
+    def test_area_bounds_are_the_log_bounds_exponentiated(self, galap_all, model):
+        ci = sars.threshold_ci(galap_all, model, n_boot=30, rng=np.random.default_rng(3))
+        assert ci.log_area
+        np.testing.assert_allclose(ci.lower_area, np.exp(ci.lower))
+        np.testing.assert_allclose(ci.upper_area, np.exp(ci.upper))
+
+    @pytest.mark.parametrize("model", ["DiscOne", "DiscTwo"])
+    def test_discontinuous_bounds_are_observed_areas(self, galap_all, galap, model):
+        ci = sars.threshold_ci(galap_all, model, n_boot=40, rng=np.random.default_rng(3))
+        areas = set(galap["area"])
+        assert set(ci.lower_area) <= areas and set(ci.upper_area) <= areas
+        assert set(ci.samples.ravel()) <= set(np.log(galap["area"]))
+
+    def test_resamples_are_searched_on_the_fits_grid(self, galap):
+        """The fit's own interval is reused: on a grid of 0.5 every resample's
+        breakpoint is a whole number of steps from the first candidate."""
+        fit = sars.sar_threshold(galap, models=["ContOne"], interval=0.5)
+        assert fit.interval == 0.5
+        ci = sars.threshold_ci(fit, n_boot=30, rng=np.random.default_rng(0))
+        steps = (ci.samples[:, 0] - np.sort(np.log(galap["area"]))[2]) / 0.5
+        np.testing.assert_allclose(steps, np.round(steps), atol=1e-9)
+
+    def test_default_interval_is_stored_on_the_fit(self, galap):
+        assert sars.sar_threshold(galap).interval == 0.01
+        assert sars.sar_threshold(galap, log_area=False).interval is None
+
+    def test_area_scale_fit_reports_bounds_in_area_units(self):
+        rng = np.random.default_rng(0)
+        area = np.linspace(1, 100, 40)
+        species = 30 + 2.0 * np.maximum(area - 40, 0) + rng.normal(0, 3, 40)
+        data = pd.DataFrame({"area": area, "species": species})
+        fit = sars.sar_threshold(data, models=["ZslopeOne"], log_area=False, interval=1.0)
+        ci = sars.threshold_ci(fit, n_boot=100, rng=np.random.default_rng(1))
+        assert not ci.log_area
+        assert ci.lower_area == ci.lower and ci.upper_area == ci.upper
+        assert ci.lower[0] < 40 < ci.upper[0]
+
+    def test_default_model_is_the_best_with_a_breakpoint(self, galap):
+        fit = sars.sar_threshold(galap)  # Linear ranks first on these data
+        assert fit.best_model == "Linear"
+        ranked = [m for m in fit.summary["model"] if m != "Linear"]
+        ci = sars.threshold_ci(fit, n_boot=5, rng=np.random.default_rng(0))
+        assert ci.model == ranked[0]
+
+    def test_conf_sets_the_percentiles(self, galap_all):
+        wide = sars.threshold_ci(galap_all, "ContOne", n_boot=60, rng=np.random.default_rng(2))
+        narrow = sars.threshold_ci(
+            galap_all, "ContOne", n_boot=60, conf=0.5, rng=np.random.default_rng(2)
+        )
+        np.testing.assert_array_equal(wide.samples, narrow.samples)
+        assert narrow.conf == 0.5
+        assert narrow.lower[0] == pytest.approx(np.quantile(narrow.samples[:, 0], 0.25))
+        assert narrow.upper[0] == pytest.approx(np.quantile(narrow.samples[:, 0], 0.75))
+        assert wide.lower[0] <= narrow.lower[0] <= narrow.upper[0] <= wide.upper[0]
+
+    def test_linear_has_no_breakpoint_to_bound(self, galap_all):
+        with pytest.raises(ValueError, match="Linear model has no breakpoint"):
+            sars.threshold_ci(galap_all, "Linear")
+
+    def test_a_fit_with_only_linear_raises(self, galap):
+        fit = sars.sar_threshold(galap, models=["Linear"])
+        with pytest.raises(ValueError, match="no model with a breakpoint"):
+            sars.threshold_ci(fit)
+
+    def test_a_model_the_fit_lacks_raises(self, galap):
+        fit = sars.sar_threshold(galap)
+        with pytest.raises(ValueError, match="DiscOne is not among this fit's models"):
+            sars.threshold_ci(fit, "DiscOne")
+        with pytest.raises(ValueError, match="Unknown threshold model"):
+            sars.threshold_ci(fit, "Bogus")
+
+    @pytest.mark.parametrize(
+        "n_boot", [0, -5, 2.5, True, None, float("nan"), float("inf"), "10", 10.0]
+    )
+    def test_n_boot_must_be_a_positive_whole_number(self, galap_all, n_boot):
+        with pytest.raises(ValueError, match="n_boot must be a positive whole number"):
+            sars.threshold_ci(galap_all, "DiscOne", n_boot=n_boot)
+
+    def test_n_boot_may_be_a_numpy_integer(self, galap_all):
+        ci = sars.threshold_ci(galap_all, "DiscOne", n_boot=np.int64(7))
+        assert ci.n_boot == 7 and len(ci.samples) == 7
+
+    @pytest.mark.parametrize("model", BREAKPOINT_MODELS)
+    def test_resamples_searched_together_match_searching_each_alone(self, galap, model):
+        """The bootstrap scores all its resamples against the candidates at once;
+        each must get the breakpoints sar_threshold's own search gives it."""
+        from sars import _threshold as th
+
+        rng = np.random.default_rng(11)
+        x = np.log(galap["area"].to_numpy(dtype=float))
+        ys = 100 + 20 * x + rng.normal(0, 30, (25, len(x)))
+        together = th._resample_breakpoints(model, x, ys, 0.05)
+        alone = [th._SEARCHES[model].fit(x, y, 0.05)["breakpoints"] for y in ys]
+        np.testing.assert_array_equal(together, np.array(alone))
+
+    @pytest.mark.parametrize("block", [1_000_000, 40])
+    def test_grid_searches_match_trying_every_candidate(self, monkeypatch, block):
+        """For several responses at once, in one block of candidates or many."""
+        from sars import _threshold as th
+
+        monkeypatch.setattr(th, "_BLOCK", block)
+        rng = np.random.default_rng(4)
+        x = np.sort(rng.uniform(0, 5, 14))
+        ys = 20 + 3 * x + rng.normal(0, 2, (6, 14))
+        grid = th._breakpoint_grid(x, 0.05, 3)
+        for fit_func, sloped in [(th._fit_cont_one, True), (th._fit_zslope_one, False)]:
+            found = th._best_breakpoints(x, ys, sloped, 0.05)
+            for y, t in zip(ys, found, strict=True):
+                best = min(
+                    (fit_func(x, y, c) for c in grid
+                     if np.sum(x <= c) >= 3 and np.sum(x > c) >= 3),
+                    key=lambda r: r["rss"],
+                )  # fmt: skip
+                assert t == pytest.approx(best["breakpoint"])
+                assert th._grid_search_breakpoint(x, y, fit_func, sloped, 0.05)[
+                    "rss"
+                ] == pytest.approx(best["rss"], rel=1e-12)
+        for fit_func, sloped in [(th._fit_cont_two, True), (th._fit_zslope_two, False)]:
+            found = th._best_breakpoint_pairs(x, ys, sloped, 0.05)
+            for y, pair in zip(ys, found, strict=True):
+                best = min(
+                    (fit_func(x, y, a, b) for a in grid for b in grid
+                     if a < b and np.sum(x <= a) >= 3 and np.sum(x > b) >= 3),
+                    key=lambda r: r["rss"],
+                )  # fmt: skip
+                # Pairs between the same two areas fit alike, so compare the fits.
+                assert fit_func(x, y, *pair)["rss"] == pytest.approx(best["rss"], rel=1e-9)
+
+    def test_one_search_covers_many_resamples(self, galap_all, monkeypatch):
+        """The resamples go to the search in batches, not one at a time."""
+        from sars import _threshold as th
+
+        calls = []
+        real = th._resample_breakpoints
+        monkeypatch.setattr(
+            th,
+            "_resample_breakpoints",
+            lambda m, x, ys, i: calls.append(len(ys)) or real(m, x, ys, i),
+        )
+        monkeypatch.setattr(th, "_BOOT_BATCH", 40)
+        ci = sars.threshold_ci(galap_all, "ContOne", n_boot=100, rng=np.random.default_rng(0))
+        assert calls == [40, 40, 20]
+        assert ci.samples.shape == (100, 1) and ci.n_boot == 100
+
+    @pytest.mark.parametrize("model", ["ContOne", "DiscOne"])
+    def test_data_changed_since_the_fit_raises(self, galap, model):
+        data = galap.copy()
+        fit = sars.sar_threshold(data, models=[model, "Linear"], interval=COARSE)
+        data.loc[data.index[0], "species"] += 50
+        with pytest.raises(ValueError, match="has changed since"):
+            sars.threshold_ci(fit, model, n_boot=5)
+        data.loc[data.index[0], "species"] -= 50
+        assert sars.threshold_ci(fit, model, n_boot=5).n_boot == 5  # restored: fine again
+        data["area"] = data["area"] * 2  # a Disc breakpoint is no longer an observed area
+        with pytest.raises(ValueError, match="has changed since"):
+            sars.threshold_ci(fit, model, n_boot=5)
+
+    def test_rows_dropped_since_the_fit_raises(self, galap):
+        data = galap.copy()
+        fit = sars.sar_threshold(data, interval=COARSE)
+        data.drop(index=data.index[-1], inplace=True)
+        with pytest.raises(ValueError, match="has changed since"):
+            sars.threshold_ci(fit, n_boot=5)
+
+    def test_a_fit_without_an_interval_is_searched_over_a_thousandth_of_the_window(self, galap):
+        from dataclasses import replace
+
+        fit = replace(sars.sar_threshold(galap, models=["ContOne"]), interval=None)
+        ci = sars.threshold_ci(fit, n_boot=20, rng=np.random.default_rng(0))
+        window = np.sort(np.log(galap["area"]))[[2, -3]]
+        steps = (ci.samples[:, 0] - window[0]) / ((window[1] - window[0]) / 1000)
+        np.testing.assert_allclose(steps, np.round(steps), atol=1e-6)
+
+    @pytest.mark.parametrize("conf", [0, 1, 1.5, -0.1, 95])
+    def test_conf_must_be_a_proportion(self, galap_all, conf):
+        with pytest.raises(ValueError, match="conf"):
+            sars.threshold_ci(galap_all, "DiscOne", conf=conf)
+
+    def test_repr_gives_the_intervals_in_area_units(self, galap_all):
+        ci = sars.threshold_ci(galap_all, "ContTwo", n_boot=20, rng=np.random.default_rng(0))
+        text = repr(ci)
+        assert text.startswith("ThresholdCI(model='ContTwo', breakpoints_area=(")
+        assert text.count("[") == 2 and "n_boot=20" in text and "conf=0.95" in text

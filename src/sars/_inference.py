@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from sars._checks import CheckOptions
 from sars._models import (
     _MODEL_REGISTRY,
     SARFit,
@@ -175,16 +176,26 @@ class MultiSARFit:
         Original data.
     summary : pd.DataFrame
         Summary table with columns: model, R2, AIC, AICc, BIC, delta_AICc,
-        weight, shape, asymptote. Sorted by AICc ascending. ``shape`` is the
-        model's general shape as classified by Matthews et al. (2019, Table 1):
-        "convex", "sigmoid", "convex/sigmoid" (the parameters decide) or
-        "linear". It describes the model, not the fitted curve: plot a fit
-        (``plot_fit``, ``plot_multi``) to see which shape it took.
+        weight, shape, asymptote, observed_shape. Sorted by AICc ascending.
+        ``shape`` is the model's general shape as classified by Matthews et al.
+        (2019, Table 1): "convex", "sigmoid", "convex/sigmoid" (the parameters
+        decide) or "linear". It describes the model, not the fitted curve.
+        ``observed_shape`` is the shape the fitted curve takes over the
+        observed areas: "convex", "sigmoid", "linear" or "none" (see
+        ``SARFit.observed_shape``).
+    excluded : dict[str, str]
+        Models that converged but were left out because they failed a
+        residual check that was asked for, keyed by model name, with the
+        check failed and its numbers as the value. Empty when no checks were
+        asked for. A model that fails several checks is listed under the
+        first, in the order normality, homoscedasticity, negative fitted
+        values.
     """
 
     fits: list[SARFit]
     data: pd.DataFrame
     summary: pd.DataFrame = field(repr=False)
+    excluded: dict[str, str] = field(default_factory=dict)
 
     def __repr__(self) -> str:
         n = len(self.fits)
@@ -192,24 +203,35 @@ class MultiSARFit:
         return f"MultiSARFit({n} models, best='{best}')"
 
 
-def sar_multi(
+def _exclude_failing(
+    fits: list[SARFit],
+    checks: CheckOptions,
+) -> tuple[list[SARFit], dict[str, str]]:
+    """Split fits into those that pass the residual checks asked for and the
+    reasons the others fail."""
+    if not checks.requested:
+        return fits, {}
+    kept: list[SARFit] = []
+    excluded: dict[str, str] = {}
+    for fit in fits:
+        reason = fit._run_checks(checks).failure(
+            checks.alpha_normality, checks.alpha_homoscedasticity, checks.neg_check
+        )
+        if reason is None:
+            kept.append(fit)
+        else:
+            excluded[fit.model] = reason
+    return kept, excluded
+
+
+def _sar_multi(
     data: pd.DataFrame,
-    models: str | list[str] = "all",
+    models: str | list[str],
+    checks: CheckOptions,
+    stacklevel: int,
 ) -> MultiSARFit:
-    """Fit multiple SAR models to a dataset.
-
-    Parameters
-    ----------
-    data : pd.DataFrame
-        DataFrame with columns 'area' and 'species'.
-    models : str or list[str]
-        Model names to fit. Use "all" for all 20 models.
-
-    Returns
-    -------
-    MultiSARFit
-        Container with all converged fits and a summary table.
-    """
+    """``sar_multi``, with the exclusion warning aimed ``stacklevel`` frames up
+    so it points at the user's call whichever public function made it."""
     # Validate once up front so bad input raises here. The per-model
     # except below is only for errors raised while fitting.
     _validate_data(data)
@@ -230,26 +252,105 @@ def sar_multi(
         if fit.converged:
             fits.append(fit)
 
-    summary = _build_summary(fits)
-    return MultiSARFit(fits=fits, data=data, summary=summary)
-
-
-def _build_summary(fits: list[SARFit]) -> pd.DataFrame:
-    """Build summary DataFrame from a list of SARFit objects."""
-    if not fits:
-        return pd.DataFrame(
-            columns=[
-                "model",
-                "R2",
-                "AIC",
-                "AICc",
-                "BIC",
-                "delta_AICc",
-                "weight",
-                "shape",
-                "asymptote",
-            ]
+    fits, excluded = _exclude_failing(fits, checks)
+    if excluded:
+        listed = "; ".join(f"{model}: {reason}" for model, reason in excluded.items())
+        warnings.warn(
+            f"{len(excluded)} of {len(excluded) + len(fits)} fitted models failed a residual "
+            f"check and were left out: {listed}",
+            stacklevel=stacklevel + 1,
         )
+
+    summary = _build_summary(fits)
+    return MultiSARFit(fits=fits, data=data, summary=summary, excluded=excluded)
+
+
+def sar_multi(
+    data: pd.DataFrame,
+    models: str | list[str] = "all",
+    normality: str | None = None,
+    homoscedasticity: str | None = None,
+    cor_method: str = "spearman",
+    neg_check: bool = False,
+    alpha_normality: float = 0.05,
+    alpha_homoscedasticity: float = 0.05,
+) -> MultiSARFit:
+    """Fit multiple SAR models to a dataset.
+
+    By default every model that converges is kept. Ask for residual checks
+    (``normality``, ``homoscedasticity``, ``neg_check``) to leave out the
+    models that fail them, as R sars's ``sar_average`` does: the summary's
+    weights are then shared among the models that pass, and a warning lists
+    the ones left out.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        DataFrame with columns 'area' and 'species'.
+    models : str or list[str]
+        Model names to fit. Use "all" for all 20 models.
+    normality : str or None
+        Leave out models whose residuals fail this normality test:
+        ``"shapiro"`` or ``"kolmogorov"`` (see ``SARFit.residual_checks``).
+        None (default) for no test.
+    homoscedasticity : str or None
+        Leave out models whose squared residuals are correlated with the
+        fitted values (``"cor.fitted"``) or with area (``"cor.area"``).
+        None (default) for no test.
+    cor_method : str
+        Correlation for the homoscedasticity test: ``"spearman"`` (default),
+        ``"pearson"`` or ``"kendall"``.
+    neg_check : bool
+        Leave out models that predict negative richness at an observed area.
+        Whenever any check is asked for, a model whose fitted values aren't
+        all finite is left out too.
+    alpha_normality : float
+        A model fails the normality test when its p value is below this.
+    alpha_homoscedasticity : float
+        A model fails the homoscedasticity test when its p value is below this.
+
+    Returns
+    -------
+    MultiSARFit
+        Container with the converged fits that passed the checks asked for, a
+        summary table, and the models left out in ``excluded``.
+
+    Warns
+    -----
+    UserWarning
+        If any model fails a check that was asked for.
+    """
+    checks = CheckOptions(
+        normality=normality,
+        homoscedasticity=homoscedasticity,
+        cor_method=cor_method,
+        neg_check=neg_check,
+        alpha_normality=alpha_normality,
+        alpha_homoscedasticity=alpha_homoscedasticity,
+    )
+    return _sar_multi(data, models, checks, stacklevel=2)
+
+
+_SUMMARY_COLUMNS = [
+    "model",
+    "R2",
+    "AIC",
+    "AICc",
+    "BIC",
+    "delta_AICc",
+    "weight",
+    "shape",
+    "asymptote",
+    "observed_shape",
+]
+
+
+def _build_summary(fits: list[SARFit], shapes: bool = True) -> pd.DataFrame:
+    """Build summary DataFrame from a list of SARFit objects. ``shapes=False``
+    leaves ``observed_shape`` empty: the bootstrap builds a summary per
+    resample and reads only its weights."""
+    if not fits:
+        return pd.DataFrame(columns=_SUMMARY_COLUMNS)
 
     rows = []
     aicc_vals = []
@@ -263,6 +364,7 @@ def _build_summary(fits: list[SARFit]) -> pd.DataFrame:
                 "AICc": fit.aicc,
                 "BIC": fit.bic,
                 "shape": _MODEL_SHAPE[fit.model],
+                "observed_shape": fit.observed_shape() if shapes else None,
                 "asymptote": asym,
             }
         )
@@ -274,7 +376,7 @@ def _build_summary(fits: list[SARFit]) -> pd.DataFrame:
     df["delta_AICc"] = df["AICc"] - min_aicc
     df["weight"] = weights
     df = df.sort_values("AICc").reset_index(drop=True)
-    return df[["model", "R2", "AIC", "AICc", "BIC", "delta_AICc", "weight", "shape", "asymptote"]]
+    return df[_SUMMARY_COLUMNS]
 
 
 # ---------------------------------------------------------------------------
@@ -339,10 +441,28 @@ class AveragedSAR:
 _VALID_ICS = {"AIC", "AICc", "BIC"}
 
 
+def _require_unexcluded(multi: MultiSARFit) -> None:
+    """Raise if the residual checks left nothing to average. An average of no
+    models would predict zero richness everywhere."""
+    if multi.fits or not multi.excluded:
+        return
+    listed = "; ".join(f"{model}: {reason}" for model, reason in multi.excluded.items())
+    raise ValueError(
+        f"Every fitted model failed a residual check, so there is nothing to average "
+        f"({listed}). Relax the checks or their alpha levels, or try other models."
+    )
+
+
 def sar_average(
     data: pd.DataFrame,
     models: str | list[str] = "all",
     ic: str = "AICc",
+    normality: str | None = None,
+    homoscedasticity: str | None = None,
+    cor_method: str = "spearman",
+    neg_check: bool = False,
+    alpha_normality: float = 0.05,
+    alpha_homoscedasticity: float = 0.05,
 ) -> AveragedSAR:
     """Compute model-averaged SAR predictions using information-theoretic weights.
 
@@ -357,22 +477,50 @@ def sar_average(
         or ``"BIC"``. AICc may be infinite when the sample size is small
         relative to the number of parameters; in that case ``"AIC"`` or
         ``"BIC"`` can be used instead.
+    normality, homoscedasticity : str or None
+        Residual checks that leave failing models out, as in ``sar_multi``:
+        a normality test (``"shapiro"`` or ``"kolmogorov"``) and a
+        homoscedasticity test (``"cor.fitted"`` or ``"cor.area"``). None
+        (default) for no test.
+    cor_method : str
+        Correlation for the homoscedasticity test: ``"spearman"`` (default),
+        ``"pearson"`` or ``"kendall"``.
+    neg_check : bool
+        Leave out models that predict negative richness at an observed area.
+    alpha_normality, alpha_homoscedasticity : float
+        A model fails a test when its p value is below its alpha (0.05).
 
     Returns
     -------
     AveragedSAR
-        Model-averaged SAR with weighted predictions.
+        Model-averaged SAR with weighted predictions. Models left out by a
+        residual check are listed in its ``multi.excluded``.
 
     Raises
     ------
     ValueError
-        If ``ic`` is unsupported, or if no fitted model has a finite ``ic``
-        value, so the weights are undefined.
+        If ``ic`` is unsupported, if every fitted model failed the residual
+        checks asked for, or if no fitted model has a finite ``ic`` value, so
+        the weights are undefined.
+
+    Warns
+    -----
+    UserWarning
+        If any model fails a check that was asked for.
     """
     if ic not in _VALID_ICS:
         raise ValueError(f"Unsupported IC: {ic!r}. Choose from {sorted(_VALID_ICS)}.")
 
-    multi = sar_multi(data, models=models)
+    checks = CheckOptions(
+        normality=normality,
+        homoscedasticity=homoscedasticity,
+        cor_method=cor_method,
+        neg_check=neg_check,
+        alpha_normality=alpha_normality,
+        alpha_homoscedasticity=alpha_homoscedasticity,
+    )
+    multi = _sar_multi(data, models, checks, stacklevel=2)
+    _require_unexcluded(multi)
     weights_arr = akaike_weights(multi.summary[ic].to_numpy(dtype=float))
     weights = dict(zip(multi.summary["model"], weights_arr, strict=True))
     return AveragedSAR(multi=multi, ic=ic, weights=weights)
@@ -464,7 +612,7 @@ def _sar_multi_fast(
         if fit.converged:
             fits.append(fit)
 
-    summary = _build_summary(fits)
+    summary = _build_summary(fits, shapes=False)
     return MultiSARFit(fits=fits, data=data, summary=summary)
 
 
@@ -477,12 +625,26 @@ def bootstrap_ci(
     rng: np.random.Generator | None = None,
     method: str = "fast",
     ic: str = "AICc",
+    normality: str | None = None,
+    homoscedasticity: str | None = None,
+    cor_method: str = "spearman",
+    neg_check: bool = False,
+    alpha_normality: float = 0.05,
+    alpha_homoscedasticity: float = 0.05,
 ) -> BootstrappedCI:
     """Compute bootstrap confidence intervals for model-averaged predictions.
 
     Resamples rows of the data with replacement, fits all models, computes
     model-averaged predictions at each area value, then returns percentile-based
     confidence intervals.
+
+    Residual checks (``normality``, ``homoscedasticity``, ``neg_check``) are
+    applied once, to the fits on the original data, and fix the set of models:
+    every resample averages the models that passed, without testing them
+    again. That keeps the interval about the same average that
+    ``sar_average`` with the same checks reports. Testing each resample would
+    average a different set of models each time, and a resample's repeated
+    rows produce tied residuals that the tests weren't designed for.
 
     Parameters
     ----------
@@ -508,15 +670,46 @@ def bootstrap_ci(
     ic : str
         Information criterion for weighting: ``"AICc"`` (default), ``"AIC"``,
         or ``"BIC"``.
+    normality, homoscedasticity : str or None
+        Residual checks that leave failing models out, as in ``sar_multi``:
+        a normality test (``"shapiro"`` or ``"kolmogorov"``) and a
+        homoscedasticity test (``"cor.fitted"`` or ``"cor.area"``). None
+        (default) for no test.
+    cor_method : str
+        Correlation for the homoscedasticity test: ``"spearman"`` (default),
+        ``"pearson"`` or ``"kendall"``.
+    neg_check : bool
+        Leave out models that predict negative richness at an observed area.
+    alpha_normality, alpha_homoscedasticity : float
+        A model fails a test when its p value is below its alpha (0.05).
 
     Returns
     -------
     BootstrappedCI
+
+    Raises
+    ------
+    ValueError
+        If ``method`` or ``ic`` is unsupported, or if every fitted model
+        failed the residual checks asked for.
+
+    Warns
+    -----
+    UserWarning
+        If any model fails a check that was asked for.
     """
     if method not in ("fast", "full"):
         raise ValueError(f"method must be 'fast' or 'full', got {method!r}")
     if ic not in _VALID_ICS:
         raise ValueError(f"Unsupported IC: {ic!r}. Choose from {sorted(_VALID_ICS)}.")
+    checks = CheckOptions(
+        normality=normality,
+        homoscedasticity=homoscedasticity,
+        cor_method=cor_method,
+        neg_check=neg_check,
+        alpha_normality=alpha_normality,
+        alpha_homoscedasticity=alpha_homoscedasticity,
+    )
 
     if rng is None:
         rng = np.random.default_rng()
@@ -526,11 +719,22 @@ def bootstrap_ci(
         a_max = data["area"].max()
         area_grid = np.linspace(a_min, a_max, 100)
 
-    # For "fast" mode, do one full grid-search fit to get warm-start params
+    # For "fast" mode, do one full grid-search fit to get warm-start params.
+    # Residual checks need that fit too, whatever the method: the models that
+    # pass on the original data are the ones every resample averages.
     warm_starts: dict[str, dict[str, float]] | None = None
+    if method == "fast" or checks.requested:
+        base_multi = _sar_multi(data, models, checks, stacklevel=2)
+        if base_multi.excluded:
+            _require_unexcluded(base_multi)
+            # Only the models that failed a check go. One that didn't converge
+            # on the original data stays in the set a "full" resample tries,
+            # as it does when no checks are asked for.
+            asked = ALL_MODEL_NAMES if models == "all" else list(models)
+            models = [name for name in asked if name not in base_multi.excluded]
+        if method == "fast":
+            warm_starts = {fit.model: dict(fit.params) for fit in base_multi.fits}
     if method == "fast":
-        base_multi = sar_multi(data, models=models)
-        warm_starts = {fit.model: dict(fit.params) for fit in base_multi.fits}
         if not warm_starts:
             nan_arr = np.full_like(area_grid, np.nan)
             return BootstrappedCI(

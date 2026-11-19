@@ -10,6 +10,119 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- `sar_multi`'s summary has an `observed_shape` column, and `SARFit` an `observed_shape()`
+  method: the shape the fitted curve takes between the smallest and largest observed area
+  ("convex", "sigmoid", "linear" or "none"), from how its slope changes. The `shape`
+  column still gives the model's general shape, which for five models is "convex/sigmoid"
+  and doesn't say which a fit took (#116)
+- `threshold_ci` gives the breakpoints of a fitted threshold model bootstrap confidence
+  intervals: it resamples the model's residuals onto its fitted values, reruns that model's
+  breakpoint search on each resample (same grid, same scale) and takes percentiles of the
+  breakpoints found (Toms & Lesperance 2003). It works for all six models with a breakpoint,
+  where R `sars`'s `threshold_ci` covers ContOne and ZslopeOne, and returns a `ThresholdCI`
+  with the estimates and bounds on the fitted scale and in area units, plus every resample's
+  breakpoints. The resamples of a model searched over a grid are scored together, so the
+  default 1000 cost about as much as a few fits of the model for ContOne and ZslopeOne and
+  roughly ten for ContTwo and ZslopeTwo. `ThresholdFit` gains an `interval` attribute, the
+  grid spacing its search used (#119)
+- `plot_threshold` plots a threshold model on the scale it was fitted on: the data, the
+  fitted segments (a discontinuous model's drawn apart at each jump), a line at each
+  breakpoint and, given a `ThresholdCI`, its interval shaded (#119)
+- `lin_pow` fits the log-log power model, log S = log c + z log A, by ordinary least
+  squares, as R `sars`'s `lin_pow` does. It returns a `LinPowFit` with log c, c and z, their
+  standard errors, t and p values, R² and adjusted R² in log space, and a `predict` on the
+  arithmetic scale. `log_base` chooses natural, base-2 or base-10 logs. When an island has
+  no species, `con` (default 1) is added to every richness value. `compare=True` also fits
+  the nonlinear power model, so the two fits' c and z can be set side by side
+  (`LinPowFit.comparison`), with a warning if that fit doesn't converge. `plot_lin_pow` draws the data and the fitted line on log-log
+  axes. The coefficients, standard errors, p values and R² match R on the Galápagos data
+  for each log base, with and without an empty island (#122)
+- `sar_pred(fit, area)` returns a table of predicted richness (columns `model`, `area`,
+  `prediction`) at one or more areas, as R `sars`'s `sar_pred` does. It takes a `SARFit`,
+  a `MultiSARFit` (a row per model and area, models in summary order), an `AveragedSAR`
+  (model "average"), a `ThresholdFit` (its best model) or a `LinPowFit`. Areas that are
+  zero, negative or not finite raise `ValueError`, as does a fit that didn't converge.
+  Predictions for power, loga and negexpo
+  match R on the Galápagos data; an averaged prediction matches R's when both average the
+  same models (#125)
+- `coleman(abundance, area)` compares site richness with Coleman's (1981) random placement
+  model, as R `sars`'s `coleman` does. It takes a species-by-site abundance table (species in
+  rows, sites in columns) and the site areas, and returns a `ColemanFit`: a per-site table
+  of area, relative area, observed richness, expected richness, its standard deviation and
+  whether the site lies within one standard deviation; the share of sites outside it
+  (`fraction_outside`); and the verdict (`rejected`, True when that share is over a third).
+  Areas given as a labelled `pd.Series` are matched to the table's columns by label.
+  `predict` and `predict_sd` give the expected curve at any area, and `plot_coleman` draws
+  it with its band and the observed points. Expected richness and standard deviations match
+  R's on its simulated matrix (#123)
+- `sar_gdm` fits the general dynamic model of oceanic island biogeography (Whittaker,
+  Triantis & Ladle 2008): richness as a function of island area plus a hump-shaped function
+  of island age (time and time squared). `model=` chooses the form, with the four of R
+  `sars`'s `gdm`: "loga" (the original ATT² model) and "linear", fitted by ordinary least
+  squares, and "power_area" and "power_area_time", fitted by nonlinear least squares on
+  richness; "all" fits the four and ranks them. `mod_sel=True` compares the GDM with the
+  simpler area + time, area-only and intercept-only models by AIC and AICc. The returned
+  `GDMFit` has the coefficients with standard errors and p values, fitted values, R², AIC,
+  AICc, BIC and `predict(area, time)`. The fit doesn't depend on the units of area or age.
+  Coefficients and AIC match R on the example from its help page (#124)
+- Three more bundled datasets, with the values R `sars` ships: `load_aegean()` (terrestrial
+  isopods on 90 Aegean islands; Sfenthourakis & Triantis 2009), `load_aegean2()` (plants on
+  173 Aegean islands; Matthews et al. 2020) and `load_niering()` (plants on 32 islands of
+  Kapingamarangi Atoll; Niering 1963). Areas are in km². A new Datasets page in the
+  documentation lists them with their sources and a threshold example (#126)
+- Residual checks before model averaging, as in R `sars`. `SARFit.residual_checks()` returns
+  a `ResidualChecks` with a normality test of the residuals (`"shapiro"` or `"kolmogorov"`),
+  a homoscedasticity test (the Spearman, Pearson or Kendall correlation of the squared
+  residuals with the fitted values, `"cor.fitted"`, or with area, `"cor.area"`) and whether
+  any fitted value at the observed areas is negative. `sar_multi`, `sar_average` and
+  `bootstrap_ci` take `normality`, `homoscedasticity`, `cor_method`, `neg_check`,
+  `alpha_normality` and `alpha_homoscedasticity`: models that fail a check asked for are
+  left out, listed with the reason in the new `MultiSARFit.excluded` and in one warning.
+  The default is no checks, so results are unchanged unless you ask.
+  A model whose fitted values aren't all finite fails any check asked for. `sar_average` and
+  `bootstrap_ci` raise `ValueError` if every model fails; `bootstrap_ci` applies the checks
+  to the fits on the original data only, which fixes the models every resample averages.
+  Statistics, p values and the models left out match R on the Galápagos data.
+  `"kolmogorov"` uses a normal distribution with the residuals' mean and standard deviation
+  (R's `"kolmo"` uses a standard normal, which depends on the units of richness), and R's
+  Lilliefors test is not offered (#121)
+- `SARFit.param_table()` gives each fitted parameter's standard error, t value, p value
+  and confidence interval, from the Jacobian of the model at the fitted values
+  (covariance `sigma² (JᵀJ)⁻¹`, with `n - p` degrees of freedom). The standard errors,
+  t values and p values match R `sars`'s `sigConf` on the Galápagos data. The interval
+  uses the t distribution at the level `conf` (default 0.95), so it is slightly wider
+  for small samples than R's estimate ± 2 standard errors. Parameters the data don't
+  identify, and those that depend on a derivative of the curve that can't be computed
+  reliably (`sar_weibull4`'s on the Galápagos data), get `NaN` and a `UserWarning`
+  instead of a meaningless number (#120)
+- A second worked example in the documentation: the 26 independent sites of Stout, Jessee &
+  McMeen (2025) on southern Appalachian amphibians, read from a CSV. It sets the classical
+  log-log power fit beside `sar_power`, compares all twenty models, and takes the model
+  average through a bootstrap interval, a prediction for an unstudied site and a threshold
+  check (#127)
+- A worked example of `from_geodataframe` in the documentation: outlines of ten southern
+  Appalachian counties from Natural Earth, joined to published amphibian counts,
+  reprojected to an equal-area coordinate system, with the computed areas compared against
+  the published ones and a model fitted to them (#128)
+
+### Fixed
+
+- The warm-start test compared weibull4's AICc on the Galápagos data to 1e-6, tighter than
+  that fit's flat ridge allows, and failed on Python 3.10; it now allows the tolerance the
+  R-reference tests use for fits on a ridge (#136)
+- `from_geodataframe` no longer returns meaningless areas for polygons in a geographic
+  coordinate system. It used to compute them in squared degrees and divide by a million,
+  so an island of 1,000 km² came back as 0.00000008. It now raises `ValueError` and says to
+  reproject, for any coordinate system that isn't projected and for a GeoDataFrame with no
+  coordinate system whose coordinates look like longitude and latitude; other
+  GeoDataFrames with no coordinate system get a warning and are taken to be in metres. It
+  also reads the length unit from a projected coordinate system, so one in feet gives the
+  same areas as one in metres, and raises `ValueError`, naming the rows, for geometries
+  that are missing, empty or have no area (points, lines, degenerate polygons), which used
+  to count as zero area. Passing `area_col` is unaffected (#128)
+
 ## [0.9.0] - 2026-11-19
 
 ### Added

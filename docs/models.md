@@ -7,8 +7,28 @@ object.
 Each model's general shape is as classified by Matthews et al. (2019, Table 1), with the
 corrections R `sars` has made since: convex (decelerating), sigmoid (S-shaped, with an
 inflection point), or convex/sigmoid where the parameters decide which. It is the `shape`
-column of `sar_multi`'s summary: a property of the model, not a test of the fitted curve,
-so plot a fit (`plot_fit`, `plot_multi`) to see which shape it took.
+column of `sar_multi`'s summary: a property of the model, not a test of the fitted curve.
+
+The summary's `observed_shape` column, and `SARFit.observed_shape()`, say which shape a
+fitted curve took. The curve is evaluated between the smallest and largest observed area,
+on arithmetic axes, and classified by how its slope changes:
+
+| Observed shape | The fitted curve, over the observed areas |
+|----------------|-------------------------------------------|
+| `linear` | follows the straight line through its end points |
+| `convex` | rises, and its slope only falls |
+| `sigmoid` | rises, and its slope first rises, then falls (one inflection point) |
+| `none` | anything else: it falls somewhere, only accelerates, or has several inflection points |
+
+Each test allows a departure of a thousandth of the curve's range of richness, so a bend
+or a dip too small to see doesn't change the label. The two columns can differ. A sigmoid model whose inflection point lies below the smallest island
+is `convex` over the data, and a model that can turn down at large areas (p1, epm1, epm2)
+is `none` when its fit does.
+
+`sars.lin_pow()` fits the power model the traditional way instead, as a straight line
+on log-log axes (log S = log c + z log A) by ordinary least squares, and returns a
+`LinPowFit`. It isn't one of the 20 models `sar_multi` compares: its R² is in log
+space, so it can't be ranked against theirs.
 
 ## Non-asymptotic models
 
@@ -68,6 +88,10 @@ fit; only their richness is rescaled.
 
 If fitting fails for all starting values, a `SARFit` with `converged=False`
 is returned rather than raising an exception.
+
+`SARFit.param_table()` gives the parameters' standard errors, t tests and confidence
+intervals, with `NaN` for parameters the data don't identify (see
+[Getting Started](getting-started.md#parameter-uncertainty)).
 
 Information criteria (AIC, AICc, BIC) are computed using the normal
 log-likelihood convention, consistent with the R `sars` package.

@@ -1,9 +1,16 @@
 """Tests for I/O adapters."""
 
+import importlib.resources
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
 import sars
+from sars._io import _load_dataset
+from sars._models import _validate_data
+
+REF = Path(__file__).parent / "r_reference"
 
 
 class TestLoadGalap:
@@ -20,6 +27,85 @@ class TestLoadGalap:
         df = sars.load_galap()
         assert (df["area"] > 0).all()
         assert (df["species"] > 0).all()
+
+
+# Rows, then the sums of area and species over R sars's copy of each dataset
+# (R: nrow(d), sum(d$a), sum(d$s)), so a changed value shows even where the
+# reference tables aren't to hand.
+DATASETS = {
+    "galap": (16, 3117.76, 1703),
+    "aegean": (90, 11943.8839, 878),
+    "aegean2": (173, 22593.1625, 53686),
+    "niering": (32, 1.10292, 580),
+}
+
+
+@pytest.mark.parametrize("name", DATASETS)
+class TestBundledDatasets:
+    def test_shape_and_columns(self, name):
+        df = getattr(sars, f"load_{name}")()
+        assert list(df.columns) == ["area", "species"]
+        assert len(df) == DATASETS[name][0]
+        assert df["area"].dtype == float
+        assert pd.api.types.is_integer_dtype(df["species"])
+
+    def test_passes_validation(self, name):
+        """No island has zero species (or area), which the fitters would reject."""
+        df = getattr(sars, f"load_{name}")()
+        _validate_data(df)
+        assert (df["species"] >= 1).all()
+
+    def test_sums(self, name):
+        _, area_sum, species_sum = DATASETS[name]
+        df = getattr(sars, f"load_{name}")()
+        assert df["area"].sum() == pytest.approx(area_sum, rel=1e-12)
+        assert df["species"].sum() == species_sum
+
+    def test_file_is_r_export(self, name):
+        """The bundled file is, byte for byte, the one the reference generator
+        writes from R sars's copy of the dataset."""
+        bundled = importlib.resources.files("sars.data").joinpath(f"{name}.csv")
+        assert bundled.read_bytes() == (REF / f"{name}.csv").read_bytes()
+
+    def test_file_is_package_data(self, name):
+        """Each file is found through the installed package, which is where the
+        loaders look. The wheel target ships the package directory whole
+        (``packages = ["src/sars"]`` in pyproject.toml), data files included."""
+        assert importlib.resources.files("sars.data").joinpath(f"{name}.csv").is_file()
+
+    def test_fresh_copy(self, name):
+        """Changing a loaded frame doesn't change what the next call returns."""
+        df = getattr(sars, f"load_{name}")()
+        df.loc[0, "species"] = -1
+        assert getattr(sars, f"load_{name}")().loc[0, "species"] > 0
+
+    def test_fits(self, name):
+        fit = sars.sar_power(getattr(sars, f"load_{name}")())
+        assert fit.converged
+        assert 0 < fit.params["z"] < 1
+
+
+class TestLoadDataset:
+    def test_missing_file_names_it(self):
+        with pytest.raises(FileNotFoundError, match=r"nosuch\.csv is not available.*reinstall"):
+            _load_dataset("nosuch")
+
+    def test_parse_error_is_not_reported_as_missing(self, monkeypatch):
+        def broken(*_args, **_kwargs):
+            raise TypeError("bad parse")
+
+        monkeypatch.setattr(pd, "read_csv", broken)
+        with pytest.raises(TypeError, match="bad parse"):
+            sars.load_galap()
+
+    def test_missing_data_package(self, monkeypatch):
+        def no_package(_name):
+            raise ModuleNotFoundError("No module named 'sars.data'")
+
+        monkeypatch.setattr("importlib.resources.files", no_package)
+        for loader in (sars.load_galap, sars.load_aegean, sars.load_aegean2, sars.load_niering):
+            with pytest.raises(FileNotFoundError, match="reinstall"):
+                loader()
 
 
 class TestFromDf:
@@ -148,8 +234,10 @@ class TestFromGeoDataFrame:
             from shapely.geometry import box
         except ImportError:
             pytest.skip("geopandas/shapely not installed")
-        # Squares with areas 1e6, 4e6, 9e6 m^2 = 1, 4, 9 km^2
-        polys = [box(0, 0, 1000, 1000), box(0, 0, 2000, 2000), box(0, 0, 3000, 3000)]
+        # Squares with areas 1e6, 4e6, 9e6 m^2 = 1, 4, 9 km^2, at the middle of the UTM
+        # zone (easting 500 km) and off the equator, as real projected data would be.
+        x, y = 500_000, 4_000_000
+        polys = [box(x, y, x + side, y + side) for side in (1000, 2000, 3000)]
         return gpd.GeoDataFrame(
             {"species": [10, 25, 40], "geometry": polys},
             crs="EPSG:32617",
@@ -186,6 +274,108 @@ class TestFromGeoDataFrame:
     def test_invalid_crs_units(self, simple_gdf):
         with pytest.raises(ValueError, match="crs_units"):
             sars.from_geodataframe(simple_gdf, crs_units="acres")
+
+    def test_geographic_crs_is_refused(self, simple_gdf):
+        """Longitude/latitude coordinates give areas in squared degrees, which used to be
+        divided by 1e6 and returned as km²."""
+        lonlat = simple_gdf.to_crs("EPSG:4326")
+        with pytest.raises(ValueError, match="geographic.*to_crs"):
+            sars.from_geodataframe(lonlat)
+
+    def test_geographic_crs_with_area_col(self, simple_gdf):
+        """The CRS doesn't matter when the areas come from a column."""
+        lonlat = simple_gdf.to_crs("EPSG:4326")
+        lonlat["my_area"] = [1.0, 4.0, 9.0]
+        df = sars.from_geodataframe(lonlat, area_col="my_area")
+        assert df["area"].tolist() == [1.0, 4.0, 9.0]
+
+    def test_reprojected_to_equal_area(self, simple_gdf):
+        """Reprojecting to an equal-area CRS recovers the areas. The squares sit on UTM's
+        central meridian, where its scale factor of 0.9996 shrinks areas by 0.08%."""
+        df = sars.from_geodataframe(simple_gdf.to_crs("EPSG:6933"))
+        assert df["area"].tolist() == pytest.approx([1.0, 4.0, 9.0], rel=2e-3)
+        assert df["area"].tolist() == pytest.approx(
+            [a / 0.9996**2 for a in (1.0, 4.0, 9.0)], rel=1e-4
+        )
+
+    def test_crs_in_feet(self):
+        """Areas come out in the unit asked for whatever the CRS's own length unit."""
+        gpd = pytest.importorskip("geopandas")
+        from shapely.geometry import box
+
+        # North Carolina state plane, in US survey feet (1200/3937 m).
+        foot = 1200 / 3937
+        side = 1000 / foot  # a 1 km square
+        gdf = gpd.GeoDataFrame(
+            {"species": [10], "geometry": [box(2e6, 5e5, 2e6 + side, 5e5 + side)]},
+            crs="EPSG:2264",
+        )
+        assert sars.from_geodataframe(gdf)["area"].iloc[0] == pytest.approx(1.0)
+        assert sars.from_geodataframe(gdf, crs_units="ha")["area"].iloc[0] == pytest.approx(100.0)
+
+    def test_missing_crs_warns(self, simple_gdf):
+        gpd = pytest.importorskip("geopandas")
+        no_crs = gpd.GeoDataFrame(
+            {"species": simple_gdf["species"]}, geometry=list(simple_gdf.geometry)
+        )
+        assert no_crs.crs is None
+        with pytest.warns(UserWarning, match="no CRS"):
+            df = sars.from_geodataframe(no_crs)
+        assert df["area"].iloc[0] == pytest.approx(1.0)
+
+    def test_missing_crs_with_degree_like_coordinates(self):
+        """Longitude/latitude saved without a CRS must not come back as km² either."""
+        gpd = pytest.importorskip("geopandas")
+        from shapely.geometry import box
+
+        lonlat = gpd.GeoDataFrame(
+            {"species": [10, 20]}, geometry=[box(-91, -1, -90, 0), box(-90, 0, -89.5, 0.5)]
+        )
+        with pytest.raises(ValueError, match="no CRS.*longitude and latitude"):
+            sars.from_geodataframe(lonlat)
+        lonlat["my_area"] = [3.0, 1.0]
+        assert sars.from_geodataframe(lonlat, area_col="my_area")["area"].tolist() == [3.0, 1.0]
+
+    def test_unprojected_crs_is_refused(self, simple_gdf):
+        """A geocentric CRS is not geographic, but its coordinates aren't on a map plane."""
+        geocentric = simple_gdf.to_crs("EPSG:4978")
+        with pytest.raises(ValueError, match="not projected"):
+            sars.from_geodataframe(geocentric)
+
+    def test_non_polygon_geometry(self, simple_gdf):
+        """A point has area zero, which must not pass for an island."""
+        points = simple_gdf.set_geometry(simple_gdf.centroid)
+        with pytest.raises(ValueError, match=r"Rows \[0, 1, 2\] have no area.*Point"):
+            sars.from_geodataframe(points)
+
+    def test_degenerate_polygons(self, simple_gdf):
+        """A bow-tie whose lobes cancel and a polygon with collinear vertices have area
+        zero though their type is Polygon. The error names their rows."""
+        from shapely.geometry import Polygon
+
+        x, y = 500_000, 4_000_000
+        simple_gdf.loc[0, "geometry"] = Polygon(
+            [(x, y), (x + 1000, y + 1000), (x + 1000, y), (x, y + 1000)]
+        )
+        simple_gdf.loc[2, "geometry"] = Polygon([(x, y), (x + 500, y), (x + 1000, y)])
+        with pytest.raises(ValueError, match=r"Rows \[0, 2\] have no area"):
+            sars.from_geodataframe(simple_gdf)
+
+    def test_missing_geometry(self, simple_gdf):
+        simple_gdf.loc[1, "geometry"] = None
+        with pytest.raises(ValueError, match="missing or empty"):
+            sars.from_geodataframe(simple_gdf)
+
+    def test_multipolygon(self, simple_gdf):
+        """An island with an islet is one row; its area is the sum of the parts."""
+        from shapely.geometry import MultiPolygon, box
+
+        x, y = 500_000, 4_000_000
+        simple_gdf.loc[0, "geometry"] = MultiPolygon(
+            [box(x, y, x + 1000, y + 1000), box(x + 5000, y, x + 6000, y + 1000)]
+        )
+        df = sars.from_geodataframe(simple_gdf)
+        assert df["area"].iloc[0] == pytest.approx(2.0)
 
     def test_import_error(self, monkeypatch):
         """Should raise ImportError if geopandas not available."""
