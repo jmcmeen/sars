@@ -61,6 +61,7 @@ src/sars/
   _models.py      the 20 SAR models, _MODEL_REGISTRY, and the NLS fitting loop
   _linpow.py      lin_pow, the log-log power model fitted by ordinary least squares
   _inference.py   sar_multi, sar_average, bootstrap_ci, information criteria
+  _predict.py     sar_pred, a table of predictions from any fit
   _threshold.py   piecewise (small-island-effect) models
   _io.py          from_csv, from_df, from_geodataframe, from_pyinaturalist, load_galap
   _plots.py       matplotlib helpers

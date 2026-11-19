@@ -16,6 +16,10 @@
 
 ::: sars.AveragedSAR
 
+## sar_pred
+
+::: sars.sar_pred
+
 ## bootstrap_ci
 
 ::: sars.bootstrap_ci

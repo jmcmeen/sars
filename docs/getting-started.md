@@ -96,6 +96,30 @@ avg = sars.sar_average(galap)
 avg.predict([1.0, 10.0, 100.0, 1000.0])
 ```
 
+## Predicting richness
+
+`sar_pred()` tabulates the richness a fit predicts at any areas, including ones
+larger than any sampled. It takes a single fit, a `sar_multi()` result (each
+model's prediction, best model first), a `sar_average()` result (the weighted
+average, as model "average"), a `sar_threshold()` result (its best model) or a
+`lin_pow()` fit:
+
+```python
+sars.sar_pred(sars.sar_power(galap), [50, 500, 10000]).round(1)
+#    model     area  prediction
+# 0  power     50.0       100.5
+# 1  power    500.0       192.8
+# 2  power  10000.0       450.4
+
+multi = sars.sar_multi(galap, models=["power", "loga", "negexpo"])
+sars.sar_pred(multi, 5000)        # one row per model
+sars.sar_pred(avg, [5000, 10000]) # the averaged prediction
+```
+
+Areas must be positive (a threshold fit made with `log_area=False` takes any finite
+area). An averaged prediction depends on which models were
+averaged, so compare it with R `sars`'s only over the same set of models.
+
 ## Bootstrap confidence intervals
 
 ```python

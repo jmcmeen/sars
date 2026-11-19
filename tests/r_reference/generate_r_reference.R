@@ -154,5 +154,23 @@ num <- sapply(lin_pow_tab, is.numeric)
 lin_pow_tab[num] <- lapply(lin_pow_tab[num], signif, digits = 12)
 write.csv(lin_pow_tab, out("lin_pow_galap.csv"), row.names = FALSE)
 
+# 6. sar_pred: predicted richness at three areas (one inside the data's range,
+#    two beyond it) from single fits, and from the average of the same three
+#    models. An averaged prediction depends on the models averaged.
+pred_areas <- c(50, 500, 10000)
+pred_models <- c("power", "loga", "negexpo")
+pred_rows <- lapply(pred_models, function(m) {
+  set.seed(SEED)
+  p <- sar_pred(suppressWarnings(get(paste0("sar_", m))(data = galap)), area = pred_areas)
+  data.frame(model = m, area = p$Area, prediction = p$Prediction)
+})
+set.seed(SEED)
+pred_av <- sar_pred(suppressWarnings(sar_average(obj = pred_models, data = galap,
+                                                 verb = FALSE, display = FALSE)),
+                    area = pred_areas)
+pred_rows[[length(pred_rows) + 1]] <- data.frame(model = "average", area = pred_av$Area,
+                                                 prediction = pred_av$Prediction)
+write.csv(do.call(rbind, pred_rows), out("pred_galap.csv"), row.names = FALSE)
+
 cat("Reference tables written.\n\nPower law:\n")
 print(sar_power(galap))

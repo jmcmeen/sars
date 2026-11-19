@@ -39,6 +39,14 @@ reconstructed from the commit history and the
   (`LinPowFit.comparison`), with a warning if that fit doesn't converge. `plot_lin_pow` draws the data and the fitted line on log-log
   axes. The coefficients, standard errors, p values and R² match R on the Galápagos data
   for each log base, with and without an empty island (#122)
+- `sar_pred(fit, area)` returns a table of predicted richness (columns `model`, `area`,
+  `prediction`) at one or more areas, as R `sars`'s `sar_pred` does. It takes a `SARFit`,
+  a `MultiSARFit` (a row per model and area, models in summary order), an `AveragedSAR`
+  (model "average"), a `ThresholdFit` (its best model) or a `LinPowFit`. Areas that are
+  zero, negative or not finite raise `ValueError`, as does a fit that didn't converge.
+  Predictions for power, loga and negexpo
+  match R on the Galápagos data; an averaged prediction matches R's when both average the
+  same models (#125)
 
 ### Fixed
 

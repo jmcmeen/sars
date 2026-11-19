@@ -60,6 +60,7 @@ from sars._plots import (
     plot_residuals,
     plot_threshold,
 )
+from sars._predict import sar_pred
 from sars._threshold import ThresholdCI, ThresholdFit, sar_threshold, threshold_ci
 
 __all__ = [
@@ -82,6 +83,7 @@ __all__ = [
     "load_galap",
     "sar_average",
     "sar_multi",
+    "sar_pred",
     "sar_threshold",
     "threshold_ci",
     "plot_average",

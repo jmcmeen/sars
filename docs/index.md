@@ -12,8 +12,10 @@ A conceptual mirror of the R [`sars`](https://cran.r-project.org/package=sars) p
 ## Features
 
 - **20 SAR models** -- power, logarithmic, asymptotic, sigmoid, and more
+- **Log-log power model** -- the classic straight-line fit of log S on log A, with standard errors and p values
 - **Multi-model inference** -- fit all models at once, ranked by AICc with Akaike weights
 - **Model averaging** -- weighted-average predictions across candidate models
+- **Prediction** -- a table of predicted richness at any areas, from any fit
 - **Bootstrap confidence intervals** -- percentile-based CIs for averaged predictions
 - **Threshold models** -- piecewise regression for detecting breakpoints (small island effect), with bootstrap confidence intervals for the breakpoints
 - **I/O adapters** -- load from CSV, GeoDataFrame, or pyiNaturalist summaries

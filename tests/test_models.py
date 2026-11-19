@@ -63,13 +63,13 @@ class TestInputValidation:
             sars.sar_power(df)
 
     def test_validation_applies_to_all_models(self):
-        """Every sar_* function should reject bad input identically."""
+        """Every function that fits the models to data should reject bad input identically."""
         bad = pd.DataFrame({"wrong": [1, 2], "columns": [3, 4]})
-        for name in dir(sars):
-            if name.startswith("sar_") and name != "sar_threshold":
-                fn = getattr(sars, name)
-                with pytest.raises(KeyError):
-                    fn(bad)
+        names = [f"sar_{model}" for model in ALL_MODEL_NAMES] + ["sar_multi", "sar_average"]
+        assert len(names) == 22
+        for name in names:
+            with pytest.raises(KeyError):
+                getattr(sars, name)(bad)
 
 
 def test_power_law_spot_check():
