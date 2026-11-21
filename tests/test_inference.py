@@ -91,7 +91,11 @@ class TestUndefinedWeights:
         assert np.all(pred > 0)
 
     def test_bootstrap_ci_reports_nan_not_zero(self, tiny):
-        ci = sars.bootstrap_ci(tiny, models=TINY_MODELS, n_boot=5, rng=np.random.default_rng(0))
+        with pytest.warns(UserWarning, match="5 of 5 bootstrap resamples were dropped"):
+            ci = sars.bootstrap_ci(tiny, models=TINY_MODELS, n_boot=5, rng=np.random.default_rng(0))
+        assert ci.dropped == {
+            "ValueError: Model weights are undefined: no model has a finite AICc. For": 5
+        }
         assert np.all(np.isnan(ci.mean))
         assert np.all(np.isnan(ci.median))
         assert np.all(np.isnan(ci.lower))

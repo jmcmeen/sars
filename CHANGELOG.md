@@ -12,6 +12,10 @@ reconstructed from the commit history and the
 
 ### Added
 
+- The Galápagos example shows the newer features: a fit's parameter table, the observed
+  shape of each fitted curve, residual checks before averaging, `sar_pred`, and a
+  threshold with bootstrap and inverted F intervals and its plot, on the Aegean plants,
+  where a threshold shows (#148)
 - `ColemanFit.placement_test(n_sim=999, rng=None)`, a calibrated test of Coleman's random
   placement model: it simulates random placement of the observed species totals and gives
   a p value for the sites' distance from the expected curve (their squared deviations in
