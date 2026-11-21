@@ -400,3 +400,46 @@ def test_threshold_models_match_r_on_bundled_datasets(name):
         expected = () if np.isnan(r["threshold"]) else (r["threshold"],)
         assert mine["breakpoints"] == pytest.approx(expected, abs=1e-9), model
     assert fit.best_model == ref["aicc"].idxmin()
+
+
+# ---------------------------------------------------------------------------
+# Breakpoint intervals from the inverted F test
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("model", ["ContOne", "ZslopeOne"])
+def test_inverted_f_intervals_reproduce_r_with_rs_degrees_of_freedom(model):
+    """R's threshold_ci(method = "F") searches every 0.01 of ln(area) from the
+    smallest area to the largest, and compares (RSS(T) - RSS_min) /
+    (RSS_min / (n - p)) with F(cl; 1, p), p its number of regression
+    coefficients (3 for ContOne, 2 for ZslopeOne). On R's grid and with R's
+    degrees of freedom, this package's profile gives R's bounds to a grid step.
+    (threshold_ci itself uses the test's F(cl; 1, n - p), with p counting the
+    breakpoint too, over sar_threshold's own window.)"""
+    from sars import _threshold as th
+
+    ref = _read("threshold_ci_F.csv")
+    loaders = {name: getattr(sars, f"load_{name}") for name in ref["dataset"].unique()}
+    sloped = model == "ContOne"
+    p = 3 if sloped else 2
+    for (name, cl), rows in ref[ref["model"] == model].groupby(["dataset", "cl"]):
+        data = loaders[name]()
+        x = np.log(data["area"].to_numpy(dtype=float))
+        y = data["species"].to_numpy(dtype=float)
+        grid = np.arange(x.min(), x.max() + 0.005, 0.01)
+        rss = th._profile_rss(x, y, sloped, grid)
+        lower, upper = th._inverted_f_bounds(grid, rss, len(y) - p, p, cl)
+        r = rows.iloc[0]
+        assert lower == pytest.approx(r["lower"], abs=0.0101), (name, cl)
+        assert upper == pytest.approx(r["upper"], abs=0.0101), (name, cl)
+
+
+def test_inverted_f_interval_is_narrower_than_rs_on_many_islands():
+    """With the test's residual degrees of freedom the 95% interval on the 173
+    Aegean plant islands is about half as wide as R's."""
+    ref = _read("threshold_ci_F.csv")
+    r = ref[(ref["dataset"] == "aegean2") & (ref["model"] == "ContOne") & (ref["cl"] == 0.95)]
+    ci = sars.threshold_ci(sars.sar_threshold(sars.load_aegean2()), model="ContOne", method="F")
+    assert r["lower"].iloc[0] < ci.lower[0] < ci.estimates[0] < ci.upper[0] < r["upper"].iloc[0]
+    assert ci.lower[0] == pytest.approx(1.775, abs=0.006)
+    assert ci.upper[0] == pytest.approx(2.695, abs=0.006)

@@ -279,9 +279,10 @@ print(th.all_fits["ContTwo"]["breakpoints"])
 
 ### Confidence intervals for a breakpoint
 
-`threshold_ci` gives a model's breakpoints bootstrap confidence intervals (Toms &
-Lesperance 2003). It resamples the model's residuals onto its fitted values, reruns the
-breakpoint search on each resample, and takes percentiles of the breakpoints found:
+`threshold_ci` gives a model's breakpoints confidence intervals by either of the methods
+Toms & Lesperance (2003) describe. The default bootstrap resamples the model's residuals
+onto its fitted values, reruns the breakpoint search on each resample, and takes
+percentiles of the breakpoints found:
 
 ```python
 import numpy as np
@@ -294,21 +295,36 @@ print(ci.lower_area, ci.upper_area)
 
 Without `model` it takes the best model that has a breakpoint; Linear has none. A
 two-threshold model gets an interval for each breakpoint. The default 1000 resamples are
-scored together for the models searched over a grid, so they cost about as much as a few
-fits of the model for ContOne and ZslopeOne (a fraction of a second) and roughly ten fits
-for ContTwo and ZslopeTwo (a few seconds on the 16 Galápagos islands). DiscOne and DiscTwo
-are searched one resample at a time: a second or a few on tens of islands, some tens of
-seconds for DiscTwo on a hundred. `ci.samples` holds every resample's breakpoints.
+scored together against the candidate breakpoints, which depend only on the areas, so they
+cost about as much as a few fits of the model: a fraction of a second for the
+one-threshold models, and a few seconds at most for ContTwo and ZslopeTwo. `ci.samples`
+holds every resample's breakpoints.
+
+For ContOne and ZslopeOne, `method="F"` inverts an F test instead: the interval holds
+every candidate breakpoint whose fit, with the breakpoint fixed there, the F test at level
+`1 - conf` doesn't reject against the best fit. It needs no resampling:
+
+```python
+ci_f = sars.threshold_ci(th, model="ContOne", method="F")
+```
 
 Read the intervals with the data in mind. With few islands they are wide: a bound at the
 third-smallest or third-largest area (the edge of the search) means the data don't place
 the breakpoint on that side. A discontinuous model's breakpoint is always an observed
 area, so its bounds are too, and when one jump dominates every resample can land on the
 same island, giving an interval of no width. That says the resamples agree, not that the
-threshold is known exactly. Percentile intervals for a breakpoint also run a little narrow:
-in simulations of 40 islands with one true breakpoint, 95% intervals covered it about 85 to
-90% of the time. R `sars`'s `threshold_ci` offers the bootstrap for ContOne and
-ZslopeOne only; its draws differ, so its intervals agree with these only roughly.
+threshold is known exactly. In simulations of 40 islands with one true breakpoint, 95%
+intervals covered it 91 to 95% of the time with either method, and less when an interval
+is only a grid step or two wide (use a smaller `interval` then). Toms & Lesperance
+recommend the bootstrap for small samples and the F test for larger ones.
+
+R `sars`'s `threshold_ci` offers both methods for ContOne and ZslopeOne only. Its
+bootstrap draws differ, so its bootstrap intervals agree with these only roughly. Its F
+intervals compare the statistic with F(conf; 1, p), p the number of regression
+coefficients, where the test's residual degrees of freedom, n − p, belong, and it searches
+every candidate from the smallest area to the largest, ignoring the three-island window.
+On many islands that makes its intervals much wider: on the 173 Aegean plant islands,
+ContOne's 95% interval in ln area is 1.45 to 3.02 in R and 1.78 to 2.70 here.
 
 `plot_threshold` draws a model on the scale it was fitted on, with its breakpoints marked
 and, given `ci`, their intervals shaded:

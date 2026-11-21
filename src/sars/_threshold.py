@@ -40,6 +40,7 @@ from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
+from scipy import special
 
 from sars._models import _compute_ic, _validate_data
 
@@ -589,109 +590,156 @@ def _grid_search_two_breakpoints(
 
 
 class _Runs:
-    """Least-squares lines through runs [start, stop) of the data sorted by x.
+    """Least-squares lines through runs [start, stop) of the data sorted by x,
+    for many responses at once (the rows of ``ys``).
 
     Scores come from running sums of 1, x, y, x^2, xy and y^2 (centred on the
-    data's means), so any run costs O(1). Those sums lose precision for a run
-    whose spread in x is tiny next to its distance from the mean of x (a
+    means), so any run costs O(1) per response. Those sums lose precision for
+    a run whose spread in x is tiny next to its distance from the mean of x (a
     cluster of areas far from the rest, say); such runs are fitted directly.
+    Whether a run is such depends on x alone, so it is the same for every
+    response.
     """
 
     # Below this ratio of a run's spread in x to its sum of squares about the
     # mean, the running-sum spread has lost too many digits to trust.
     _RELIABLE = 1e-8
 
-    def __init__(self, x: np.ndarray, y: np.ndarray) -> None:
+    def __init__(self, x: np.ndarray, ys: np.ndarray) -> None:
         order = np.argsort(x, kind="stable")
-        self.xs, self.ys = x[order], y[order]
-        xc, yc = self.xs - self.xs.mean(), self.ys - self.ys.mean()
-        terms = np.column_stack([np.ones(len(xc)), xc, yc, xc**2, xc * yc, yc**2])
-        self.sums = np.vstack([np.zeros(6), np.cumsum(terms, axis=0)])
-        self._exact: dict[tuple[int, int], float] = {}
+        self.xs, self.ys = x[order], np.atleast_2d(ys)[:, order]
+        xc = self.xs - self.xs.mean()
+        yc = self.ys - self.ys.mean(axis=1, keepdims=True)
+
+        def running(terms: np.ndarray) -> np.ndarray:
+            zeros = np.zeros(terms.shape[:-1] + (1,))
+            return np.concatenate([zeros, np.cumsum(terms, axis=-1)], axis=-1)
+
+        self.count, self.sx, self.sxx = (running(t) for t in (np.ones_like(xc), xc, xc**2))
+        self.sy, self.sxy, self.syy = (running(t) for t in (yc, xc * yc, yc**2))
+        self._exact: dict[tuple[int, int], np.ndarray] = {}
 
     def rss(self, start: np.ndarray, stop: np.ndarray) -> np.ndarray:
-        """RSS of the line through each run. A run with one distinct x
-        contributes its spread about the mean, as a flat line does."""
-        d = self.sums[stop] - self.sums[start]
-        count, sx, sy, sxx, sxy, syy = (d[..., k] for k in range(6))
+        """RSS of the line through each run, for each response: one row per
+        response, one column per run. A run with one distinct x contributes
+        its spread about the mean, as a flat line does."""
+        count = self.count[stop] - self.count[start]
+        sx = self.sx[stop] - self.sx[start]
+        sxx = self.sxx[stop] - self.sxx[start]
+        sy = self.sy[:, stop] - self.sy[:, start]
+        sxy = self.sxy[:, stop] - self.sxy[:, start]
+        syy = self.syy[:, stop] - self.syy[:, start]
         with np.errstate(divide="ignore", invalid="ignore"):
             cxx = sxx - sx**2 / count
+            reliable = cxx > self._RELIABLE * sxx
             cxy = sxy - sx * sy / count
             cyy = syy - sy**2 / count
-            reliable = cxx > self._RELIABLE * sxx
             explained = np.where(reliable, cxy**2 / np.where(reliable, cxx, 1.0), 0.0)
         rss = np.maximum(cyy - explained, 0.0)
         for k in np.nonzero(~reliable & (count > 1))[0]:
-            rss[k] = self._fit(int(start[k]), int(stop[k]))
+            rss[:, k] = self._fit(int(start[k]), int(stop[k]))
         return rss
 
-    def _fit(self, start: int, stop: int) -> float:
+    def _fit(self, start: int, stop: int) -> np.ndarray:
         key = (start, stop)
         if key not in self._exact:
-            xs, ys = self.xs[start:stop], self.ys[start:stop]
-            intercept, slope = _line(xs - xs.mean(), ys)
-            self._exact[key] = float(np.sum((ys - intercept - slope * (xs - xs.mean())) ** 2))
+            xs = self.xs[start:stop] - self.xs[start:stop].mean()
+            design = np.column_stack([np.ones_like(xs), xs])
+            ys = self.ys[:, start:stop]
+            # A run with one distinct x has a column of zeros: lstsq's
+            # minimum-norm answer is then the flat line through its mean.
+            coef = np.linalg.lstsq(design, ys.T, rcond=None)[0]
+            self._exact[key] = np.sum((ys - (design @ coef).T) ** 2, axis=1)
         return self._exact[key]
 
 
-def _disc_candidates(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray, _Runs]:
+def _disc_candidates(x: np.ndarray, ys: np.ndarray) -> tuple[np.ndarray, np.ndarray, _Runs]:
     """The distinct values of ``x`` (the discontinuous models' candidate
     breakpoints), how many points lie at or below each, and the runs to score.
     """
-    runs = _Runs(x, y)
+    runs = _Runs(x, ys)
     values = np.unique(runs.xs)
     n_left = np.searchsorted(runs.xs, values, side="right")
     return values, n_left, runs
 
 
-def _search_disc_one(x: np.ndarray, y: np.ndarray, min_points: int = 3) -> dict | None:
-    """The observed area, with at least ``min_points`` values on each side, that
-    minimises the discontinuous one-threshold model's RSS."""
-    values, n_left, runs = _disc_candidates(x, y)
+def _first_least(rss: np.ndarray, tie: np.ndarray) -> np.ndarray:
+    """For each row of ``rss``, the first column within ``tie`` of the least."""
+    return np.argmax(rss <= (rss.min(axis=1) + tie)[:, None], axis=1)
+
+
+def _disc_one_breakpoints(x: np.ndarray, ys: np.ndarray, min_points: int = 3) -> np.ndarray | None:
+    """For each row of ``ys``, the observed area, with at least ``min_points``
+    values on each side, that minimises the discontinuous one-threshold
+    model's RSS. None when no area has that many either side."""
+    ys = np.atleast_2d(ys)
+    values, n_left, runs = _disc_candidates(x, ys)
     n = len(x)
     ok = (n_left >= min_points) & (n - n_left >= min_points)
     if not ok.any():
         return None
     cut = n_left[ok]
     rss = runs.rss(np.zeros_like(cut), cut) + runs.rss(cut, np.full_like(cut, n))
-    return _fit_disc_one(x, y, values[ok][int(np.argmin(rss))])
+    return np.asarray(values[ok][_first_least(rss, _tie(ys))])
 
 
-def _search_disc_two(x: np.ndarray, y: np.ndarray, min_points: int = 3) -> dict | None:
-    """The pair of observed areas T1 < T2 that minimises the discontinuous
-    two-threshold model's RSS, with at least ``min_points`` values up to T1 and
-    above T2 (the middle segment holds at least T2 itself). For each T1, every
-    T2 is scored at once from the running sums."""
-    values, n_left, runs = _disc_candidates(x, y)
+def _disc_two_breakpoints(x: np.ndarray, ys: np.ndarray, min_points: int = 3) -> np.ndarray | None:
+    """For each row of ``ys``, the pair of observed areas T1 < T2 that
+    minimises the discontinuous two-threshold model's RSS, with at least
+    ``min_points`` values up to T1 and above T2 (the middle segment holds at
+    least T2 itself): one row per response, T1 then T2. For each T1, every T2
+    is scored at once for every response from the running sums. None when no
+    pair is valid."""
+    ys = np.atleast_2d(ys)
+    values, n_left, runs = _disc_candidates(x, ys)
     n = len(x)
     lasts = np.nonzero(n - n_left >= min_points)[0]
     firsts = np.nonzero(n_left >= min_points)[0]
     firsts = firsts[firsts < (lasts[-1] if len(lasts) else -1)]
     n_pairs = len(lasts) * len(firsts) - int(np.searchsorted(lasts, firsts, side="right").sum())
     _check_pairs(n_pairs, "the dataset has too many distinct areas")
+    if not len(firsts):
+        return None
 
-    best_rss, best_pair = np.inf, None
+    tie = _tie(ys)
+    rows = np.arange(len(ys))
+    best_rss = np.full(len(ys), np.inf)
+    pairs = np.full((len(ys), 2), np.nan)
     for i in firsts:
         js = lasts[lasts > i]
         a, b = n_left[i], n_left[js]
         rss = (
-            runs.rss(np.array([0]), np.array([a]))[0]
+            runs.rss(np.array([0]), np.array([a]))
             + runs.rss(np.full_like(b, a), b)
             + runs.rss(b, np.full_like(b, n))
         )
-        w = int(np.argmin(rss))
-        if rss[w] < best_rss:
-            best_rss, best_pair = rss[w], (values[i], values[js[w]])
-    if best_pair is None:
-        return None
-    return _fit_disc_two(x, y, *best_pair)
+        w = _first_least(rss, tie)
+        better = rss[rows, w] < best_rss - tie
+        best_rss[better] = rss[rows, w][better]
+        pairs[better, 0] = values[i]
+        pairs[better, 1] = values[js[w[better]]]
+    return None if np.isnan(pairs).any() else pairs
+
+
+def _search_disc_one(x: np.ndarray, y: np.ndarray, min_points: int = 3) -> dict | None:
+    """The discontinuous one-threshold fit at the best observed area (see
+    ``_disc_one_breakpoints``), or None."""
+    found = _disc_one_breakpoints(x, y, min_points)
+    return None if found is None else _fit_disc_one(x, y, float(found[0]))
+
+
+def _search_disc_two(x: np.ndarray, y: np.ndarray, min_points: int = 3) -> dict | None:
+    """The discontinuous two-threshold fit at the best pair of observed areas
+    (see ``_disc_two_breakpoints``), or None."""
+    found = _disc_two_breakpoints(x, y, min_points)
+    return None if found is None else _fit_disc_two(x, y, *(float(t) for t in found[0]))
 
 
 class _Search(NamedTuple):
     """How a model's breakpoints are searched for.
 
     ``fit`` searches one response and returns the fit (None without a valid
-    candidate). ``breakpoints``, for the models searched over a grid, finds the
+    candidate). ``breakpoints``, for every model with a breakpoint, finds the
     breakpoints of many responses at once, one row each.
     """
 
@@ -712,7 +760,10 @@ _SEARCHES: dict[str, _Search] = {
         lambda x, y, interval: _grid_search_breakpoint(x, y, _fit_zslope_one, False, interval),
         lambda x, ys, interval: _best_breakpoints(x, ys, False, interval),
     ),
-    "DiscOne": _Search(lambda x, y, interval: _search_disc_one(x, y)),
+    "DiscOne": _Search(
+        lambda x, y, interval: _search_disc_one(x, y),
+        lambda x, ys, interval: _disc_one_breakpoints(x, ys),
+    ),
     "ContTwo": _Search(
         lambda x, y, interval: _grid_search_two_breakpoints(x, y, _fit_cont_two, True, interval),
         lambda x, ys, interval: _best_breakpoint_pairs(x, ys, True, interval),
@@ -721,7 +772,10 @@ _SEARCHES: dict[str, _Search] = {
         lambda x, y, interval: _grid_search_two_breakpoints(x, y, _fit_zslope_two, False, interval),
         lambda x, ys, interval: _best_breakpoint_pairs(x, ys, False, interval),
     ),
-    "DiscTwo": _Search(lambda x, y, interval: _search_disc_two(x, y)),
+    "DiscTwo": _Search(
+        lambda x, y, interval: _search_disc_two(x, y),
+        lambda x, ys, interval: _disc_two_breakpoints(x, ys),
+    ),
 }
 assert set(_SEARCHES) == set(_K)
 
@@ -733,16 +787,58 @@ def _resample_breakpoints(
     per response, one column per breakpoint. The model has a breakpoint for
     these ``x`` (its candidates don't depend on the response)."""
     search = _SEARCHES[model]
-    if search.breakpoints is not None:
-        found = search.breakpoints(x, ys, interval)
-        assert found is not None
-        return found.reshape(len(ys), -1)
-    rows = []
-    for y in ys:
-        fit = search.fit(x, y, interval)
-        assert fit is not None
-        rows.append(fit["breakpoints"])
-    return np.array(rows, dtype=float).reshape(len(ys), -1)
+    assert search.breakpoints is not None  # every model but Linear
+    found = search.breakpoints(x, ys, interval)
+    assert found is not None
+    return found.reshape(len(ys), -1)
+
+
+# The models whose breakpoint the inverted F test gives an interval for, and
+# whether each one's first segment is sloped.
+_F_TEST_MODELS = {"ContOne": True, "ZslopeOne": False}
+
+
+def _search_grid(x: np.ndarray, interval: float | None, min_points: int = 3) -> np.ndarray:
+    """The candidate breakpoints ``sar_threshold`` searches for a one-threshold
+    continuous model: the grid, less any candidate without ``min_points``
+    values on each side."""
+    grid = _breakpoint_grid(x, interval, min_points)
+    assert grid is not None  # the model was fitted, so it has candidates
+    n_left = np.searchsorted(np.sort(x), grid, side="right")
+    return grid[(n_left >= min_points) & (len(x) - n_left >= min_points)]
+
+
+def _profile_rss(x: np.ndarray, y: np.ndarray, sloped_first: bool, grid: np.ndarray) -> np.ndarray:
+    """The RSS of a one-threshold continuous model with its breakpoint fixed at
+    each candidate in ``grid``."""
+    q = _fit_basis([np.ones(len(x))] + ([x] if sloped_first else []))
+    r_y = (y - q @ (q.T @ y))[None, :]
+    rss_without = float(np.sum(r_y**2))
+    gains = np.empty(len(grid))
+    n_blocks = -(-len(grid) * len(x) // _BLOCK)
+    for block in np.array_split(np.arange(len(grid)), n_blocks):
+        gains[block] = _hinge_gains(x, q, r_y, grid[block])[0]
+    # Rounding can take an exact fit's RSS a hair below zero.
+    return np.maximum(rss_without - gains, 0.0)
+
+
+def _inverted_f_bounds(
+    grid: np.ndarray, rss: np.ndarray, residual_df: float, critical_df: float, conf: float
+) -> tuple[float, float]:
+    """The first and last candidate breakpoints whose fit is not rejected by
+    the F test against the best fit at level ``1 - conf``:
+    ``(RSS(T) - RSS_min) / (RSS_min / residual_df) <= F(conf; 1, critical_df)``.
+    The two degrees of freedom are the same in the test itself (the model's
+    residual degrees of freedom); they are separate here so the test can be
+    checked against R sars's convention."""
+    least = float(rss.min())
+    # Fits within rounding of the best tie with it (as in the search), and an
+    # exact fit (RSS 0) rejects every other candidate.
+    tie = 1e-10 * float(np.max(rss))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        statistic = np.where(rss > least + tie, (rss - least) / (least / residual_df), 0.0)
+    accepted = grid[statistic <= special.fdtri(1.0, critical_df, conf)]
+    return float(accepted.min()), float(accepted.max())
 
 
 # ---------------------------------------------------------------------------
@@ -975,12 +1071,16 @@ class ThresholdCI:
     conf : float
         Confidence level (e.g. 0.95).
     n_boot : int
-        Number of bootstrap resamples.
+        Number of bootstrap resamples (0 for the inverted F test).
     samples : np.ndarray
         The breakpoints found in each resample, on the fitted scale: one row
-        per resample, one column per breakpoint.
+        per resample, one column per breakpoint (no rows for the inverted F
+        test).
     log_area : bool
         Whether the fitted scale is the natural log of area (True) or area.
+    method : str
+        How the intervals were made: ``"boot"`` (residual bootstrap) or
+        ``"F"`` (inverted F test).
     """
 
     model: str
@@ -994,6 +1094,7 @@ class ThresholdCI:
     n_boot: int
     samples: np.ndarray = field(repr=False)
     log_area: bool = True
+    method: str = "boot"
 
     def __repr__(self) -> str:
         parts = ", ".join(
@@ -1002,9 +1103,10 @@ class ThresholdCI:
                 self.estimates_area, self.lower_area, self.upper_area, strict=True
             )
         )
+        how = "method='F'" if self.method == "F" else f"n_boot={self.n_boot}"
         return (
             f"ThresholdCI(model='{self.model}', breakpoints_area=({parts}), "
-            f"conf={self.conf}, n_boot={self.n_boot})"
+            f"conf={self.conf}, {how})"
         )
 
 
@@ -1061,9 +1163,16 @@ def threshold_ci(
     n_boot: int = 1000,
     conf: float = 0.95,
     rng: np.random.Generator | None = None,
+    method: str = "boot",
 ) -> ThresholdCI:
-    """Bootstrap confidence intervals for a threshold model's breakpoints.
+    """Confidence intervals for a threshold model's breakpoints.
 
+    Two methods, as in R sars: a residual bootstrap (``method="boot"``, the
+    default) for any model with a breakpoint, and an inverted F test
+    (``method="F"``) for the continuous one-threshold models, ContOne and
+    ZslopeOne.
+
+    **Bootstrap.**
     A residual bootstrap, as Toms & Lesperance (2003) describe for piecewise
     regression: the model's residuals are resampled with replacement and added
     to its fitted values, the breakpoint search is rerun on each resample, and
@@ -1083,20 +1192,35 @@ def threshold_ci(
     the search window (the third-smallest or third-largest area) says the data
     don't pin the breakpoint down on that side. A continuous model's interval
     can't be finer than the grid: one only a step or two wide is too narrow,
-    and the fit wants a smaller ``interval``. Percentile intervals for a
-    breakpoint tend to be a little narrow: in simulations of 40 islands with
-    one true breakpoint, 95% intervals covered it about 85 to 90% of the time.
+    and the fit wants a smaller ``interval``. In simulations of 40 islands with
+    one true breakpoint, on a grid of 0.02, 95% intervals covered it 91 to 95%
+    of the time with either method; the inverted F test's were a little
+    narrower on noisier data. Coverage falls when an interval is only a grid
+    step or two wide.
+
+    **Inverted F test** (Toms & Lesperance 2003, after Lerman 1980). The
+    interval holds every candidate breakpoint ``T`` of the search grid whose
+    fit, with the breakpoint fixed there, the F test doesn't reject against the
+    best fit: ``(RSS(T) - RSS_min) / (RSS_min / (n - p)) <= F(conf; 1, n - p)``,
+    with ``p`` the model's coefficients and breakpoint (ContOne 4, ZslopeOne 3).
+    It needs no resampling, so it is exact to the grid and costs one search.
+    The bounds are the first and last candidates accepted; if the accepted set
+    has gaps, the interval spans them. R sars's ``threshold_ci(method = "F")``
+    compares the same statistic with ``F(conf; 1, p)``, using ``p`` where the
+    test's residual degrees of freedom belong, so for more than a handful of
+    islands its intervals are much wider than the test's (on the 173 Aegean
+    plant islands, ContOne's 95% interval is 1.45 to 3.02 in ln area there,
+    1.775 to 2.695 here). Toms & Lesperance recommend it for larger samples
+    and the bootstrap for small ones.
 
     The resamples are cheap for the models searched over a grid, because the
     candidates depend only on the areas and all the resamples are scored
     against them together: the default 1000 cost about as much as a few
-    ``sar_threshold`` fits of the model for ContOne and ZslopeOne (a fraction
-    of a second), and roughly ten such fits for ContTwo and ZslopeTwo (a few
-    seconds on tens of islands, more on a hundred or with a finer
-    ``interval``). DiscOne and DiscTwo are searched one resample at a time,
-    each about the cost of fitting the model once: a second or a few for 1000
-    resamples on tens of islands, and some tens of seconds for DiscTwo on a
-    hundred.
+    ``sar_threshold`` fits of the model, a fraction of a second for the
+    one-threshold models and a few seconds at most for ContTwo and ZslopeTwo
+    (more on hundreds of islands or with a finer ``interval``). DiscOne and
+    DiscTwo score their resamples together in the same way, from running sums
+    over the observed areas.
 
     Parameters
     ----------
@@ -1107,11 +1231,13 @@ def threshold_ci(
         "DiscOne", "ContTwo", "ZslopeTwo" or "DiscTwo". Default: the best
         model by AICc among those with a breakpoint.
     n_boot : int
-        Number of bootstrap resamples.
+        Number of bootstrap resamples (``method="boot"`` only).
     conf : float
         Confidence level (default 0.95).
     rng : np.random.Generator, optional
-        Random number generator for reproducibility.
+        Random number generator for reproducibility (``method="boot"`` only).
+    method : str
+        ``"boot"`` (default) or ``"F"``.
 
     Returns
     -------
@@ -1121,16 +1247,25 @@ def threshold_ci(
     ------
     ValueError
         If ``model`` is "Linear" or isn't among the fit's models, if the fit
-        holds no model with a breakpoint, if ``n_boot`` isn't a positive whole
-        number or ``conf`` isn't between 0 and 1, or if the fit's data have
-        changed since it was fitted.
+        holds no model with a breakpoint, if ``method`` is unknown, or "F" for
+        a model other than ContOne or ZslopeOne, if ``n_boot`` isn't a
+        positive whole number (checked for the bootstrap only; the F test
+        ignores ``n_boot`` and ``rng``) or ``conf`` isn't between 0 and 1, or
+        if the fit's data have changed since it was fitted.
 
     References
     ----------
+    Lerman PM (1980). Fitting segmented regression models by grid search.
+    Journal of the Royal Statistical Society C 29(1), 77-84.
+
     Toms JD & Lesperance ML (2003). Piecewise regression: a tool for
     identifying ecological thresholds. Ecology 84(8), 2034-2041.
     """
+    if method not in ("boot", "F"):
+        raise ValueError(f"method must be 'boot' or 'F', got {method!r}")
     model = _ci_model(fit, model)
+    if method == "F":
+        return _f_test_ci(fit, model, conf)
     given = n_boot
     try:  # a whole number: not True, 2.5, None, NaN or infinity
         n_boot = 0 if isinstance(given, bool) else index(given)
@@ -1189,4 +1324,39 @@ def threshold_ci(
         n_boot=n_boot,
         samples=samples,
         log_area=fit.log_area,
+    )
+
+
+def _f_test_ci(fit: ThresholdFit, model: str, conf: float) -> ThresholdCI:
+    """``threshold_ci(method="F")``: the inverted F test interval."""
+    if model not in _F_TEST_MODELS:
+        raise ValueError(
+            f"The inverted F test gives intervals for ContOne and ZslopeOne, not {model}; "
+            f"use method='boot', or name one of those models."
+        )
+    if not 0 < conf < 1:
+        raise ValueError(f"conf must be between 0 and 1, got {conf!r}")
+    area, x, y = _fitted_data(fit, model)
+    grid = _search_grid(x, fit.interval)
+    rss = _profile_rss(x, y, _F_TEST_MODELS[model], grid)
+    residual_df = len(y) - (_K[model] - 1)  # k counts sigma too
+    lower, upper = _inverted_f_bounds(grid, rss, residual_df, residual_df, conf)
+    estimate = float(fit.all_fits[model]["breakpoints"][0])
+
+    def in_area(value: float) -> tuple[float]:
+        return (float(np.exp(value)) if fit.log_area else value,)
+
+    return ThresholdCI(
+        model=model,
+        estimates=(estimate,),
+        lower=(lower,),
+        upper=(upper,),
+        estimates_area=in_area(estimate),
+        lower_area=in_area(lower),
+        upper_area=in_area(upper),
+        conf=conf,
+        n_boot=0,
+        samples=np.empty((0, 1)),
+        log_area=fit.log_area,
+        method="F",
     )
