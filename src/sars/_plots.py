@@ -10,7 +10,7 @@ import numpy as np
 from sars._coleman import ColemanFit
 from sars._inference import AveragedSAR, MultiSARFit
 from sars._linpow import LinPowFit
-from sars._models import SARFit
+from sars._models import SARFit, _area_grid
 from sars._threshold import _fitted_data
 
 if TYPE_CHECKING:
@@ -55,7 +55,7 @@ def plot_fit(
     s_defaults = {"color": "black", "zorder": 3, "label": "Observed"}
     ax.scatter(area, species, **{**s_defaults, **(scatter_kw or {})})
 
-    a_grid = np.linspace(area.min(), area.max(), 200)
+    a_grid = _area_grid(float(area.min()), float(area.max()), 200)
     pred = fit.predict(a_grid)
     l_defaults = {
         "color": "dodgerblue",
@@ -114,7 +114,7 @@ def plot_multi(
     s_defaults = {"color": "black", "zorder": 3, "label": "Observed"}
     ax.scatter(area, species, **{**s_defaults, **(scatter_kw or {})})
 
-    a_grid = np.linspace(area.min(), area.max(), 200)
+    a_grid = _area_grid(float(area.min()), float(area.max()), 200)
 
     # Get top N models by AICc from summary
     top_models = multi_fit.summary.head(top_n)["model"].tolist()
@@ -185,7 +185,7 @@ def plot_average(
     s_defaults = {"color": "black", "zorder": 3, "label": "Observed"}
     ax.scatter(area, species, **{**s_defaults, **(scatter_kw or {})})
 
-    a_grid = np.linspace(area.min(), area.max(), 200)
+    a_grid = _area_grid(float(area.min()), float(area.max()), 200)
     pred = averaged.predict(a_grid)
     l_defaults = {"color": "dodgerblue", "linewidth": 2, "label": "Model-averaged"}
     ax.plot(a_grid, pred, **{**l_defaults, **(line_kw or {})})

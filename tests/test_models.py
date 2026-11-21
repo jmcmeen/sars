@@ -770,3 +770,15 @@ def test_a_parameter_near_a_ridge_but_not_on_it_keeps_its_standard_error():
     assert se[2] == pytest.approx(expected, rel=1e-4)
     # ... which is not what it would be were c1 and c2 one parameter.
     assert abs(expected / (_line_std_errors()[1] * np.sqrt(10 / 9)) - 1) > 1e-3
+
+
+def test_area_grid_mixes_even_and_geometric_spacing():
+    from sars._models import _area_grid
+
+    grid = _area_grid(0.01, 1000.0, 100)
+    assert grid[0] == 0.01 and grid[-1] == 1000.0
+    assert np.all(np.diff(grid) > 0)
+    assert np.sum(grid < 1.0) >= 15 and np.sum(grid > 500.0) >= 20
+    # No geometric grid reaches zero: an even one stands in.
+    np.testing.assert_allclose(_area_grid(0.0, 10.0, 10), np.linspace(0.0, 10.0, 10))
+    assert _area_grid(5.0, 5.0, 10).tolist() == [5.0]

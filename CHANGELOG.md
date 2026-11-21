@@ -10,6 +10,15 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Changed
+
+- **Behavior change:** `bootstrap_ci`'s default `area_grid` is half evenly and half
+  geometrically spaced across the data's areas (about 100 points), and `plot_fit`,
+  `plot_multi` and `plot_average` draw their curves on the same kind of grid. An even grid
+  alone put almost no points among the small islands when areas span orders of magnitude:
+  5 of 100 points below 50 km² on the Galápagos data, where most of its islands are,
+  against 32 now (#141)
+
 ### Fixed
 
 - negexpo, weibull3, weibull4, chapman and betap lost precision where `1 - exp(-x)` is
@@ -25,6 +34,12 @@ reconstructed from the commit history and the
   it doesn't hold and the estimate is the bound's, not the data's: weibull4's `z` on the
   Galápagos data, and on the seven-island sample p1's `d` and heleg's `f` at 0 among
   others. Until now they were reported as if the optimum were interior (#145)
+- `bootstrap_ci` no longer drops resamples without saying so: `BootstrappedCI.dropped`
+  counts them by reason (no model converged, a fit raised, or the averaged prediction
+  wasn't finite), and a warning reports how many. numpy's warnings from a resample's fits and
+  prediction no longer leak out, since the resample is dropped and counted. A new warning
+  marks the areas where the upper bound runs away, past ten times the largest observed
+  richness, so the interval there reads as unbounded (#141)
 
 ## [0.10.0] - 2026-11-21
 

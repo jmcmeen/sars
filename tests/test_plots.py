@@ -430,3 +430,13 @@ class TestPlotColeman:
         assert ax.collections[1].get_alpha() == 0.5
         assert ax.get_legend().get_texts()[0].get_text() == "Islands"
         plt.close("all")
+
+
+def test_curves_are_drawn_densely_among_the_small_islands(galap):
+    """The Galápagos areas run from 0.52 to 1,008 km²: an even grid of 200 would
+    draw the curve with ten points below 50 km², where most islands are."""
+    ax = plot_fit(sar_power(galap))
+    x = ax.lines[0].get_xdata()
+    assert np.sum(x < 50) >= 50
+    assert x.min() == galap["area"].min() and x.max() == galap["area"].max()
+    plt.close("all")
