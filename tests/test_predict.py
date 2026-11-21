@@ -198,10 +198,12 @@ def test_unconverged_fit_raises(galap):
         sars.sar_pred(failed, AREAS)
 
 
-def test_average_of_no_models_raises(galap):
+def test_an_average_of_no_models_cant_be_built_or_predicted_from(galap):
     empty = sars.sar_multi(galap, models=[])
-    avg = sars.AveragedSAR(multi=empty, ic="AICc", weights={})
-    np.testing.assert_array_equal(avg.predict(np.array(AREAS)), 0.0)  # what it would report
+    with pytest.raises(ValueError, match="nothing to average"):
+        sars.AveragedSAR(multi=empty, ic="AICc", weights={})
+    avg = sars.sar_average(galap, models=["power"])
+    avg.multi.fits.clear()  # emptied after it was built
     with pytest.raises(ValueError, match="nothing to average"):
         sars.sar_pred(avg, AREAS)
 

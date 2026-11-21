@@ -247,6 +247,52 @@ class TestSarAverage:
 # ---------------------------------------------------------------------------
 
 
+class TestAverageOfNoModels:
+    def test_sar_average_raises_when_no_model_converges(self, galap, monkeypatch):
+        """It used to return an average with no weights, predicting zero
+        species everywhere."""
+        from sars import _inference
+
+        failed = _inference._fit_nls("power", galap)
+        failed.converged = False
+        monkeypatch.setattr(_inference, "_fit_nls", lambda name, data, **kw: failed)
+        with pytest.raises(ValueError, match="nothing to average: no model converged"):
+            sars.sar_average(galap, models=["power", "loga"])
+
+    def test_sar_average_of_no_models_raises(self, galap):
+        with pytest.raises(ValueError, match="nothing to average"):
+            sars.sar_average(galap, models=[])
+        with pytest.raises(ValueError, match="No models given"):
+            sars.bootstrap_ci(galap, models=[], method="full", n_boot=3)
+
+    def test_weights_on_none_of_the_fitted_models_are_refused(self, galap):
+        multi = sars.sar_multi(galap, models=["power"])
+        with pytest.raises(ValueError, match="no weight to any of the fitted models"):
+            sars.AveragedSAR(multi=multi, ic="AICc", weights={"loga": 1.0})
+
+    def test_a_full_bootstrap_counts_resamples_where_no_model_converged(self, galap, monkeypatch):
+        from sars import _inference
+
+        real = _inference.sar_multi
+        calls = {"n": 0}
+
+        def multi(data, models="all"):
+            calls["n"] += 1
+            if calls["n"] % 2 == 0:
+                return _inference.MultiSARFit(
+                    fits=[], data=data, summary=_inference._build_summary([])
+                )
+            return real(data, models=models)
+
+        monkeypatch.setattr(_inference, "sar_multi", multi)
+        with pytest.warns(UserWarning, match="dropped"):
+            ci = sars.bootstrap_ci(
+                galap, models=["power"], method="full", n_boot=6, rng=np.random.default_rng(0)
+            )
+        assert ci.dropped == {"no model converged": 3}
+        assert ci.n_boot == 3
+
+
 class TestBootstrapCI:
     def test_median_resists_runaway_resamples_and_the_mean_warns(self, galap, monkeypatch):
         """bootstrap_ci calls AveragedSAR.predict once per resample."""

@@ -40,6 +40,13 @@ reconstructed from the commit history and the
   prediction no longer leak out, since the resample is dropped and counted. A new warning
   marks the areas where the upper bound runs away, past ten times the largest observed
   richness, so the interval there reads as unbounded (#141)
+- `sar_average` raises `ValueError` when no model converges, or none is given, instead of
+  returning an average that predicts zero species everywhere. `AveragedSAR` refuses to be
+  built without a model, or with weights that give none to the models fitted. With
+  `method="full"`, `bootstrap_ci` no longer puts a resample where no model converged into
+  the interval as a prediction of zero (which pulled the lower bound down): it is dropped
+  and counted, as with the default method; and it raises at once when `models` is empty
+  (#142)
 
 ## [0.10.0] - 2026-11-21
 

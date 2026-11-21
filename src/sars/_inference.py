@@ -405,13 +405,25 @@ class AveragedSAR:
     weights: dict[str, float]
 
     def __post_init__(self) -> None:
-        # akaike_weights returns all-NaN when no IC value is finite; averaging
-        # with those would silently predict zero everywhere.
+        # An average of no models, like one with undefined weights or none on
+        # the models fitted, would silently predict zero everywhere.
+        if not self.multi.fits:
+            raise ValueError(
+                "There is nothing to average: no model converged on the data "
+                "(or no model was given). Try other models, or check the data."
+            )
+        # akaike_weights returns all-NaN when no IC value is finite.
         if not all(np.isfinite(w) for w in self.weights.values()):
             raise ValueError(
                 f"Model weights are undefined: no model has a finite {self.ic}. "
                 f"For small samples AICc is infinite when n - k - 1 <= 0; try "
                 f'ic="AIC" or ic="BIC", or more data points.'
+            )
+        if not sum(self.weights.get(fit.model, 0.0) for fit in self.multi.fits) > 0:
+            raise ValueError(
+                "The weights give no weight to any of the fitted models "
+                f"({', '.join(fit.model for fit in self.multi.fits)}), so the average "
+                "would be zero everywhere."
             )
 
     def predict(self, area: float | np.ndarray) -> np.ndarray:
@@ -512,9 +524,9 @@ def sar_average(
     Raises
     ------
     ValueError
-        If ``ic`` is unsupported, if every fitted model failed the residual
-        checks asked for, or if no fitted model has a finite ``ic`` value, so
-        the weights are undefined.
+        If ``ic`` is unsupported, if no model converged (or none was given),
+        if every fitted model failed the residual checks asked for, or if no
+        fitted model has a finite ``ic`` value, so the weights are undefined.
 
     Warns
     -----
@@ -735,6 +747,8 @@ def bootstrap_ci(
     )
 
     _validate_data(data)
+    if not isinstance(models, str) and not list(models):
+        raise ValueError("No models given: there is nothing to average.")
     if rng is None:
         rng = np.random.default_rng()
 
@@ -804,8 +818,22 @@ def bootstrap_ci(
                     weights = dict(zip(multi.summary["model"], w_arr, strict=True))
                     avg = AveragedSAR(multi=multi, ic=ic, weights=weights)
                 else:
-                    avg = sar_average(boot_data, models=models, ic=ic)
-                    n_converged = len(avg.multi.fits)
+                    multi = sar_multi(boot_data, models=models)
+                    n_converged = len(multi.fits)
+                    if not multi.fits:
+                        dropped["no model converged"] += 1
+                        continue
+                    avg = AveragedSAR(
+                        multi=multi,
+                        ic=ic,
+                        weights=dict(
+                            zip(
+                                multi.summary["model"],
+                                akaike_weights(multi.summary[ic].to_numpy(dtype=float)),
+                                strict=True,
+                            )
+                        ),
+                    )
                 pred = avg.predict(area_grid)
         except Exception as exc:
             dropped[_drop_reason(exc)] += 1
