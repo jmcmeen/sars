@@ -10,6 +10,8 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-21
+
 ### Added
 
 - `sar_multi`'s summary has an `observed_shape` column, and `SARFit` an `observed_shape()`
@@ -445,7 +447,8 @@ reconstructed from the commit history and the
 - Project skeleton: package layout, CI, publishing workflow, license, and
   citation file.
 
-[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/jmcmeen/sars/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/jmcmeen/sars/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/jmcmeen/sars/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/jmcmeen/sars/compare/v0.7.20...v0.8.0
