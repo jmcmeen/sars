@@ -373,9 +373,7 @@ def _curve_shape(predict: Callable[[np.ndarray], np.ndarray], lo: float, hi: flo
         return "none"
     # Island areas are right-skewed, and a curve bends most among the small
     # ones: an even grid alone would step over that, so add a geometric one.
-    x = np.unique(
-        np.concatenate([np.linspace(lo, hi, _SHAPE_GRID), np.geomspace(lo, hi, _SHAPE_GRID)])
-    )
+    x = _area_grid(lo, hi, 2 * _SHAPE_GRID)
     with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
         y = np.asarray(predict(x), dtype=float)
     if not np.all(np.isfinite(y)):
@@ -406,6 +404,20 @@ def _curve_shape(predict: Callable[[np.ndarray], np.ndarray], lo: float, hi: flo
         else:
             last = mid - 1
     return "sigmoid" if _gap_below_hull(x[first:], y[first:]) <= tol else "none"
+
+
+def _area_grid(lo: float, hi: float, n: int) -> np.ndarray:
+    """About ``n`` areas from ``lo`` to ``hi`` for drawing or predicting a curve:
+    half evenly spaced, half geometrically. Island areas are right-skewed, often
+    over several orders of magnitude, and an even grid alone puts almost no
+    points among the small ones, where curves bend most; a geometric grid alone
+    is sparse among the large ones on arithmetic axes."""
+    if not hi > lo:
+        return np.array([lo], dtype=float)
+    half = max(n // 2, 2)
+    if lo <= 0:  # no geometric grid reaches zero
+        return np.linspace(lo, hi, 2 * half)
+    return np.unique(np.concatenate([np.linspace(lo, hi, half), np.geomspace(lo, hi, half)]))
 
 
 # ---------------------------------------------------------------------------

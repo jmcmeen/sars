@@ -276,10 +276,142 @@ class TestBootstrapCI:
         )
         assert isinstance(ci, sars.BootstrappedCI)
         assert ci.n_boot > 0
-        assert len(ci.area_grid) == 100
-        assert len(ci.mean) == 100
-        assert len(ci.lower) == 100
-        assert len(ci.upper) == 100
+        assert 90 <= len(ci.area_grid) <= 100
+        for values in (ci.mean, ci.lower, ci.upper, ci.median):
+            assert len(values) == len(ci.area_grid)
+        assert ci.dropped == {}
+
+    def test_default_grid_covers_the_small_areas(self, galap):
+        """The Galápagos areas run from 0.52 to 1,008 km²: an even grid of 100
+        puts five points below 50 km², where most islands are."""
+        ci = sars.bootstrap_ci(galap, models=["power"], n_boot=3, rng=np.random.default_rng(0))
+        area = galap["area"].to_numpy()
+        assert ci.area_grid[0] == area.min() and ci.area_grid[-1] == area.max()
+        assert np.all(np.diff(ci.area_grid) > 0)
+        assert np.sum(ci.area_grid < 50) >= 30
+
+    def test_dropped_resamples_are_counted_and_reported(self, galap, monkeypatch):
+        """Each way a resample can fail is counted, and one warning says how many
+        were dropped and why."""
+        from sars import _inference
+
+        real_fast = _inference._sar_multi_fast
+        real_predict = sars.AveragedSAR.predict
+        calls = {"fit": 0, "predict": 0}
+
+        def fast(data, warm_starts):
+            calls["fit"] += 1
+            if calls["fit"] % 5 == 1:
+                return _inference.MultiSARFit(
+                    fits=[], data=data, summary=_inference._build_summary([])
+                )
+            if calls["fit"] % 5 == 2:
+                raise RuntimeError("boom")
+            return real_fast(data, warm_starts)
+
+        def predict(self, area):
+            calls["predict"] += 1
+            pred = real_predict(self, area)
+            return pred * np.inf if calls["predict"] % 3 == 0 else pred
+
+        monkeypatch.setattr(_inference, "_sar_multi_fast", fast)
+        monkeypatch.setattr(sars.AveragedSAR, "predict", predict)
+        with pytest.warns(UserWarning, match=r"of 20 bootstrap resamples were dropped"):
+            ci = sars.bootstrap_ci(galap, models=["power"], n_boot=20, rng=np.random.default_rng(0))
+        assert ci.dropped["no model converged"] == 4
+        assert ci.dropped["RuntimeError: boom"] == 4
+        assert ci.dropped["prediction not finite"] == 4
+        assert ci.n_boot + sum(ci.dropped.values()) == 20
+
+    def test_every_resample_dropped_is_reported(self, galap, monkeypatch):
+        from sars import _inference
+
+        def fast(data, warm_starts):
+            raise RuntimeError("no luck\nwith details on a second line")
+
+        monkeypatch.setattr(_inference, "_sar_multi_fast", fast)
+        with pytest.warns(
+            UserWarning, match="5 of 5 bootstrap resamples were dropped .*no interval"
+        ):
+            ci = sars.bootstrap_ci(galap, models=["power"], n_boot=5, rng=np.random.default_rng(0))
+        assert ci.n_boot == 0 and np.isnan(ci.upper).all()
+        assert ci.dropped == {"RuntimeError: no luck": 5}  # one key per kind of failure
+
+    def test_a_list_grid_works_where_the_bound_runs_away(self, galap, monkeypatch):
+        real = sars.AveragedSAR.predict
+        calls = {"n": 0}
+
+        def predict(self, area):
+            calls["n"] += 1
+            pred = real(self, area)
+            return pred * 1e6 if calls["n"] % 5 == 0 else pred
+
+        monkeypatch.setattr(sars.AveragedSAR, "predict", predict)
+        with pytest.warns(UserWarning, match="upper bound exceeds"):
+            ci = sars.bootstrap_ci(
+                galap,
+                models=["power"],
+                n_boot=20,
+                area_grid=[1.0, 10.0, 100.0],
+                rng=np.random.default_rng(0),
+            )
+        assert isinstance(ci.area_grid, np.ndarray)
+
+    def test_bad_data_gets_the_packages_own_message(self):
+        data = pd.DataFrame({"area": [0.0, 1, 2, 3, 4], "species": [1, 2, 3, 4, 5]})
+        with pytest.raises(ValueError, match="'area' must contain only positive values"):
+            sars.bootstrap_ci(data, models=["power"], n_boot=2)
+
+    def test_nothing_to_resample_is_reported(self, galap, monkeypatch):
+        from sars import _inference
+
+        monkeypatch.setattr(
+            _inference,
+            "_sar_multi",
+            lambda data, models, checks, stacklevel: _inference.MultiSARFit(
+                fits=[], data=data, summary=_inference._build_summary([])
+            ),
+        )
+        with pytest.warns(UserWarning, match="No model converged on the original data"):
+            ci = sars.bootstrap_ci(galap, models=["power", "loga"], n_boot=3)
+        assert ci.n_models_attempted == 2 and np.isnan(ci.upper).all()
+
+    def test_a_prediction_that_overflows_is_dropped_without_numpys_warning(
+        self, galap, monkeypatch
+    ):
+        import warnings
+
+        real = sars.AveragedSAR.predict
+        calls = {"n": 0}
+
+        def predict(self, area):
+            calls["n"] += 1
+            pred = real(self, area)
+            return pred * np.exp(1000.0) if calls["n"] == 2 else pred  # overflows
+
+        monkeypatch.setattr(sars.AveragedSAR, "predict", predict)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            warnings.simplefilter("ignore", UserWarning)
+            ci = sars.bootstrap_ci(galap, models=["power"], n_boot=10, rng=np.random.default_rng(0))
+        assert ci.dropped == {"prediction not finite": 1}
+
+    def test_an_upper_bound_that_runs_away_is_reported(self, galap, monkeypatch):
+        """One resample in ten runs away at the smallest areas: more than the
+        2.5% the upper bound sits above, so the bound runs away there."""
+        real = sars.AveragedSAR.predict
+        calls = {"n": 0}
+
+        def predict(self, area):
+            calls["n"] += 1
+            pred = real(self, area)
+            area = np.asarray(area)
+            return np.where(area < 1.0, pred * 1e6, pred) if calls["n"] % 10 == 0 else pred
+
+        monkeypatch.setattr(sars.AveragedSAR, "predict", predict)
+        with pytest.warns(UserWarning, match=r"upper bound exceeds 10 times the largest observed"):
+            ci = sars.bootstrap_ci(galap, models=["power"], n_boot=60, rng=np.random.default_rng(0))
+        assert np.all(ci.upper[ci.area_grid >= 1.0] < 10 * galap["species"].max())
 
     def test_a_narrow_interval_alone_does_not_warn(self, galap):
         import warnings

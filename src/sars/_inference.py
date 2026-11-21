@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import warnings
+from collections import Counter
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -12,6 +13,7 @@ from sars._checks import CheckOptions
 from sars._models import (
     _MODEL_REGISTRY,
     SARFit,
+    _area_grid,
     _fit_nls,
     _validate_data,
 )
@@ -438,6 +440,17 @@ class AveragedSAR:
         return f"AveragedSAR({n} models, ic='{self.ic}')"
 
 
+# A bound above this many times the largest observed richness has run away.
+_RUNAWAY_FACTOR = 10.0
+
+
+def _drop_reason(exc: Exception) -> str:
+    """A short key for a resample's error: its type and the first line of its
+    message, cut short, so failures of one kind are counted together."""
+    first = str(exc).splitlines()[0] if str(exc) else ""
+    return f"{type(exc).__name__}: {first[:60]}" if first else type(exc).__name__
+
+
 _VALID_ICS = {"AIC", "AICc", "BIC"}
 
 
@@ -560,6 +573,11 @@ class BootstrappedCI:
     median : np.ndarray
         Median prediction across bootstrap replicates: the centre of the
         percentile interval, and unlike ``mean`` always inside it.
+    dropped : dict[str, int]
+        Resamples left out of the interval, counted by reason: no model
+        converged, the averaged prediction wasn't finite at some area, or the
+        error a fit raised. ``n_boot`` plus their total is the number of
+        resamples drawn.
     """
 
     area_grid: np.ndarray
@@ -571,6 +589,7 @@ class BootstrappedCI:
     convergence_counts: list[int] = field(default_factory=list, repr=False)
     n_models_attempted: int = 0
     median: np.ndarray = field(default_factory=lambda: np.empty(0), repr=False)
+    dropped: dict[str, int] = field(default_factory=dict, repr=False)
 
     def __repr__(self) -> str:
         parts = [
@@ -657,8 +676,9 @@ def bootstrap_ci(
     conf : float
         Confidence level (default 0.95).
     area_grid : np.ndarray, optional
-        Area values at which to predict. If None, uses 100 points spanning
-        the range of the data.
+        Area values at which to predict. If None, about 100 points spanning
+        the range of the data, half evenly spaced and half geometrically, so
+        the small areas are covered when the areas span orders of magnitude.
     rng : np.random.Generator, optional
         Random number generator for reproducibility.
     method : str
@@ -696,7 +716,10 @@ def bootstrap_ci(
     Warns
     -----
     UserWarning
-        If any model fails a check that was asked for.
+        If any model fails a check that was asked for; if resamples were
+        dropped (``BootstrappedCI.dropped`` says why); if the mean is pulled
+        outside the central 95% of the resample predictions; or if the upper
+        bound runs away, exceeding ten times the largest observed richness.
     """
     if method not in ("fast", "full"):
         raise ValueError(f"method must be 'fast' or 'full', got {method!r}")
@@ -711,13 +734,13 @@ def bootstrap_ci(
         alpha_homoscedasticity=alpha_homoscedasticity,
     )
 
+    _validate_data(data)
     if rng is None:
         rng = np.random.default_rng()
 
     if area_grid is None:
-        a_min = data["area"].min()
-        a_max = data["area"].max()
-        area_grid = np.linspace(a_min, a_max, 100)
+        area_grid = _area_grid(float(data["area"].min()), float(data["area"].max()), 100)
+    area_grid = np.asarray(area_grid, dtype=float)
 
     # For "fast" mode, do one full grid-search fit to get warm-start params.
     # Residual checks need that fit too, whatever the method: the models that
@@ -736,6 +759,11 @@ def bootstrap_ci(
             warm_starts = {fit.model: dict(fit.params) for fit in base_multi.fits}
     if method == "fast":
         if not warm_starts:
+            warnings.warn(
+                "No model converged on the original data, so there is nothing to "
+                "resample; the interval is NaN.",
+                stacklevel=2,
+            )
             nan_arr = np.full_like(area_grid, np.nan)
             return BootstrappedCI(
                 area_grid=area_grid,
@@ -745,6 +773,7 @@ def bootstrap_ci(
                 upper=nan_arr.copy(),
                 conf=conf,
                 n_boot=0,
+                n_models_attempted=len(ALL_MODEL_NAMES if models == "all" else list(models)),
             )
 
     if warm_starts is not None:
@@ -755,30 +784,53 @@ def bootstrap_ci(
     alpha = 1.0 - conf
     preds = []
     convergence_counts: list[int] = []
+    dropped: Counter[str] = Counter()
 
     for _ in range(n_boot):
         idx = rng.integers(0, n, size=n)
         boot_data = data.iloc[idx].reset_index(drop=True)
+        # A resample that fails or overflows is dropped and counted, so numpy's
+        # warnings about it, from the fits or the prediction, say nothing more.
         try:
-            if method == "fast":
-                assert warm_starts is not None  # set above for the fast method
-                multi = _sar_multi_fast(boot_data, warm_starts)
-                n_converged = len(multi.fits)
-                if not multi.fits:
-                    continue
-                w_arr = akaike_weights(multi.summary[ic].to_numpy(dtype=float))
-                weights = dict(zip(multi.summary["model"], w_arr, strict=True))
-                avg = AveragedSAR(multi=multi, ic=ic, weights=weights)
-            else:
-                avg = sar_average(boot_data, models=models, ic=ic)
-                n_converged = len(avg.multi.fits)
-            pred = avg.predict(area_grid)
-            if np.all(np.isfinite(pred)):
-                preds.append(pred)
-                convergence_counts.append(n_converged)
-        except Exception:
+            with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+                if method == "fast":
+                    assert warm_starts is not None  # set above for the fast method
+                    multi = _sar_multi_fast(boot_data, warm_starts)
+                    n_converged = len(multi.fits)
+                    if not multi.fits:
+                        dropped["no model converged"] += 1
+                        continue
+                    w_arr = akaike_weights(multi.summary[ic].to_numpy(dtype=float))
+                    weights = dict(zip(multi.summary["model"], w_arr, strict=True))
+                    avg = AveragedSAR(multi=multi, ic=ic, weights=weights)
+                else:
+                    avg = sar_average(boot_data, models=models, ic=ic)
+                    n_converged = len(avg.multi.fits)
+                pred = avg.predict(area_grid)
+        except Exception as exc:
+            dropped[_drop_reason(exc)] += 1
             continue
+        if np.all(np.isfinite(pred)):
+            preds.append(pred)
+            convergence_counts.append(n_converged)
+        else:
+            dropped["prediction not finite"] += 1
 
+    if dropped:
+        listed = dropped.most_common(3)
+        reasons = "; ".join(f"{count} {reason}" for reason, count in listed)
+        if len(dropped) > len(listed):
+            reasons += f"; {len(dropped) - len(listed)} other reasons"
+        outcome = (
+            f"the interval is from the other {len(preds)}"
+            if preds
+            else "there is no interval (NaN), and BootstrappedCI.dropped has every reason"
+        )
+        warnings.warn(
+            f"{sum(dropped.values())} of {n_boot} bootstrap resamples were dropped "
+            f"({reasons}); {outcome}.",
+            stacklevel=2,
+        )
     if not preds:
         nan_arr = np.full_like(area_grid, np.nan)
         return BootstrappedCI(
@@ -791,26 +843,19 @@ def bootstrap_ci(
             n_boot=0,
             convergence_counts=[],
             n_models_attempted=n_attempted,
+            dropped=dict(dropped),
         )
 
     # Warn if convergence rate across resamples was poor
     if n_attempted > 0:
-        if convergence_counts:
-            mean_converged = np.mean(convergence_counts)
-            rate = mean_converged / n_attempted
-            if rate < 0.5:
-                warnings.warn(
-                    f"Bootstrap convergence rate is low: on average "
-                    f"{mean_converged:.1f}/{n_attempted} models converged "
-                    f"per resample ({rate:.0%}). CI estimates may be "
-                    f"unreliable.",
-                    stacklevel=2,
-                )
-        else:
+        mean_converged = np.mean(convergence_counts)
+        rate = mean_converged / n_attempted
+        if rate < 0.5:
             warnings.warn(
-                f"No bootstrap resamples produced valid predictions "
-                f"({n_attempted} models attempted per resample). "
-                f"CI estimates are not available.",
+                f"Bootstrap convergence rate is low: on average "
+                f"{mean_converged:.1f}/{n_attempted} models converged "
+                f"per resample ({rate:.0%}). CI estimates may be "
+                f"unreliable.",
                 stacklevel=2,
             )
 
@@ -832,6 +877,23 @@ def bootstrap_ci(
             f"central curve, or the median as the interval's centre.",
             stacklevel=2,
         )
+    # Where more than a tail's share of resamples run away, the bound itself
+    # does: typically among areas few observations lie near, which resamples
+    # often leave out, so the curve is extrapolated there.
+    # A floor of one species keeps data of all-small counts from flagging everything.
+    ceiling = _RUNAWAY_FACTOR * max(float(np.max(data["species"])), 1.0)
+    runaway = upper > ceiling
+    if runaway.any():
+        where = area_grid[runaway]
+        warnings.warn(
+            f"The interval's upper bound exceeds {_RUNAWAY_FACTOR:g} times the largest "
+            f"observed richness at {int(runaway.sum())} of {len(area_grid)} areas "
+            f"(from {where.min():.4g} to {where.max():.4g}): there more than "
+            f"{alpha / 2:.1%} of the resamples' predictions run away, usually because "
+            f"few observations lie near those areas and resamples that leave them out "
+            f"extrapolate. Read the interval as unbounded there.",
+            stacklevel=2,
+        )
     return BootstrappedCI(
         area_grid=area_grid,
         mean=mean,
@@ -842,4 +904,5 @@ def bootstrap_ci(
         n_boot=len(preds),
         convergence_counts=convergence_counts,
         n_models_attempted=n_attempted,
+        dropped=dict(dropped),
     )

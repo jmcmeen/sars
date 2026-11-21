@@ -239,6 +239,16 @@ but maximally robust):
 ci = sars.bootstrap_ci(galap, n_boot=100, method="full")
 ```
 
+The default grid of areas is half evenly and half geometrically spaced, so the small
+islands are covered when the areas span orders of magnitude; pass `area_grid` to choose
+your own. A resample is dropped when no model converges on it, a fit raises, or its
+averaged prediction isn't finite somewhere on the grid: `ci.n_boot` counts the resamples
+that made the interval, `ci.dropped` counts the others by reason, and a warning says how
+many were dropped. Another warning marks where the upper bound runs away, past ten times
+the largest observed richness: there more than the tail's share of resamples extrapolate,
+typically near areas few observations lie close to, and the interval is best read as
+unbounded.
+
 ## Threshold models
 
 Detect breakpoints in the species-area relationship (e.g., the small island
