@@ -64,12 +64,32 @@ class SARFit:
     data: pd.DataFrame
 
     def predict(self, area: float | np.ndarray) -> np.ndarray:
-        """Predict species richness for given area value(s)."""
+        """Predict species richness for given area value(s).
+
+        Raises
+        ------
+        ValueError
+            If ``model`` isn't one of the package's models, or ``params`` lacks
+            one of its parameters (a fit built or edited by hand). So does
+            anything that predicts from the fit: ``observed_shape``,
+            ``residual_checks``, ``param_table``, the plots and ``sar_pred``.
+        """
         area = np.asarray(area, dtype=float)
-        spec = _MODEL_REGISTRY.get(self.model)
-        if spec is None:
-            raise NotImplementedError(f"predict not yet implemented for '{self.model}'")
+        spec = self._spec()
         return spec.func(area, *[self.params[k] for k in spec.param_names])
+
+    def _spec(self) -> _ModelSpec:
+        """The specification of this fit's model, checking that the fit names
+        a known model and has its parameters (it may have been built or edited
+        by hand)."""
+        spec = _model_spec(self.model)
+        missing = [k for k in spec.param_names if k not in self.params]
+        if missing:
+            raise ValueError(
+                f"This '{self.model}' fit lacks the parameter(s) {missing}: the model's "
+                f"parameters are {spec.param_names}."
+            )
+        return spec
 
     def observed_shape(self) -> str:
         """The shape the fitted curve takes over the observed range of areas.
@@ -213,8 +233,9 @@ class SARFit:
         Raises
         ------
         ValueError
-            If ``conf`` is not between 0 and 1, or if ``data`` has changed
-            since the fit (the table is computed from it).
+            If ``conf`` is not between 0 and 1, if ``data`` has changed since
+            the fit (the table is computed from it), or if ``model`` isn't one
+            of the package's models or ``params`` lacks one of its parameters.
 
         Notes
         -----
@@ -246,14 +267,12 @@ class SARFit:
         """
         if not 0.0 < conf < 1.0:
             raise ValueError(f"conf must be between 0 and 1, got {conf}")
+        spec = self._spec()
         names = list(self.params)
         estimate = np.array([self.params[k] for k in names], dtype=float)
         std_error = np.full(len(names), np.nan)
         dof = self.n - len(names)
         if self.converged and dof > 0:
-            spec = _MODEL_REGISTRY.get(self.model)
-            if spec is None:
-                raise NotImplementedError(f"param_table not yet implemented for '{self.model}'")
             area, species = self._fitted_data(spec)
             std_error, rough = _param_std_errors(spec.func, area, species, estimate)
             missing = [n for n, se in zip(names, std_error, strict=True) if np.isnan(se)]
@@ -506,6 +525,15 @@ def _to_natural_scale(values: Sequence[float] | np.ndarray, log_idx: list[int]) 
 
 
 _MODEL_REGISTRY: dict[str, _ModelSpec] = {}
+
+
+def _model_spec(name: str) -> _ModelSpec:
+    """A model's specification, or the error every function gives for a name
+    that isn't one of the package's models."""
+    spec = _MODEL_REGISTRY.get(name)
+    if spec is None:
+        raise ValueError(f"Unknown model: {name!r}. Choose from {sorted(_MODEL_REGISTRY)}.")
+    return spec
 
 
 def _register(spec: _ModelSpec) -> _ModelSpec:
