@@ -36,7 +36,7 @@ class TestSARFitPredictUnknownModel:
             converged=True,
             data=pd.DataFrame({"area": [1.0], "species": [10]}),
         )
-        with pytest.raises(NotImplementedError, match="nonexistent"):
+        with pytest.raises(ValueError, match=r"Unknown model: 'nonexistent'\. Choose from"):
             fit.predict(np.array([1.0, 2.0]))
 
 

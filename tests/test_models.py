@@ -549,12 +549,20 @@ def _hand_built_fit(model: str, data: pd.DataFrame, converged: bool = True) -> s
 
 def test_param_table_of_an_unknown_model_says_so_like_predict():
     data = pd.DataFrame({"area": _X, "species": _Y})
-    with pytest.raises(NotImplementedError, match="param_table not yet implemented for 'nope'"):
-        _hand_built_fit("nope", data).param_table()
-    # A failed fit has nothing to compute, whatever its model.
-    table = _quiet_table(_hand_built_fit("nope", data, converged=False))
+    for converged in (True, False):  # whether or not there is a table to compute
+        with pytest.raises(ValueError, match="Unknown model: 'nope'"):
+            _hand_built_fit("nope", data, converged=converged).param_table()
+    # A failed fit of a known model has nothing to compute: all NaN.
+    failed = _hand_built_fit("linear", data, converged=False)
+    table = _quiet_table(failed)
     assert list(table.index) == ["c", "m"]
     assert table[TABLE_COLUMNS[1:]].isna().all(axis=None)
+
+
+def test_a_fit_missing_a_parameter_says_which():
+    fit = _hand_built_fit("power", pd.DataFrame({"area": _X, "species": _Y}))
+    with pytest.raises(ValueError, match=r"lacks the parameter\(s\) \['z'\].*\['c', 'z'\]"):
+        fit.predict(10.0)
 
 
 @pytest.mark.parametrize("change", ["a value", "the rows"])

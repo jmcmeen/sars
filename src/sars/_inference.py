@@ -11,10 +11,10 @@ import pandas as pd
 
 from sars._checks import CheckOptions
 from sars._models import (
-    _MODEL_REGISTRY,
     SARFit,
     _area_grid,
     _fit_nls,
+    _model_spec,
     _validate_data,
 )
 
@@ -245,8 +245,7 @@ def _sar_multi(
 
     fits: list[SARFit] = []
     for name in model_names:
-        if name not in _MODEL_REGISTRY:
-            raise ValueError(f"Unknown model: {name!r}")
+        _model_spec(name)  # an unknown name raises
         try:
             fit = _fit_nls(name, data)
         except ValueError:

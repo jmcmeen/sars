@@ -32,6 +32,13 @@ reconstructed from the commit history and the
 
 ### Changed
 
+- **Behavior change:** a `SARFit` whose `model` isn't one of the package's (built or
+  edited by hand) raises `ValueError` ("Unknown model: ...", listing the models) instead
+  of `NotImplementedError` from `predict`, `param_table` and everything that predicts from
+  it (`observed_shape`, `residual_checks`, the plots, `sar_pred`): nothing is
+  unimplemented, the name is wrong. `sar_multi`'s error for an unknown name lists the
+  models too, and a fit missing one of its model's parameters says which, instead of a
+  bare `KeyError` (#163)
 - The test suite fits the models its reference tests share once per run, not once in each
   pytest-xdist worker: every worker used to refit all 20 models on both reference datasets
   at the same time. A full run on 18 cores takes about a quarter less time (#147)
