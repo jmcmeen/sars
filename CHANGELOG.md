@@ -28,6 +28,9 @@ reconstructed from the commit history and the
 
 ### Changed
 
+- The test suite fits the models its reference tests share once per run, not once in each
+  pytest-xdist worker: every worker used to refit all 20 models on both reference datasets
+  at the same time. A full run on 18 cores takes about a quarter less time (#147)
 - `threshold_ci` scores DiscOne's and DiscTwo's resamples together, as it does the other
   models': 1000 resamples of DiscTwo on 100 islands take a twentieth of a second, where
   they took about 25 seconds. Their search, in `sar_threshold` too, now treats two

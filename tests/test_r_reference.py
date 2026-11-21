@@ -69,6 +69,7 @@ import pandas as pd
 import pytest
 
 import sars
+from tests.conftest import shared
 
 REF = Path(__file__).parent / "r_reference"
 
@@ -150,10 +151,11 @@ def _data(stem: str) -> pd.DataFrame:
 
 
 @pytest.fixture(scope="session")
-def fits(galap_fits):
-    """Fits keyed by dataset, then model (galap reuses the shared session fits)."""
-    galap7 = {f.model: f for f in sars.sar_multi(_data("galap7")).fits}
-    return {"galap": galap_fits, "galap7": galap7}
+def fits(galap_fits, tmp_path_factory):
+    """Fits keyed by dataset, then model (galap reuses the shared session fits;
+    galap7's are fitted once per run, shared by every worker)."""
+    multi = shared(tmp_path_factory, "galap7_multi", lambda: sars.sar_multi(_data("galap7")))
+    return {"galap": galap_fits, "galap7": {f.model: f for f in multi.fits}}
 
 
 def _r_params(text: str) -> dict[str, float]:
