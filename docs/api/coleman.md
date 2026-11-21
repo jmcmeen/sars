@@ -7,3 +7,7 @@
 ## ColemanFit
 
 ::: sars.ColemanFit
+
+## ColemanTest
+
+::: sars.ColemanTest

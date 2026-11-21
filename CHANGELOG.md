@@ -10,6 +10,15 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- `ColemanFit.placement_test(n_sim=999, rng=None)`, a calibrated test of Coleman's random
+  placement model: it simulates random placement of the observed species totals and gives
+  a p value for the sites' distance from the expected curve (their squared deviations in
+  standard deviations, summed), with `rule_rejection_rate`, how often the one-third rule
+  rejected the simulated random placements. On communities placed at random over eight
+  sites the test rejects at about its level, where the rule rejects about half (#143)
+
 ### Changed
 
 - **Behavior change:** `bootstrap_ci`'s default `area_grid` is half evenly and half
