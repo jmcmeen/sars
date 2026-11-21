@@ -18,9 +18,22 @@ reconstructed from the commit history and the
   standard deviations, summed), with `rule_rejection_rate`, how often the one-third rule
   rejected the simulated random placements. On communities placed at random over eight
   sites the test rejects at about its level, where the rule rejects about half (#143)
+- `threshold_ci(method="F")`, intervals for ContOne's and ZslopeOne's breakpoint from an
+  inverted F test (Toms & Lesperance 2003): every candidate breakpoint whose fit the F test
+  at level `1 - conf` doesn't reject against the best fit. It needs no resampling.
+  `ThresholdCI.method` says which method made an interval. R `sars`'s F intervals compare
+  the statistic with F(conf; 1, p), p its number of regression coefficients, instead of
+  F(conf; 1, n - p), so for more than a few islands they are much wider; with R's degrees
+  of freedom and R's grid this package reproduces them to a grid step (#144)
 
 ### Changed
 
+- `threshold_ci` scores DiscOne's and DiscTwo's resamples together, as it does the other
+  models': 1000 resamples of DiscTwo on 100 islands take a twentieth of a second, where
+  they took about 25 seconds. Their search, in `sar_threshold` too, now treats two
+  candidates whose RSS differs by under 1e-10 of the total sum of squares as tied and takes
+  the first, as the grid searches do, so rounding no longer decides between fits that are
+  equal (#144)
 - **Behavior change:** `bootstrap_ci`'s default `area_grid` is half evenly and half
   geometrically spaced across the data's areas (about 100 points), and `plot_fit`,
   `plot_multi` and `plot_average` draw their curves on the same kind of grid. An even grid
