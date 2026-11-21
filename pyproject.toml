@@ -37,6 +37,7 @@ dev = [
     "pytest>=7",
     "pytest-cov",
     "pytest-xdist",
+    "filelock>=3",
     "ruff>=0.17,<0.18",
     "mypy",
     "pandas-stubs",
