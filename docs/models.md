@@ -80,9 +80,7 @@ with a multi-start grid of initial values to avoid local minima:
 The fit runs on rescaled data: area divided by its geometric mean and richness by its
 maximum, with the parameters converted back afterwards. The starting values and bounds
 are therefore near 1 whatever your units, and every model except epm1 and epm2 gives the
-same fit in km² or m², for tens of species or thousands. (weibull4's likelihood is flat
-along a ridge, so its solver can stop at a slightly different point on it: an equally good
-fit, with R² the same to about 1e-4.) epm1 and epm2 are the exception
+same fit in km² or m², for tens of species or thousands. epm1 and epm2 are the exception
 because their exponent depends on area itself, so a change of area units changes their
 fit; only their richness is rescaled.
 
