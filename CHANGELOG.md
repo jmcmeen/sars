@@ -10,6 +10,22 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Fixed
+
+- negexpo, weibull3, weibull4, chapman and betap lost precision where `1 - exp(-x)` is
+  computed for small `x`: weibull4's Galápagos fit predicted 7.99 species at the smallest
+  island where its formula gives 7.52. They now use `expm1` (betap's `1 - (1 + u)^-f` as
+  `-expm1(-f log1p(u))`). The rounding had propped up false optima on flat ridges. weibull4
+  on the Galápagos data now runs along its ridge to `z`'s upper bound of 10, with a lower
+  AICc than R's (193.44 against 193.57, a value set by the bound), and `c`'s standard error,
+  finite now, dwarfs its estimate; on the seven-island sample it now matches R's AICc. The
+  other fits move only in their last digits (#140)
+- `SARFit.param_table` gives no standard error (`NaN`, with a warning naming them) for
+  parameters that stopped on a bound of the fit's search, where the approximation behind
+  it doesn't hold and the estimate is the bound's, not the data's: weibull4's `z` on the
+  Galápagos data, and on the seven-island sample p1's `d` and heleg's `f` at 0 among
+  others. Until now they were reported as if the optimum were interior (#145)
+
 ## [0.10.0] - 2026-11-21
 
 ### Added

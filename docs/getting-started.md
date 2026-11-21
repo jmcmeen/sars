@@ -101,14 +101,17 @@ The standard errors, t values and p values are the ones R `sars` reports (a fit'
 size, where this package uses the t quantile, so the intervals here are slightly wider
 for small samples (± 2.14 standard errors for the 16 Galápagos islands).
 
-Some fits can't support a standard error. When the data don't identify a parameter (the
-curve stays the same as it changes, or as it and another parameter change together along
-a flat ridge), its standard error is `NaN` and `param_table()` warns, naming the model and
-the parameters. The same goes for a parameter the curve can't be differentiated
-reliably in, and any other whose standard error depends on it, which is where a ridge
-leads: `sar_weibull4` on the Galápagos data, where `c` falls to 1e-15 as `z` grows. A fit
-with as many parameters as islands has `NaN` too, without a warning. A large but finite standard error is the
-ordinary case of a parameter the data only weakly determine.
+Some fits can't support a standard error. When the data don't identify a parameter at all
+(the curve stays the same as it changes, or as it and another parameter change together),
+its standard error is `NaN` and `param_table()` warns, naming the model and the
+parameters. The same goes for a parameter the curve can't be differentiated reliably in,
+and any other whose standard error depends on it, and for a parameter that stopped on one
+of the bounds the fit searches within: there the optimum is the bound's, not the data's.
+`sar_weibull4` on the Galápagos data runs along a nearly flat ridge, `c` falling toward 0
+as `z` grows, until `z` reaches its upper bound of 10, so `z` has no standard error and
+`c`'s dwarfs its estimate. A fit with as many parameters as islands has `NaN` too, without
+a warning. A large but finite standard error is the ordinary case of a parameter the data
+only weakly determine.
 
 The table is computed from the fit's `data`, which is the DataFrame you passed in, so
 `param_table()` raises `ValueError` if that DataFrame has been changed since the fit.

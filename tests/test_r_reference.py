@@ -9,7 +9,11 @@ Every model on each dataset has an expected outcome:
 - ``MATCH``: the same optimum as R. AICc agrees to ``AICC_TOL``, R² to ``R2_TOL``
   and every parameter to ``PARAM_RTOL`` (flat directions in the likelihood
   leave the last digits loose).
-- ``BETTER``: a lower AICc than R's, where R stopped short of the optimum.
+- ``BETTER``: a lower AICc than R's, where R stopped short of the optimum. For
+  weibull4 on the Galápagos data R's optimum is propped up by rounding: R
+  computes ``1 - exp(-x)`` directly, which at the smallest islands (x near
+  1e-14) keeps only a digit or two. Computed with ``expm1``, the fit keeps
+  improving along its flat ridge, to z's upper bound.
 - ``SAME_FIT``: R's AICc to within ``RIDGE_TOL``, but the likelihood is flat along
   a ridge, so the parameters aren't identified and aren't compared: mmf's and
   weibull3's d growing toward a power law on the small sample, or weibull4 trading
@@ -106,8 +110,7 @@ EXPECTED = {
             ],
             MATCH,
         ),
-        "weibull4": SAME_FIT,
-        "betap": BETTER,
+        **dict.fromkeys(["weibull4", "betap"], BETTER),
     },
     "galap7": {
         **dict.fromkeys(
@@ -276,12 +279,13 @@ def test_tables_not_compared_are_matching_fits():
 
 def test_r_reports_a_standard_error_on_the_ridge_where_this_package_gives_nan(fits):
     """On weibull4's flat ridge R's table has a standard error for z a ten
-    millionth of the estimate, which the fit can't support (R's own z differs
-    from this package's in the third digit). This package reports NaN."""
+    millionth of the estimate, which the fit can't support: R's curve loses
+    precision there (see ``EXPECTED``). Computed exactly, the fit runs along
+    the ridge to z's upper bound, where this package gives no standard error."""
     ref = _read("param_table_galap.csv")
     r = ref[ref["model"] == "weibull4"].set_index("param").loc["z"]
     assert r["std_error"] < 1e-5 * r["estimate"]
-    with pytest.warns(UserWarning, match="weibull4"):
+    with pytest.warns(UserWarning, match="'weibull4': z stopped on a bound"):
         table = fits["galap"]["weibull4"].param_table()
     assert np.isnan(table.loc["z", "std_error"])
 
