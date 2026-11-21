@@ -20,7 +20,7 @@ A conceptual mirror of the R [`sars`](https://cran.r-project.org/package=sars) p
 - **Residual checks** -- normality, homoscedasticity and negative-prediction checks on each fit, optionally leaving out the models that fail before averaging
 - **Bootstrap confidence intervals** -- percentile-based CIs for averaged predictions
 - **Threshold models** -- piecewise regression for detecting breakpoints (small island effect), with bootstrap confidence intervals for the breakpoints
-- **Random placement** -- Coleman's null model for richness from a species-by-site abundance table
+- **Random placement** -- Coleman's null model for richness from a species-by-site abundance table, with a calibrated simulation test
 - **I/O adapters** -- load from CSV, GeoDataFrame, or pyiNaturalist summaries
 - **General dynamic model** -- richness as a function of island area and a hump in island age (Whittaker et al. 2008), with nested-model comparison
 - **Bundled datasets** -- four published island datasets (Galápagos, two from the Aegean, Kapingamarangi Atoll); see [Datasets](datasets.md)

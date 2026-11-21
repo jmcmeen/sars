@@ -26,7 +26,7 @@ pip install sars
 - **Residual checks** — normality, homoscedasticity and negative-prediction checks on each fit, optionally leaving out the models that fail before averaging
 - **Bootstrap confidence intervals** — percentile-based CIs for averaged predictions
 - **Threshold models** — piecewise regression for detecting breakpoints (small island effect), with bootstrap confidence intervals for the breakpoints
-- **Random placement** — Coleman's null model for richness from a species-by-site abundance table
+- **Random placement** — Coleman's null model for richness from a species-by-site abundance table, with a calibrated simulation test
 - **General dynamic model** — richness as a function of island area and a hump in island age (Whittaker et al. 2008), with nested-model comparison
 - **Bundled datasets** — four published island datasets: `load_galap`, `load_aegean`, `load_aegean2`, `load_niering`
 - **R-validated** — fits, AICc weights, model averaging, threshold models, random placement and the general dynamic model are checked against R `sars` reference output, with every known difference listed in `tests/test_r_reference.py`

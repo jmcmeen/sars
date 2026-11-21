@@ -361,8 +361,24 @@ data: rerun the simulation above with other seeds to see it happen. Look at the 
 which sites fall outside (the small ones, the large ones, all on one side) before reading
 much into `rejected`.
 
+For a test with a known error rate, `fit.placement_test()` simulates random placement
+itself: it scatters each species' individuals over the sites in proportion to their areas
+(999 times by default), and compares the data's distance from the expected curve (the
+squared deviations of the sites, in standard deviations, summed) with the simulations':
+
+```python
+test = fit.placement_test(rng=np.random.default_rng(1))
+print(test)
+# ColemanTest(statistic=2.21, p_value=0.973, n_sim=999, rule_rejection_rate=50%)
+```
+
+A small `p_value` is evidence against random placement. `rule_rejection_rate` is how often
+the one-third rule rejected the simulated communities, all of them placed at random: for
+these species totals and site areas the rule would reject random placement half the time.
+
 The model needs counts of individuals. Presence-absence data won't do, and species absent
 from every site are ignored.
+
 ## The general dynamic model
 
 On oceanic islands richness depends on island age as well as area: it rises while a

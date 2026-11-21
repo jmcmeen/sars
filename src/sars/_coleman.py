@@ -14,7 +14,10 @@ Nothing is fitted: the model has no free parameters. It is a null model, and
 the question is whether the observed richness of the sites stays close to the
 expected curve. The usual rule (Coleman et al. 1982; Wang et al. 2010,
 Diversity and Distributions 16, 862-873) rejects random placement when more
-than a third of the sites lie more than one standard deviation from it.
+than a third of the sites lie more than one standard deviation from it. That
+rule is rough: with few sites it often rejects data placed at random.
+``ColemanFit.placement_test`` gives a calibrated alternative, a p value from
+simulating random placement of the observed species totals.
 """
 
 from __future__ import annotations
@@ -122,6 +125,54 @@ def _expected_and_sd(alpha: np.ndarray, abundance: np.ndarray) -> tuple[np.ndarr
     # (and so the variance) negative.
     variance = (absent * (1.0 - absent)).sum(axis=1)
     return expected, np.sqrt(variance)
+
+
+def _distance(richness: np.ndarray, expected: np.ndarray, sd: np.ndarray) -> np.ndarray:
+    """Sum over sites (the last axis) of the squared distance of richness from
+    the expected value, in standard deviations. A site whose richness is fixed
+    under random placement (sd 0: it holds all the area, or none of any
+    species) contributes nothing if it matches and makes the distance infinite
+    if it doesn't, since random placement can't produce it."""
+    gap = richness - expected
+    with np.errstate(divide="ignore", invalid="ignore"):
+        z2 = np.where(sd > 0, (gap / np.where(sd > 0, sd, 1.0)) ** 2, 0.0)
+    fixed_off = (sd == 0) & (np.abs(gap) > 1e-9)
+    z2 = np.where(fixed_off, np.inf, z2)
+    return z2.sum(axis=-1)
+
+
+@dataclass(frozen=True)
+class ColemanTest:
+    """A simulation test of Coleman's random placement model
+    (``ColemanFit.placement_test``).
+
+    Attributes
+    ----------
+    statistic : float
+        Sum over sites of the squared distance of observed from expected
+        richness, in standard deviations.
+    p_value : float
+        Share of the simulated random placements, the data counted among them,
+        whose statistic is at least the data's. A small value is evidence
+        against random placement.
+    n_sim : int
+        Number of simulated placements.
+    rule_rejection_rate : float
+        Share of the simulated random placements that the one-third rule
+        rejects: how often that rule would reject random placement for these
+        species totals and site areas when it holds.
+    """
+
+    statistic: float
+    p_value: float
+    n_sim: int
+    rule_rejection_rate: float
+
+    def __repr__(self) -> str:
+        return (
+            f"ColemanTest(statistic={self.statistic:.3g}, p_value={self.p_value:.3g}, "
+            f"n_sim={self.n_sim}, rule_rejection_rate={self.rule_rejection_rate:.0%})"
+        )
 
 
 @dataclass(eq=False)
@@ -239,6 +290,72 @@ class ColemanFit:
             If an area is negative, not finite, or larger than ``total_area``.
         """
         return self._curve(area)[1]
+
+    def placement_test(
+        self, n_sim: int = 999, rng: np.random.Generator | None = None
+    ) -> ColemanTest:
+        """A calibrated test of random placement, by simulation.
+
+        The one-third rule (``rejected``) has no stated error rate, and with
+        few sites it often rejects data placed at random. This test simulates
+        random placement itself: each species' individuals, as many as were
+        counted, are scattered over the sites in proportion to their areas,
+        ``n_sim`` times. The statistic is the sum over sites of the squared
+        distance of observed from expected richness, in standard deviations,
+        and the p value is the share of simulations at least as far from the
+        curve as the data, counting the data as one of them.
+
+        Parameters
+        ----------
+        n_sim : int, default 999
+            Number of simulated placements. The smallest p value possible is
+            ``1 / (n_sim + 1)``.
+        rng : numpy.random.Generator or int, optional
+            Random number generator, or a seed for one, for a reproducible
+            result.
+
+        Returns
+        -------
+        ColemanTest
+            The statistic, its p value, and how often the one-third rule
+            rejected the simulated random placements: that rule's false
+            rejection rate for these species totals and site areas.
+
+        Raises
+        ------
+        ValueError
+            If ``n_sim`` is not a positive whole number.
+        """
+        if isinstance(n_sim, bool) or not isinstance(n_sim, (int, np.integer)) or n_sim < 1:
+            raise ValueError(f"n_sim must be a positive whole number, got {n_sim!r}")
+        if not isinstance(rng, np.random.Generator):
+            rng = np.random.default_rng(rng)  # None, or a seed
+        alpha = self.sites["relative_area"].to_numpy(dtype=float)
+        alpha = alpha / alpha.sum()  # the sites' shares sum to 1 exactly
+        expected = self.sites["expected"].to_numpy(dtype=float)
+        sd = self.sites["sd"].to_numpy(dtype=float)
+        observed = self.sites["observed"].to_numpy(dtype=float)
+
+        # Richness of every site in every simulated placement: each species
+        # is present at a site that receives one of its individuals or more.
+        richness = np.zeros((int(n_sim), len(alpha)))
+        for total in self.abundance.to_numpy(dtype=np.int64):
+            richness += rng.multinomial(total, alpha, size=int(n_sim)) > 0
+
+        statistic = _distance(observed, expected, sd)
+        simulated = _distance(richness, expected, sd)
+        # A simulation that ties with the data counts as at least as far off;
+        # the slack keeps rounding from deciding a tie.
+        slack = 1e-9 * max(1.0, abs(float(statistic))) if np.isfinite(statistic) else 0.0
+        p_value = (1 + int(np.sum(simulated >= statistic - slack))) / (int(n_sim) + 1)
+        outside = np.abs(richness - expected) > sd
+        rule_rate = float(np.mean(outside.mean(axis=1) > REJECTION_FRACTION))
+        return ColemanTest(
+            statistic=float(statistic),
+            p_value=p_value,
+            n_sim=int(n_sim),
+            rule_rejection_rate=rule_rate,
+        )
 
     def __repr__(self) -> str:
         outside = int((~self.sites["within_sd"]).sum())
