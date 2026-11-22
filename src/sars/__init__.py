@@ -13,7 +13,10 @@ except PackageNotFoundError:
 
 from sars._checks import ResidualChecks
 from sars._coleman import ColemanFit, ColemanTest, coleman
+from sars._crossval import LOOCV, loo_cv
+from sars._effort import standardised_richness
 from sars._gdm import GDMFit, GDMMultiFit, sar_gdm
+from sars._habitat import CountrysideFit, HabitatFit, sar_countryside, sar_habitat
 from sars._inference import (
     AveragedSAR,
     BootstrappedCI,
@@ -31,14 +34,19 @@ from sars._io import (
     from_pyinaturalist,
     load_aegean,
     load_aegean2,
+    load_countryside,
     load_gala,
     load_galap,
+    load_habitat,
     load_niering,
     load_schrader,
     load_xu,
+    load_xu_abundance,
 )
 from sars._linpow import LinPowFit, lin_pow
+from sars._loss import HabitatLoss, habitat_loss
 from sars._many import ManySARFit, sar_many
+from sars._mixed import MixedLinPowFit, lin_pow_mixed
 from sars._models import (
     SARFit,
     sar_asymp,
@@ -72,6 +80,7 @@ from sars._plots import (
     plot_threshold,
 )
 from sars._predict import sar_pred
+from sars._serialize import from_json, load, save, to_json
 from sars._threshold import ThresholdCI, ThresholdFit, sar_threshold, threshold_ci
 
 __all__ = [
@@ -81,9 +90,14 @@ __all__ = [
     "LinPowFit",
     "ColemanFit",
     "ColemanTest",
+    "CountrysideFit",
     "GDMFit",
     "GDMMultiFit",
+    "HabitatFit",
+    "HabitatLoss",
+    "LOOCV",
     "ManySARFit",
+    "MixedLinPowFit",
     "MultiSARFit",
     "ResidualChecks",
     "SARFit",
@@ -96,22 +110,34 @@ __all__ = [
     "from_csv",
     "from_df",
     "from_geodataframe",
+    "from_json",
     "from_pyinaturalist",
+    "habitat_loss",
     "lin_pow",
+    "lin_pow_mixed",
+    "load",
     "load_aegean",
     "load_aegean2",
+    "load_countryside",
     "load_gala",
     "load_galap",
+    "load_habitat",
     "load_niering",
     "load_schrader",
     "load_xu",
+    "load_xu_abundance",
+    "loo_cv",
     "sar_average",
+    "sar_countryside",
     "sar_gdm",
+    "sar_habitat",
     "sar_many",
     "sar_multi",
     "sar_pred",
     "sar_threshold",
+    "save",
     "threshold_ci",
+    "to_json",
     "plot_average",
     "plot_coleman",
     "plot_fit",
@@ -139,4 +165,5 @@ __all__ = [
     "sar_ratio",
     "sar_weibull3",
     "sar_weibull4",
+    "standardised_richness",
 ]

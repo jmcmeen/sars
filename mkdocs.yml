@@ -68,14 +68,19 @@ nav:
   - Models: models.md
   - Datasets: datasets.md
   - Validation: validation.md
+  - Command Line: cli.md
+  - HTTP Server: server.md
   - Examples:
       - Galápagos plants: examples/galapagos.ipynb
       - Appalachian amphibians: examples/appalachian.ipynb
       - Areas from polygons: examples/geodataframe.ipynb
+      - Galápagos islands from polygons: examples/galapagos_polygons.ipynb
   - API Reference:
       - Models: api/models.md
       - Multi-model Inference: api/inference.md
       - Threshold Models: api/threshold.md
+      - Habitat Models: api/habitat.md
+      - Sampling Effort: api/effort.md
       - Random Placement: api/coleman.md
       - General Dynamic Model: api/gdm.md
       - Plotting: api/plots.md

@@ -10,6 +10,75 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- `sars.save()` and `sars.load()`, and `sars.to_json()` and `sars.from_json()`, save any
+  result (`SARFit`, `MultiSARFit`, `AveragedSAR`, `BootstrappedCI`, `LinPowFit`,
+  `ThresholdFit`, `ThresholdCI`, `ManySARFit`) as standard JSON and load it back, with
+  its data, parameters and settings, the `sars` version that wrote it and a format
+  version. Non-finite numbers are kept, and loading rebuilds only `sars`'s own result
+  types (#215)
+- A `sars` command (also `python -m sars`), with no extra dependencies: `sars fit`,
+  `average`, `threshold`, `predict` and `datasets`. It reads a CSV file, standard input
+  or a bundled dataset, saves results with `--save`, and with `--json` prints a JSON
+  envelope (`sars`, `command`, `ok`, `result` or `error`, `warnings`) (#217)
+- The Lilliefors normality test in the residual checks: `normality="lillie"` (or
+  `"lilliefors"`) in `SARFit.residual_checks`, `sar_multi`, `sar_average`,
+  `bootstrap_ci` and the CLI. Its statistic and its p value below 0.1 match R's
+  `nortest::lillie.test`; above 0.1 the p value comes from a simulated null (and is at
+  least 0.1), within about 0.01 of the true value, where R's polynomial fit is off by up
+  to 0.03 (#152)
+- `sars.loo_cv()`: leave-one-island-out cross-validation. It ranks the models by the
+  error of their predictions for left-out islands, beside their AICc (or AIC, BIC) rank, with the
+  largest error and its island, the AICc average refitted in each fold, and every
+  prediction. Each fold runs the full search (warm starts are optional, and optimistic
+  for flexible models), and folds can run in parallel (`n_jobs`). The
+  CLI runs it as `sars cv`, and its result saves as JSON (#222)
+- The CLI's JSON tables keep whole numbers as integers (#222)
+- `sars.habitat_loss()`: species expected to be lost when an area loses habitat (given as
+  the area remaining or the fraction lost), from the model-averaged curve, with bootstrap
+  intervals built from each resample's own loss. It warns when an area is extrapolated
+  and when averaged curves fall with area. The docs explain what the estimate means and
+  its known upward bias. The CLI runs it as `sars loss` (#224)
+- `bootstrap_ci(keep_samples=True)` keeps every resample's prediction in
+  `BootstrappedCI.samples` (#224)
+- `sars.lin_pow_mixed()`: the log-log power model fitted to several archipelagos at once,
+  with random intercepts and slopes, by REML. It gives the mean z, its spread across
+  archipelagos, and each archipelago's partially pooled c and z beside its own fit. It
+  matches R's `lme4::lmer` and needs no new dependency (#234)
+- `sars.standardised_richness()`: richness standardised for sampling effort, rarefied or
+  extrapolated to the same sample coverage or number of individuals from a species-by-site
+  table, matching R's iNEXT, ready to fit. `load_xu_abundance()` has the butterfly counts
+  behind `load_xu` (#232)
+- `sars.sar_habitat()`, R sars's habitat models (choros, jigsaw, Kallimanis and the
+  classical curve) in power, logarithmic and log-log forms, and `sars.sar_countryside()`,
+  the countryside model for multi-habitat landscapes, with habitat affinities and
+  predictions for any mix of habitats. Both match R sars 2.1.1. New datasets for them,
+  `load_habitat()` and `load_countryside()` (#230)
+- `sars.to_json()` saves pandas Series (#230)
+- An optional HTTP server, `sars serve` (the `server` extra: FastAPI and uvicorn). Each
+  endpoint (`/v1/fit`, `average`, `threshold`, `cv`, `loss`, `predict`, `datasets`)
+  runs the matching `sars` command in a subprocess and returns its JSON envelope. It
+  listens on localhost by default, takes an optional bearer token, and stops commands
+  after a time limit. Its OpenAPI document is in the docs (#228)
+- A Galápagos example for `from_geodataframe`: 28 island outlines from OpenStreetMap,
+  joined by name to `load_gala()`'s plant counts, fitted over 0.02 to 4,700 km² and
+  compared with the published areas (#153)
+
+### Changed
+
+- Asking for R sars's `normality="kolmo"` now raises an error that explains why it isn't
+  offered: it compares the residuals with a standard normal, so its answer depends on the
+  units of richness (#152)
+
+### Fixed
+
+- `sars cv --label-col` now labels the islands by that column; before, only an
+  auto-detected name column was used (#228)
+- `n_jobs` from a script the worker processes can't open, one read from standard input
+  (`python - < script.py`) or a pipe (`python <(...)`), runs in the calling process with a
+  warning, instead of failing with an obscure error from the worker pool (#225)
+
 ## [0.11.3] - 2026-11-22
 
 ### Added

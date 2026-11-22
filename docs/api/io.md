@@ -18,6 +18,16 @@ See [Datasets](../datasets.md) for a summary table and an example.
 
 ::: sars.load_xu
 
+## Saving and loading results
+
+::: sars.save
+
+::: sars.load
+
+::: sars.to_json
+
+::: sars.from_json
+
 ## from_df
 
 ::: sars.from_df

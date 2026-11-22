@@ -14,6 +14,14 @@ A conceptual mirror of the R [`sars`](https://cran.r-project.org/package=sars) p
 - **20 SAR models** -- power, logarithmic, asymptotic, sigmoid, and more
 - **Log-log power model** -- the classic straight-line fit of log S on log A, with standard errors and p values
 - **Multi-model inference** -- fit all models at once, ranked by AICc with Akaike weights
+- **Habitat loss** -- species expected to be lost with habitat, with model-averaged bootstrap intervals
+- **Cross-validation** -- rank models by how well they predict a left-out island, beside AICc
+- **Save and reload results** -- any fit or result as standard JSON, data and settings included
+- **Many archipelagos at once** -- a mixed-effects log-log model pooling z across archipelagos (matches lme4)
+- **Sampling effort** -- richness standardised to equal sample coverage or size (as iNEXT) before fitting
+- **Habitat models** -- the choros, jigsaw and Kallimanis models of area and habitat diversity, and the countryside model for multi-habitat landscapes
+- **[HTTP server](server.md)** -- the command line as a small JSON API (`sars serve`, optional extra)
+- **[Command line](cli.md)** -- `sars fit|average|threshold|cv|loss|predict|datasets`, with JSON output for scripts
 - **Many datasets at once** -- the same models fitted to many datasets, summarised in one table
 - **Parameter uncertainty** -- standard errors, t tests and confidence intervals for each fitted parameter
 - **Model averaging** -- weighted-average predictions across candidate models
@@ -66,6 +74,10 @@ shows what a weak fit and a wide bootstrap interval look like.
 [Areas from polygons](examples/geodataframe.ipynb) reads county outlines with geopandas,
 reprojects them to an equal-area coordinate system, and builds the dataset with
 `from_geodataframe`, checking the computed areas against published ones.
+
+[Galápagos islands from polygons](examples/galapagos_polygons.ipynb) joins 28 island
+outlines from OpenStreetMap to Johnson and Raven's plant counts by name, and fits a curve
+to areas computed from the polygons over 0.02 to 4,700 km².
 
 ## Support and contributing
 

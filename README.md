@@ -22,11 +22,22 @@ polygons, needs the `geo` extra (geopandas and shapely):
 pip install "sars[geo]"
 ```
 
+`sars serve`, an HTTP API over the command line, needs the `server` extra (FastAPI and
+uvicorn): `pip install "sars[server]"`.
+
 ## Features
 
 - **20 SAR models** — power, logarithmic, asymptotic, sigmoid, and more
 - **Log-log power model** — the classic straight-line fit of log S on log A, with standard errors and p values
 - **Multi-model inference** — fit all models at once, ranked by AICc with Akaike weights
+- **Habitat loss** — species expected to be lost with habitat, with model-averaged bootstrap intervals
+- **Cross-validation** — rank models by how well they predict a left-out island, beside AICc
+- **Save and reload results** — any fit or result as standard JSON, data and settings included
+- **Many archipelagos at once** — a mixed-effects log-log model pooling z across archipelagos (matches lme4)
+- **Sampling effort** — richness standardised to equal sample coverage or size (as iNEXT) before fitting
+- **Habitat models** — the choros, jigsaw and Kallimanis models of area and habitat diversity, and the countryside model for multi-habitat landscapes
+- **HTTP server** — the command line as a small JSON API (`sars serve`, optional extra)
+- **Command line** — `sars fit|average|threshold|cv|loss|predict|datasets`, with JSON output for scripts
 - **Many datasets at once** — the same models fitted to many datasets, summarised in one table, in parallel if you like
 - **Parameter uncertainty** — standard errors, t tests and confidence intervals for each fitted parameter
 - **Model averaging** — weighted-average predictions across candidate models
@@ -70,7 +81,9 @@ A [second example](https://jmcmeen.github.io/sars/examples/appalachian/) takes p
 amphibian counts from 26 southern Appalachian sites, read from a CSV, through the same
 steps, and compares the classical log-log power fit with the non-linear one. A
 [third](https://jmcmeen.github.io/sars/examples/geodataframe/) computes site areas from
-polygons with `from_geodataframe`.
+polygons with `from_geodataframe`, and a
+[fourth](https://jmcmeen.github.io/sars/examples/galapagos_polygons/) does so for 28
+Galápagos islands from OpenStreetMap, over 0.02 to 4,700 km².
 
 ## Available models
 

@@ -238,6 +238,90 @@ def load_xu() -> pd.DataFrame:
     return _load_dataset("xu")
 
 
+def load_xu_abundance() -> pd.DataFrame:
+    """Load the butterfly counts behind `load_xu`, species by island.
+
+    The number of individuals of each of 68 butterfly species counted on each
+    of the 42 islands of the Zhoushan Archipelago, China, by Xu et al. (2017):
+    one row per species (the index, ``species``), one column per island, in
+    `load_xu`'s order. Counts came from transects, and the number of
+    individuals sampled grows with island area (from 2 to 1,102), so the
+    observed richness reflects effort as well as area; `standardised_richness`
+    takes this table. From the compilation of Gooriah et al. (2021), released
+    under CC0.
+
+    Returns
+    -------
+    pd.DataFrame
+        Species-by-island counts.
+
+    References
+    ----------
+    Xu A, Han X, Zhang X, Millien V, Wang Y (2017). Nestedness of butterfly
+    assemblages in the Zhoushan Archipelago, China: area effects, life-history
+    traits and conservation implications. Biodiversity and Conservation 26,
+    1375-1392. Gooriah L, Blowes SA, Sagouis A, Schrader J, Karger DN, Kreft H,
+    Chase JM (2021). Synthesis reveals that island species-area relationships
+    emerge from processes beyond passive sampling. Global Ecology and
+    Biogeography 30, 2119-2131.
+    """
+    ref = importlib.resources.files("sars.data").joinpath("xu_abundance.csv")
+    with importlib.resources.as_file(ref) as path:
+        return pd.read_csv(path, index_col="species")
+
+
+def load_habitat() -> pd.DataFrame:
+    """Load the Skyros land snail dataset, with habitat counts, for `sar_habitat`.
+
+    Twelve islands of the Skyros Archipelago in the Aegean Sea, Greece: each
+    island's area (km²), its number of habitats, and the number of land snail
+    species recorded on it. The values are those shipped in R sars, in its
+    row order.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns 'area', 'habitats' and 'species'.
+
+    References
+    ----------
+    Triantis KA, Mylonas M, Weiser MD, Lika K, Vardinoyannis K (2005).
+    Species richness, environmental heterogeneity and area: a case study based
+    on land snails in Skyros archipelago (Aegean Sea, Greece). Journal of
+    Biogeography 32, 1727-1735.
+    """
+    df = _load_dataset("habitat")
+    return df.rename(columns={"Area": "area", "Het": "habitats", "Species": "species"})
+
+
+def load_countryside() -> pd.DataFrame:
+    """Load the Portuguese multi-habitat plant dataset, for `sar_countryside`.
+
+    425 nested sampling sites in five 26.2-ha habitat mosaics in Portugal:
+    each site's area (m²) of agricultural land (``Area_AG``), shrubland
+    (``Area_SH``) and oak forest (``Area_QF``), and the number of understory
+    plant species in each habitat-affinity group: species of agricultural
+    land, shrubland or oak forest (``Spcs_AG``, ``Spcs_SH``, ``Spcs_QF``),
+    and ubiquitous species (``Spcs_UB``). The plots are 1 m², nested in
+    squares of 64 m², 4,096 m² and the whole mosaic, so the rows aren't
+    independent. The values are those shipped in R sars, in its row order,
+    with its row names in ``site``.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns 'site', three of habitat areas and four of
+        richness.
+
+    References
+    ----------
+    Proença V, Pereira HM (2013). Species-area models to assess biodiversity
+    change in multi-habitat landscapes: the importance of species habitat
+    affinity. Basic and Applied Ecology 14, 102-114.
+    """
+    return _load_dataset("countryside")
+
+
 def from_df(
     df: pd.DataFrame,
     area_col: str = "area",

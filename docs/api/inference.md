@@ -24,6 +24,22 @@
 
 ::: sars.ManySARFit
 
+## loo_cv
+
+::: sars.loo_cv
+
+## LOOCV
+
+::: sars.LOOCV
+
+## habitat_loss
+
+::: sars.habitat_loss
+
+## HabitatLoss
+
+::: sars.HabitatLoss
+
 ## sar_pred
 
 ::: sars.sar_pred

@@ -326,7 +326,7 @@ def sar_multi(
         Model names to fit. Use "all" for all 20 models.
     normality : str or None
         Leave out models whose residuals fail this normality test:
-        ``"shapiro"`` or ``"kolmogorov"`` (see ``SARFit.residual_checks``).
+        ``"shapiro"``, ``"lillie"`` or ``"kolmogorov"`` (see ``SARFit.residual_checks``).
         None (default) for no test.
     homoscedasticity : str or None
         Leave out models whose squared residuals are correlated with the
@@ -539,7 +539,7 @@ def sar_average(
         ``"BIC"`` can be used instead.
     normality, homoscedasticity : str or None
         Residual checks that leave failing models out, as in ``sar_multi``:
-        a normality test (``"shapiro"`` or ``"kolmogorov"``) and a
+        a normality test (``"shapiro"``, ``"lillie"`` or ``"kolmogorov"``) and a
         homoscedasticity test (``"cor.fitted"`` or ``"cor.area"``). None
         (default) for no test.
     cor_method : str
@@ -627,6 +627,10 @@ class BootstrappedCI:
         converged, the averaged prediction wasn't finite at some area, or the
         error a fit raised. ``n_boot`` plus their total is the number of
         resamples drawn.
+    samples : np.ndarray
+        Each kept resample's averaged prediction at each area, shape
+        ``(n_boot, len(area_grid))``, when asked for with ``keep_samples``;
+        otherwise empty.
     """
 
     area_grid: np.ndarray
@@ -639,6 +643,7 @@ class BootstrappedCI:
     n_models_attempted: int = 0
     median: np.ndarray = field(default_factory=lambda: np.empty(0), repr=False)
     dropped: dict[str, int] = field(default_factory=dict, repr=False)
+    samples: np.ndarray = field(default_factory=lambda: np.empty((0, 0)), repr=False)
 
     def __repr__(self) -> str:
         parts = [
@@ -752,6 +757,7 @@ def bootstrap_ci(
     alpha_normality: float = 0.05,
     alpha_homoscedasticity: float = 0.05,
     n_jobs: int = 1,
+    keep_samples: bool = False,
 ) -> BootstrappedCI:
     """Compute bootstrap confidence intervals for model-averaged predictions.
 
@@ -794,7 +800,7 @@ def bootstrap_ci(
         or ``"BIC"``.
     normality, homoscedasticity : str or None
         Residual checks that leave failing models out, as in ``sar_multi``:
-        a normality test (``"shapiro"`` or ``"kolmogorov"``) and a
+        a normality test (``"shapiro"``, ``"lillie"`` or ``"kolmogorov"``) and a
         homoscedasticity test (``"cor.fitted"`` or ``"cor.area"``). None
         (default) for no test.
     cor_method : str
@@ -810,6 +816,10 @@ def bootstrap_ci(
         from ``rng`` here, in order, whatever runs them, and warnings come back
         here. In a script, run the call under ``if __name__ == "__main__":``:
         each worker process imports the script.
+    keep_samples : bool
+        Keep every resample's prediction in ``samples``, for intervals of
+        quantities derived from the curve (``habitat_loss`` uses it). False by
+        default: it holds ``n_boot`` predictions at every area.
 
     Returns
     -------
@@ -1026,4 +1036,5 @@ def bootstrap_ci(
         convergence_counts=convergence_counts,
         n_models_attempted=n_attempted,
         dropped=dict(dropped),
+        samples=preds_arr if keep_samples else np.empty((0, 0)),
     )

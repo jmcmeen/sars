@@ -142,14 +142,23 @@ class SARFit:
         ----------
         normality : str or None
             Normality test for the residuals: ``"shapiro"`` (Shapiro-Wilk, the
-            default), ``"kolmogorov"`` (Kolmogorov-Smirnov against a normal
-            distribution with the residuals' mean and standard deviation), or
-            None for no test. Estimating the mean and standard deviation from
-            the residuals makes the Kolmogorov-Smirnov p value too large, so
-            that test rejects less often than its alpha suggests. R sars's
-            ``"kolmo"`` is a different test: it compares the residuals with a
-            standard normal, so its result depends on the units of richness.
-            R's ``"lillie"`` (Lilliefors) is not available.
+            default), ``"lillie"`` (Lilliefors, also ``"lilliefors"``),
+            ``"kolmogorov"`` (Kolmogorov-Smirnov against a normal distribution
+            with the residuals' mean and standard deviation), or None for no
+            test. Estimating the mean and standard deviation from the
+            residuals makes the Kolmogorov-Smirnov p value too large, so that
+            test rejects less often than its alpha suggests; the Lilliefors
+            test is the same statistic with a p value that allows for it.
+            Its p value below 0.1 is Dallal and Wilkinson's (1986)
+            approximation, as in R's ``nortest::lillie.test``; above 0.1 it is
+            the share of 20,000 simulated samples of the same size (normal,
+            with a fixed seed) whose statistic is at least as large, and at
+            least 0.1, within about 0.01 of the true value (samples of 1,000
+            stand in for larger n, with D rescaled). It needs at least five
+            residuals; with fewer it isn't run, and warns.
+            R sars's ``"kolmo"`` compares the residuals with a standard
+            normal, so its result depends on the units of richness; it isn't
+            offered.
         homoscedasticity : str or None
             Homoscedasticity test: the correlation of the squared residuals
             with the fitted values (``"cor.fitted"``, the default) or with

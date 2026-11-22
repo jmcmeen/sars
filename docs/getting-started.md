@@ -14,6 +14,9 @@ sars needs Python 3.11 or later.
 # GeoDataFrame support (geopandas + shapely)
 pip install "sars[geo]"
 
+# The HTTP server, `sars serve` (FastAPI + uvicorn)
+pip install "sars[server]"
+
 # Everything
 pip install "sars[all]"
 ```
@@ -75,6 +78,42 @@ and the line on log-log axes.
 `load_galap()` is one of seven bundled datasets; `load_gala()`, `load_aegean()`,
 `load_aegean2()`, `load_niering()`, `load_schrader()` and `load_xu()` load the
 others. [Datasets](datasets.md) lists what each holds and where it was published.
+
+### Many archipelagos at once
+
+Fitting each archipelago on its own gives noisy slopes for the small ones; pooling them
+into one curve ignores that they differ. `lin_pow_mixed` fits the log-log model to all of
+them at once as a mixed model. Each archipelago's intercept and slope deviate from
+shared means, and the spread of those deviations is estimated too. It matches R's
+`lme4::lmer(log(S) ~ log(A) + (log(A) | archipelago))`:
+
+```python
+fit = sars.lin_pow_mixed({
+    "gala": sars.load_gala(), "aegean": sars.load_aegean(), "aegean2": sars.load_aegean2(),
+    "niering": sars.load_niering(), "schrader": sars.load_schrader(), "xu": sars.load_xu(),
+})
+fit.z, fit.z_se, fit.sd_z     # (0.325, 0.034, 0.079)
+fit.groups[["n", "z", "z_alone"]].round(3)
+#             n      z  z_alone
+# gala       30  0.352    0.366
+# aegean     90  0.199    0.195
+# aegean2   173  0.338    0.336
+# niering    32  0.349    0.348
+# schrader   60  0.426    0.432
+# xu         42  0.288    0.302
+```
+
+Across these six archipelagos the mean slope is 0.33 ± 0.03. Archipelagos' slopes vary
+around it with a standard deviation of 0.08. Allowing for the mean's own uncertainty too,
+a new archipelago's z would most likely fall between about 0.16 and 0.49. Each archipelago's pooled `z` sits beside its own
+`z_alone`. The pooled values move towards the mean, most for archipelagos with few
+islands or a poor fit. Intercept and slope move together, so with correlated deviations
+a slope can move slightly the other way, as Xu's does here. `fit.predict(area)` gives
+the mean curve, and `fit.predict(area, group="xu")` an archipelago's own. As with
+`lin_pow`, when an island has no species `con` (1) is added to every richness value
+before taking logs. That happens here because of Schrader's empty islets, and it applies
+to all six archipelagos, so that they share one log scale.
+
 ## Parameter uncertainty
 
 `param_table()` gives each parameter's standard error, a t test against zero, and a
@@ -189,7 +228,8 @@ checks.homoscedasticity_pvalue   # 0.037 (squared residuals vs fitted values, Sp
 checks.negative_fitted           # False
 ```
 
-`normality` is `"shapiro"` (the default), `"kolmogorov"` or `None`. `homoscedasticity`
+`normality` is `"shapiro"` (the default), `"lillie"` (Lilliefors), `"kolmogorov"` or
+`None`. `homoscedasticity`
 correlates the squared residuals with the fitted values (`"cor.fitted"`, the default) or
 with area (`"cor.area"`), using `cor_method` `"spearman"`, `"pearson"` or `"kendall"`.
 
@@ -216,20 +256,29 @@ raise `ValueError`. `bootstrap_ci` applies the checks once, to the fits on the o
 data: every resample averages the models that passed, so the interval belongs to the same
 average `sar_average` reports.
 
-Statistics and p values match R (`shapiro.test`, `ks.test`, `cor.test`), including where
+Statistics and p values match R (`shapiro.test`, `ks.test`, `cor.test`, and
+`nortest::lillie.test` below p = 0.1, see below), including where
 R switches from an exact p value to an approximate one (the Kolmogorov-Smirnov test at
 100 residuals, or when values are tied). On the Galápagos data the same models are left
 out as by R's `sar_average`. A model whose fitted values aren't all finite can't be
 tested, so it is left out whenever any check is asked for. Two differences from
 R `sars`:
 
-- `"kolmogorov"` compares the residuals with a normal distribution that has their own mean
-  and standard deviation. R's `normaTest = "kolmo"` compares them with a standard normal,
-  so its answer depends on the units of richness. Because the mean and standard deviation
-  are estimated, the test is conservative: it rejects less often than its alpha.
-- R's `normaTest = "lillie"` (the Lilliefors test, which corrects for that) is not
-  available. scipy doesn't have it, and no published formula gives its p value over the
-  whole range.
+- R's `normaTest = "kolmo"` compares the residuals with a standard normal, so its answer
+  depends on the units of richness, and it isn't offered. `"kolmogorov"` compares them
+  with a normal that has their own mean and standard deviation. Because those are
+  estimated, that test is conservative: it rejects less often than its alpha. `"lillie"`,
+  the Lilliefors test, uses the same statistic with a p value that allows for this.
+- The Lilliefors p value matches R's below 0.1, where both use Dallal and Wilkinson's
+  (1986) approximation. Above 0.1, R uses a polynomial fit of its own, and `sars` instead
+  counts how often 20,000 simulated normal samples of the same size give a statistic at
+  least as large. The result is within about 0.01 of the true value, where R's can be off
+  by 0.03 (for 5 residuals with D = 0.177, R gives 0.873, `sars` 0.900, and a
+  400,000-sample simulation 0.898). Where Dallal and Wilkinson's value is above 0.1,
+  `sars` never reports less than 0.1, so the p value only falls as D grows; R's dips to
+  0.091 just past its switch for 5 residuals. At any alpha up to 0.09, including the
+  usual 0.05, both leave out the same models. The test needs at least five residuals:
+  with fewer it isn't run (R refuses), and `sars` warns.
 
 ## Bootstrap confidence intervals
 
@@ -268,6 +317,106 @@ of the Galápagos data took 26 s instead of 149 s. In a script, put the call und
 if __name__ == "__main__":
     ci = sars.bootstrap_ci(galap, n_boot=1000, n_jobs=-1)
 ```
+
+## Habitat loss
+
+The main conservation use of a species–area curve is to ask how many species an area
+loses when part of its habitat goes. `habitat_loss` compares the model-averaged curve
+at the area before and after, with a bootstrap interval for the loss:
+
+```python
+import numpy as np
+
+gala = sars.load_gala()
+rising = ["power", "loga", "koba", "negexpo", "monod", "ratio"]
+loss = sars.habitat_loss(
+    gala, area=900, fraction_lost=[0.25, 0.5, 0.9], models=rising, rng=np.random.default_rng(42)
+)
+loss.table[["remaining", "richness_after", "species_lost", "lost_lower", "lost_upper",
+            "proportion_lost"]]
+#    remaining  richness_after  species_lost  lost_lower  lost_upper  proportion_lost
+# 0      675.0          262.99         16.34        2.21       93.73             0.06
+# 1      450.0          238.36         40.96        5.83      187.59             0.15
+# 2       90.0          131.23        148.09       48.57      339.84             0.53
+```
+
+An island of 900 km² holds about 279 plant species on this curve, and one of half that
+size about 238. Losing half the habitat therefore costs about 41 species, or 15%. Give
+`remaining=` instead of `fraction_lost=` for the area left. Each resample's own averaged
+curve gives its own loss, so the interval is for the loss itself. It is wide: 30 islands
+pin down the curve's shape only loosely.
+
+Read the numbers with three things in mind:
+
+- **It is the eventual loss.** The estimate is how many species an area of the remaining
+  size holds once it settles. Species can hang on for a long time before they die out
+  (an "extinction debt").
+- **It is likely an overestimate.** A curve fitted across islands of different sizes
+  describes how many species an area holds. Losing part of an area costs fewer than
+  that (He and Hubbell 2011). The calculation also treats what remains as one block
+  rather than fragments.
+- **The interval has the bootstrap's limits.** Areas at the edge of the data are
+  extrapolated in the resamples that leave the largest island out, and a warning flags
+  predictions there that run away. Averaging all 20 models brings in curves that fall with area in
+  places, so a few resamples show negative losses (also warned). That is why the example
+  averages six models whose curves only rise.
+
+## Cross-validation
+
+AICc ranks models by how well they fit, with a penalty for parameters. With few islands,
+models it ranks closely can predict quite differently, and its small-sample correction
+is itself an approximation. `loo_cv` asks the question directly: leave each island out,
+fit every model to the rest, and see how well it predicts the island it didn't see.
+
+```python
+gala = sars.load_gala()
+cv = sars.loo_cv(gala, n_jobs=-1)
+cv.summary[["model", "rmse", "max_error", "worst", "cv_rank", "ic_rank"]].head()
+#       model   rmse  max_error       worst  cv_rank  ic_rank
+# 0      koba  64.43     203.43  Santa Cruz        1          2
+# 1     ratio  66.31     213.88  Fernandina        2          7
+# 2     monod  69.04     217.29  Fernandina        3          8
+# ...
+```
+
+`rmse` and `mae` are the root mean square and mean absolute errors of the left-out
+predictions, in species. `max_error` and `worst` give the largest error and the island it
+was for (named from an `island`, `site`, `locality` or `name` column, or the one `label`
+gives). `ic_rank` is the model's rank by AICc on all the data; `ic="AIC"` or `"BIC"`
+compares with those instead, and with very few islands, where AICc is undefined, it has
+to. On Johnson and Raven's 30 Galápagos islands, AICc's best model, p1, comes 16th
+by cross-validation: it predicts Isabela, the largest island, poorly when Isabela is left
+out. The row `"average"` is the AICc model average, refitted in each fold. One model that
+extrapolates wildly in some fold can spoil it, as epm2 does on the 16-island `galap` data.
+`cv.predictions` holds every left-out prediction. A model whose fit fails in some fold
+is ranked after those that never fail; `rmse_common` compares every model on the islands
+all of them predicted.
+
+Each fold runs the full multi-start search, so `n_jobs=-1` is worth using. On these 30
+islands it takes about 3 minutes on one core. `warm_start=True` instead starts each fold
+from the fit to all the data, as the bootstrap's fast method does: 15 to 30 times faster,
+but those starting values have seen the island left out. A flexible model can stay near
+them rather than find the best fit to the other islands, and its error comes out too
+small. Here, warm starts move weibull4 from 15th to 4th.
+
+## Saving and loading results
+
+Any result `sars` returns (a single fit, a multi-model fit, an average, a threshold fit,
+a bootstrap interval, the result of `sar_many`) can be saved as JSON and loaded back,
+data, parameters and settings included:
+
+```python
+avg = sars.sar_average(galap)
+sars.save(avg, "galap_average.json")
+
+avg = sars.load("galap_average.json")  # an AveragedSAR again
+avg.predict([10.0, 100.0])
+```
+
+`sars.to_json(result)` and `sars.from_json(text)` do the same with a string. The file is
+standard JSON (an infinite AICc is written as a string and read back as a number), and
+it records the version of `sars` that wrote it. Loading rebuilds only `sars`'s own result
+types, so a file from elsewhere can't run code, unlike a pickle.
 
 ## Many datasets at once
 
@@ -379,6 +528,105 @@ and, given `ci`, their intervals shaded:
 sars.plot_threshold(th, ci=ci)
 sars.plot_threshold(th, model="DiscOne")   # separate lines either side of the jump
 ```
+## Sampling effort
+
+The richness recorded on an island is a sample, and when larger islands are sampled
+harder, part of the species-area relationship is the effort's (Gooriah et al. 2021).
+Given each site's species counts, `standardised_richness` puts the sites on an equal
+footing first. It rarefies or extrapolates every sample to the same sample coverage,
+the share of the community's individuals that belong to species already found, as R's
+iNEXT does:
+
+```python
+xu = sars.load_xu()                  # 42 islands: area and observed richness
+counts = sars.load_xu_abundance()    # the same islands' butterfly counts, species by island
+data = sars.standardised_richness(counts, area=xu["area"])
+data[["site", "area", "species", "observed", "individuals", "coverage", "m"]].head(3)
+#        site     area  species  observed  individuals  coverage       m
+# 0  Zhoushan  476.165   17.051        41          732     0.992  48.853
+# 1   Liuheng   93.658   19.564        39          294     0.949  54.477
+# 2   Daishan  104.967   12.429        32         1102     0.995  35.742
+
+sars.lin_pow(xu).z, sars.lin_pow(data).z
+# (0.351, 0.263)
+```
+
+From 2 to 1,102 butterflies were counted on these islands, more on the larger ones
+(r = 0.84 on log scales). At an equal coverage of 85.5%, the log-log slope falls from
+0.35 to 0.26, so about a quarter of the apparent effect of area on the observed
+richness came from sampling. `m` is the number of individuals each site was rarefied (or
+extrapolated) to; `coverage` is its sample's own coverage, and `coverage_at_m` the
+coverage it was standardised to. `data` goes to any fitting function like other data.
+
+`base="size"` standardises to the same number of individuals instead. `level` sets the
+coverage, or the number of individuals. By default it is, as in iNEXT, the largest
+value every site reaches by extrapolating to twice its sample, and a warning flags any
+site extrapolated further. The estimates match iNEXT's `estimateD` for richness (q = 0).
+
+## Habitat models
+
+Richness can depend on how many habitats an island has as well as on its size.
+`sar_habitat` fits R sars's four habitat models:
+
+- **choros**, on area times the number of habitats;
+- **jigsaw**, with habitats as pieces of area, each with its own species;
+- **Kallimanis**, whose slope rises with habitat diversity;
+- **the classical curve**, on area alone.
+
+```python
+fit = sars.sar_habitat(sars.load_habitat())  # Skyros land snails: area, habitats, species
+fit.summary[["model", "z", "d", "R2", "AICc"]]
+#         model      z      d     R2    AICc
+# 0      choros  0.147    NaN  0.914   2.228
+# 1      jigsaw  0.086  0.501  0.940   2.614
+# 2       power  0.177    NaN  0.877   6.444
+# 3  Kallimanis  0.179 -0.000  0.877  11.150
+```
+
+By default (`mod_type="power_log"`, as in R) the power forms are fitted as regressions on
+the logs. `mod_type="power"` fits them by non-linear least squares, and `"logarithmic"`
+fits the logarithmic forms instead. On these 12 islands, choros and jigsaw beat area
+alone, and Kallimanis doesn't. In the jigsaw model richness rises faster with habitats (d = 0.50) than
+with area (z = 0.09). `fit.predict(area, habitats)` uses the best model, or the one named
+in `model=`.
+
+`sar_countryside` fits the countryside model, for landscapes of several habitats whose
+species differ in which habitats they use. Each group of species, sorted by habitat
+affinity, gets a curve of a weighted sum of the habitat areas. The weights say how much
+each habitat counts for that group:
+
+```python
+cs = sars.load_countryside()  # Portuguese plants: three habitats, four species groups
+fit = sars.sar_countryside(
+    cs,
+    habitats=["Area_AG", "Area_SH", "Area_QF"],
+    species=["Spcs_AG", "Spcs_SH", "Spcs_QF", "Spcs_UB"],
+)
+fit.affinity.round(3)
+#          Area_AG  Area_SH  Area_QF
+# Spcs_AG    1.000    0.000      0.0
+# Spcs_SH    0.000    1.000      0.0
+# Spcs_QF    0.000    0.000      1.0
+# Spcs_UB    0.420    0.106      1.0
+```
+
+Each habitat's specialists depend on it alone. The ubiquitous species use all three,
+oak forest most. The fit predicts richness for any mix of habitats. Here are 26 ha of
+each habitat alone, then a third of each:
+
+```python
+fit.predict([[262144, 0, 0], [0, 262144, 0], [0, 0, 262144], [87381, 87381, 87382]])
+#    Spcs_AG  Spcs_SH  Spcs_QF  Spcs_UB  total
+# 0     50.3      0.6      5.3      7.7   63.9
+# 1      3.8     16.6      4.1      6.0   30.4
+# 2      4.6      5.1     33.7      9.1   52.5
+# 3     44.0     14.7     28.9      8.0   95.6
+```
+
+On these data, the countryside model's error in total richness is half that of one power
+curve of total area (`fit.rss`: 5,256 against 10,573). Both functions reproduce R sars's
+fits, and their results save as JSON like the others.
+
 ## Random placement
 
 Coleman's (1981) random placement model asks whether species-area data need any ecology at
