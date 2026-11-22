@@ -939,7 +939,9 @@ def sar_threshold(
     UserWarning
         If the dataset has fewer than 7 observations, or AICc is undefined for
         some of the models fitted (they rank last), as R sars's ``summary``
-        warns.
+        warns; or if a model fits the data exactly (residual sum of squares
+        0), whose AICc is -inf for want of residual variance: it ranks first,
+        and the ranking then reflects rounding, not evidence.
 
     References
     ----------
@@ -1016,7 +1018,19 @@ def sar_threshold(
         )
     summary = pd.DataFrame(rows).sort_values("AICc").reset_index(drop=True)
 
-    undefined = summary.loc[np.isinf(summary["AICc"]), "model"].tolist()
+    # +inf: too few observations for the model's parameters. -inf: a perfect
+    # fit (RSS 0), whose likelihood is unbounded; it ranks first, as a fit
+    # whose RSS rounds to a tiny positive number would anyway.
+    undefined = summary.loc[summary["AICc"] == np.inf, "model"].tolist()
+    perfect = summary.loc[summary["AICc"] == -np.inf, "model"].tolist()
+    if perfect:
+        warnings.warn(
+            f"{', '.join(perfect)} fit the data exactly (RSS 0): with no residual "
+            f"variance, AICc is -inf, so they rank first. Between such fits, and "
+            f"against fits with a tiny RSS, the ranking reflects rounding, not evidence.",
+            UserWarning,
+            stacklevel=2,
+        )
     if len(undefined) == len(summary):
         raise ValueError(
             f"AICc is undefined for every model fitted ({', '.join(undefined)}): with "

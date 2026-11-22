@@ -504,9 +504,14 @@ def _compute_ic(k: int, n: int, rss: float) -> tuple[float, float, float]:
     Returns
     -------
     tuple[float, float, float]
-        (AIC, AICc, BIC)
+        (AIC, AICc, BIC). A perfect fit (``rss`` 0) has an unbounded
+        likelihood, so all three are -inf (AICc only when ``n > k + 1``;
+        otherwise it is +inf, undefined).
     """
-    log_lik = -n / 2.0 * np.log(2.0 * np.pi * rss / n) - n / 2.0
+    if rss == 0:
+        log_lik = np.inf  # no residual variance: the likelihood is unbounded
+    else:
+        log_lik = -n / 2.0 * np.log(2.0 * np.pi * rss / n) - n / 2.0
     aic = -2.0 * log_lik + 2.0 * k
     if n - k - 1 > 0:
         aicc = aic + (2.0 * k * (k + 1.0)) / (n - k - 1.0)
