@@ -16,8 +16,9 @@ if TYPE_CHECKING:
 def _load_dataset(name: str) -> pd.DataFrame:
     """Read a bundled dataset, ``sars/data/<name>.csv``, as an area/species frame.
 
-    The files keep the column names R sars uses (``a``, ``s``) and its row
-    order, so they can be compared with R's copies line for line.
+    The files taken from R sars keep its column names (``a``, ``s``) and row
+    order, so they can be compared with R's copies line for line; the others
+    already name their columns ``area`` and ``species``.
     """
     filename = f"{name}.csv"
     # Only the lookup is guarded: an error from parsing a file that is there
@@ -52,6 +53,36 @@ def load_galap() -> pd.DataFrame:
         DataFrame with columns 'area' and 'species'.
     """
     return _load_dataset("galap")
+
+
+def load_gala() -> pd.DataFrame:
+    """Load Johnson & Raven's Galápagos plant species-area dataset.
+
+    Plant species counts, endemic species counts and island area (km²) for
+    30 islands of the Galápagos, from Isabela (4669 km²) down to islets of
+    0.01 km², as compiled by Johnson and Raven (1973). The values are those
+    in R faraway's ``gala`` dataset (its unfilled original, ``galamiss``,
+    has the same species, endemic and area values), in its row order. The
+    island names are faraway's with the words separated ("Santa Cruz" for
+    "SantaCruz"); its two Gardner islands stay "Gardner1" and "Gardner2".
+
+    A different compilation from `load_galap` (Preston 1962), which has 16
+    islands and leaves out Isabela. Every island has at least two species, so
+    the data can go straight to the fitting functions, which use the 'area'
+    and 'species' columns. To fit endemic richness, use the 'endemics' column
+    as 'species', after dropping Daphne Minor, which has none.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns 'island', 'area', 'species' and 'endemics'.
+
+    References
+    ----------
+    Johnson MP, Raven PH (1973). Species number and endemism: the Galápagos
+    Archipelago revisited. Science 179, 893-895.
+    """
+    return _load_dataset("gala")
 
 
 def load_aegean() -> pd.DataFrame:

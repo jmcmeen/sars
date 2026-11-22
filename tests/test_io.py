@@ -85,6 +85,51 @@ class TestBundledDatasets:
         assert 0 < fit.params["z"] < 1
 
 
+class TestLoadGala:
+    """Johnson & Raven (1973), as in R faraway's gala: four columns, not R
+    sars's two, so not in DATASETS."""
+
+    def test_shape_columns_and_sums(self):
+        df = sars.load_gala()
+        assert list(df.columns) == ["island", "area", "species", "endemics"]
+        assert len(df) == 30
+        assert df["area"].dtype == float
+        assert pd.api.types.is_integer_dtype(df["species"])
+        assert pd.api.types.is_integer_dtype(df["endemics"])
+        assert df["area"].sum() == pytest.approx(7851.26, rel=1e-12)
+        assert df["species"].sum() == 2557
+        assert df["endemics"].sum() == 783
+        assert (df["island"].iloc[0], df["island"].iloc[-1]) == ("Baltra", "Wolf")
+
+    def test_ranges(self):
+        df = sars.load_gala()
+        assert df["area"].min() == 0.01
+        assert df["area"].max() == 4669.32  # Isabela, which load_galap leaves out
+        assert (df["endemics"] <= df["species"]).all()
+
+    def test_passes_validation_and_fits(self):
+        df = sars.load_gala()
+        _validate_data(df)
+        log_log = sars.lin_pow(df)
+        assert log_log.z == pytest.approx(0.3886, abs=1e-4)
+        assert log_log.r_squared == pytest.approx(0.7571, abs=1e-4)
+        threshold = sars.sar_threshold(df)
+        assert threshold.best_model == "ZslopeOne"
+        assert threshold.breakpoint_area == pytest.approx(10.85, abs=0.01)
+
+    def test_endemic_richness_fits_without_the_island_that_has_none(self):
+        df = sars.load_gala()
+        assert df.loc[df["endemics"] == 0, "island"].tolist() == ["Daphne Minor"]
+        endemic = df[df["endemics"] > 0].assign(species=lambda d: d["endemics"])
+        assert sars.sar_power(endemic).converged
+
+    def test_file_is_package_data_and_copies_are_fresh(self):
+        assert importlib.resources.files("sars.data").joinpath("gala.csv").is_file()
+        df = sars.load_gala()
+        df.loc[0, "species"] = -1
+        assert sars.load_gala().loc[0, "species"] == 58
+
+
 class TestLoadDataset:
     def test_missing_file_names_it(self):
         with pytest.raises(FileNotFoundError, match=r"nosuch\.csv is not available.*reinstall"):
@@ -103,7 +148,13 @@ class TestLoadDataset:
             raise ModuleNotFoundError("No module named 'sars.data'")
 
         monkeypatch.setattr("importlib.resources.files", no_package)
-        for loader in (sars.load_galap, sars.load_aegean, sars.load_aegean2, sars.load_niering):
+        for loader in (
+            sars.load_galap,
+            sars.load_gala,
+            sars.load_aegean,
+            sars.load_aegean2,
+            sars.load_niering,
+        ):
             with pytest.raises(FileNotFoundError, match="reinstall"):
                 loader()
 

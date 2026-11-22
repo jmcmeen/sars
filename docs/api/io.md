@@ -6,6 +6,8 @@ See [Datasets](../datasets.md) for a summary table and an example.
 
 ::: sars.load_galap
 
+::: sars.load_gala
+
 ::: sars.load_aegean
 
 ::: sars.load_aegean2

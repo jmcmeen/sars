@@ -10,6 +10,14 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- `load_gala()`: Johnson and Raven's (1973) Galápagos plants, 30 islands from 0.01 to
+  4,669 km², with island names and endemic species counts, as in R `faraway`'s `gala`.
+  A different compilation from `load_galap` (Preston 1962, 16 islands) with a much
+  tighter species-area relationship (log-log z = 0.39, R² = 0.76), and a threshold
+  near 11 km² (#185)
+
 ### Fixed
 
 - `plot_multi` titles the plot with the number of models it draws ("Top 2 SAR models"),

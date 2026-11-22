@@ -72,9 +72,9 @@ print(lp.comparison[["c", "z"]].round(3))
 island has no species, `con` (default 1) is added to every richness value so the
 logs exist, and `predict()` takes it off again. `plot_lin_pow(lp)` draws the data
 and the line on log-log axes.
-`load_galap()` is one of four bundled datasets; `load_aegean()`, `load_aegean2()` and
-`load_niering()` load the others. [Datasets](datasets.md) lists what each holds and
-where it was published.
+`load_galap()` is one of five bundled datasets; `load_gala()`, `load_aegean()`,
+`load_aegean2()` and `load_niering()` load the others. [Datasets](datasets.md)
+lists what each holds and where it was published.
 ## Parameter uncertainty
 
 `param_table()` gives each parameter's standard error, a t test against zero, and a

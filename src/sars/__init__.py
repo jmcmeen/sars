@@ -31,6 +31,7 @@ from sars._io import (
     from_pyinaturalist,
     load_aegean,
     load_aegean2,
+    load_gala,
     load_galap,
     load_niering,
 )
@@ -95,6 +96,7 @@ __all__ = [
     "lin_pow",
     "load_aegean",
     "load_aegean2",
+    "load_gala",
     "load_galap",
     "load_niering",
     "sar_average",
