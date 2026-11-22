@@ -43,10 +43,12 @@ implementation of this workflow. All twenty SAR models catalogued by
 grid of starting values, ranked by AICc with Akaike weights, and
 combined into a model-averaged SAR curve with bootstrapped confidence
 intervals. A piecewise threshold module implements the small-island effect
-detection framework of @Matthews2021. Data can be supplied as `pandas`
-DataFrames, `geopandas` GeoDataFrames, or `pyinaturalist` observation
-lists, enabling `sars` to participate natively in Python-based biodiversity
-data pipelines without format conversion.
+detection framework of @Matthews2021. The SAR models take a `pandas`
+DataFrame with `area` and `species` columns, and adapters build one from
+another DataFrame's columns, a CSV file, a `geopandas` GeoDataFrame of site
+polygons (computing the areas from the geometries), or a list of per-site
+records such as counts summarised from iNaturalist observations, so `sars`
+fits into Python-based biodiversity data pipelines.
 
 # Statement of Need
 
@@ -64,9 +66,10 @@ Python APIs; species distribution models are built with scikit-learn and
 PyTorch; remote-sensing pipelines run in Google Earth Engine and rioxarray. A
 researcher working at the intersection of occurrence data and SAR theory
 has, until now, had no native Python tooling for the statistical inference
-step. `sars` is designed to close that gap completely, enabling end-to-end
-SAR analysis, from raw occurrence records to a published multi-model curve
-with confidence intervals, within a single Python environment.
+step. `sars` is designed to close that gap, so that SAR analysis, from
+per-site richness counts compiled from occurrence records to a published
+multi-model curve with confidence intervals, runs in a single Python
+environment.
 
 The target audience is ecologists, conservation biologists, and biodiversity
 data scientists who are already committed to Python workflows and need
@@ -99,14 +102,19 @@ R output on the Galapagos benchmark dataset [@Preston1962].
 
 # Software Design
 
-**Universal return type.** Every model-fitting function returns a `SARFit`
-dataclass carrying fitted parameters, R², AIC, AICc, BIC, convergence
-status, and the original data. This uniformity is the architectural decision
-that makes the package composable: `sar_multi()` accepts any heterogeneous
-list of `SARFit` objects, and `sar_average()` accepts the output of
-`sar_multi()` without transformation. Users can assemble custom model subsets,
-pass them through the inference pipeline, and obtain a weighted average curve
-without adapters or format negotiations between functions.
+**A common return type.** Each of the twenty model functions returns a
+`SARFit` dataclass carrying fitted parameters, R², AIC, AICc, BIC,
+convergence status, and the original data. This uniformity is the
+architectural decision that makes the package composable: `sar_multi()` fits
+any subset of the twenty models, named by the user, and returns the fits that
+converge together with a summary table ranked by AICc; `sar_average()` fits a
+set the same way and weights it into a model-averaged curve, keeping that
+multi-model result alongside. `sar_pred()` takes a single fit, a set of fits
+or their average alike, as well as the threshold and log-log power fits,
+which have result types of their own, and each has a matching plot function,
+so moving from one model to a weighted average needs no change of interface.
+The general dynamic and random placement models, which need island age or
+abundance data as well as area, have their own fitting and result types.
 
 **Multi-start optimisation with early termination.** Nonlinear least
 squares is sensitive to starting values, and a single initialisation fails
@@ -139,9 +147,10 @@ making the small-sample correction material rather than cosmetic [@Burnham2002].
 
 **Graceful convergence handling.** When the NLS solver exhausts its starting
 grid without converging, `sars` returns a `SARFit` with `converged=False`
-rather than raising an exception. The multi-model functions skip non-converged
-fits automatically and report which models were excluded, preserving the
-composability of the pipeline under partial failures.
+rather than raising an exception. The multi-model functions leave
+non-converged fits out of the comparison and the average, and list any model
+dropped by the optional residual checks, with the check it failed, so a
+partial failure narrows the candidate set instead of stopping the analysis.
 
 **Layered optional dependencies.** The base install requires only `numpy`,
 `scipy`, `pandas`, and `matplotlib`. Geospatial I/O via `geopandas` and
