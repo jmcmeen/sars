@@ -439,6 +439,16 @@ def _fit_basis(columns: list[np.ndarray]) -> np.ndarray:
     return u[:, s > s[0] * 1e-10]
 
 
+def _rowwise(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """``a @ b``, each row of the result computed the same way whatever else
+    is in ``a``. A BLAS matrix product can sum in a different order for a
+    different number of rows on some CPUs, so a resample searched alone, in a
+    worker's chunk or in the whole batch could score its candidates
+    differently in the last bits, and a near-tie then pick a different
+    breakpoint. ``einsum`` without ``optimize`` uses numpy's own loops."""
+    return np.einsum("ij,jk->ik", a, b)
+
+
 def _hinge_gains(x: np.ndarray, q: np.ndarray, r_ys: np.ndarray, t: np.ndarray) -> np.ndarray:
     """How far the RSS falls when a hinge at each of ``t`` joins a fit.
 
@@ -455,7 +465,7 @@ def _hinge_gains(x: np.ndarray, q: np.ndarray, r_ys: np.ndarray, t: np.ndarray) 
     # of the hinge in r_h, so at 1e-10 of it the gain is still good to ~1e-5.
     usable = norms > 1e-20 * np.sum(hinges**2, axis=0)
     gains = np.zeros((len(r_ys), len(t)))
-    gains[:, usable] = (r_ys @ r_h[:, usable]) ** 2 / norms[usable]
+    gains[:, usable] = _rowwise(r_ys, r_h[:, usable]) ** 2 / norms[usable]
     return gains
 
 
@@ -477,7 +487,7 @@ def _best_hinge(
     when added to the fit with basis ``q``: its index in ``t`` and that RSS.
     The first wins a tie. The candidates are scored in blocks, so memory stays
     bounded however many there are."""
-    r_ys = ys - (ys @ q) @ q.T
+    r_ys = ys - _rowwise(_rowwise(ys, q), q.T)
     rss_without = np.sum(r_ys**2, axis=1)
     tie = _tie(ys)
     rows = np.arange(len(ys))
