@@ -52,8 +52,13 @@ uv run --extra dev mypy
 ```
 
 CI runs ruff at the version pinned in `uv.lock` and the test suite on
-Python 3.11 through 3.15. The dev extra includes the `geo` extra so the
-GeoDataFrame tests run locally too.
+Python 3.11 and 3.14 for pull requests, and on 3.11 through 3.15 for pushes
+to `main` and manual runs. Support for 3.15, a pre-release, is best-effort:
+its job may fail without failing the run, so check the `test (3.15)` job in
+a run's job list rather than the run's overall result. The example
+notebooks, marked `notebook`, run once in a job of their own;
+`make test-fast` (`pytest -m "not notebook"`) skips them locally. The dev
+extra includes the `geo` extra so the GeoDataFrame tests run locally too.
 
 ## Layout
 

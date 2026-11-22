@@ -95,6 +95,9 @@ known-first-party = ["sars"]
 testpaths = ["tests"]
 # -n logical, not auto: auto counts physical cores, 2 on CI's 4-vCPU runners.
 addopts = "-n logical --cov=sars --cov-report=term-missing"
+markers = [
+    "notebook: runs an example notebook end to end (CI runs these in a job of their own)",
+]
 filterwarnings = [
     "ignore::scipy.optimize.OptimizeWarning",
     "ignore:invalid value encountered:RuntimeWarning",

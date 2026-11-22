@@ -10,6 +10,30 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Changed
+
+- Fitting is several times faster: `sar_multi` on the Galápagos data takes about a
+  seventh of the time, and weibull4, which took three quarters of it, about a tenth.
+  The search from the grid of starting values uses looser tolerances, and the tight
+  final solve starts from the best three distinct grid results instead of one; starts
+  that only match the best fit to within the search's own scatter no longer delay its
+  early stop. On every bundled dataset the fits are unchanged, apart from two that run
+  along a ridge to a bound and stop at a point on it within 0.0001 of the old AICc
+  (betap on `load_xu`, epm2 on `load_schrader`) (#193)
+- CI checks pull requests faster. They test Python 3.11 and 3.14, with every supported
+  version tested on pushes to `main` and manual runs; the example notebooks run once,
+  in a job of their own, instead of on every Python; a failure on the pre-release 3.15
+  no longer fails the run; coverage runs on one Python; and three `sar_average` tests
+  fit five models instead of all 20 to check the IC weighting. A threshold test now
+  allows the warning it triggers on some machines (#194, #195, #196, #197)
+
+### Security
+
+- The development lockfile moves to Pillow 13.0.0, tornado 6.6.1 and soupsieve 4.1.3,
+  which fix the vulnerabilities GitHub reported in the versions it locked. soupsieve
+  stays at 2.10 for Python before 3.11.5, which no fixed release supports. None of
+  this changes what pip installs for users (#202)
+
 ## [0.11.1] - 2026-11-22
 
 ### Added

@@ -723,6 +723,14 @@ def _validate_data(data: pd.DataFrame, allow_zero_species: bool = False) -> None
 # ---------------------------------------------------------------------------
 
 
+# Multi-start search settings (see _fit_nls): the grid solves' ftol and xtol, the
+# relative improvement that counts as progress for early stopping, and how many
+# of the best grid results get the final tight solve.
+_GRID_TOL = 1e-4
+_STALE_RTOL = 10 * _GRID_TOL  # above the scatter the grid tolerance leaves in costs
+_N_POLISH = 3
+
+
 def _fit_nls(
     name: str,
     data: pd.DataFrame,
@@ -805,18 +813,31 @@ def _fit_nls(
             warm = np.array(to_scaled(given, a_scale, s_scale), dtype=float)
         if np.all(np.isfinite(warm)) and all(warm[i] > 0 for i in log_idx):
             starts: Iterable[Sequence[float]] = [warm.tolist()]
+            used_grid = False
         else:  # it doesn't survive rescaling (overflow, or a log parameter at 0)
             logger.debug("Model '%s': warm start %s can't be rescaled; using the grid", name, given)
             starts = product(*spec.start_grid)
+            used_grid = True
     else:
         starts = product(*spec.start_grid)
+        used_grid = True
 
     # Early-termination: stop after this many consecutive successful solver
     # calls that don't improve the best cost.  For large grids this avoids
     # hundreds of redundant solver calls once the optimum has stabilised.
-    # The limit is generous enough to avoid premature stopping.
+    # The limit is generous enough to avoid premature stopping. An improvement
+    # smaller than _STALE_RTOL of the best cost doesn't count: starts that find
+    # the same optimum scatter by about the grid tolerance, and treating that
+    # scatter as progress kept the counter from ever reaching the limit.
     n_params = len(spec.param_names)
     stale_limit = 50 * n_params  # 100 for 2-p, 150 for 3-p, 200 for 4-p
+    # The grid solves use looser tolerances than the defaults: they only rank
+    # the starts, and the tight polish below takes the best few to the optimum.
+    # Along a flat ridge (weibull4's optimum on a bound, for one) the default
+    # tolerances spent hundreds of evaluations per start creeping along it.
+    grid_tol = {"ftol": _GRID_TOL, "xtol": _GRID_TOL} if used_grid else {}
+    # The best few grid results in different places, (cost, x), for polishing.
+    top: list[tuple[float, np.ndarray]] = []
 
     n_starts = 0
     n_errors = 0
@@ -835,18 +856,21 @@ def _fit_nls(
                     bounds=(lower, upper),
                     method="trf",
                     max_nfev=5000,
+                    **grid_tol,
                 )
             if not result.success:
                 # Stopped on max_nfev or similar: not a converged solution,
                 # so it may neither win on cost nor count as a stale run.
                 n_unsuccessful += 1
                 continue
-            if result.cost < best_cost:
-                best_cost = result.cost
-                best_result = result
+            top = _keep_best_distinct(top, float(result.cost), result.x)
+            if result.cost < best_cost * (1 - _STALE_RTOL):
                 stale_runs = 0
             else:
                 stale_runs += 1
+            if result.cost < best_cost:
+                best_cost = result.cost
+                best_result = result
         except Exception:
             n_errors += 1
             logger.debug(
@@ -891,27 +915,27 @@ def _fit_nls(
     if best_result is None:
         return _failed_fit(name, spec.param_names, n, data)
 
-    if start_from is None:
-        # The default tolerances stop early along flat ridges of the likelihood,
-        # leaving parameters loose in the third digit; one tight solve from the best
-        # grid start pins them down. A warm start (the bootstrap's) skips it: its
-        # resamples need the fit, not the last digits.
-        try:
-            with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
-                polished = least_squares(
-                    residuals,
-                    x0=best_result.x,
-                    bounds=(lower, upper),
-                    method="trf",
-                    max_nfev=5000,
-                    ftol=1e-14,
-                    xtol=1e-14,
-                    gtol=1e-14,
-                )
-            if polished.success and polished.cost <= best_result.cost:
+    if used_grid:
+        # The grid's loose tolerances stop early along flat ridges of the
+        # likelihood; tight solves from the best few grid results, in different
+        # places, pin the optimum down. Polishing more than one guards against the
+        # loose tolerances ranking two basins in the wrong order. A warm start (the
+        # bootstrap's) skips it: its resamples need the fit, not the last digits.
+        # A polish that runs out of evaluations along a ridge still counts if it
+        # lowered the cost: it's a better point on the same curve.
+        polished_any = False
+        for cost, x0 in top:
+            if cost > 10 * best_cost:  # a penalty-cost start, nowhere near the fit
+                continue
+            polished = _solve(residuals, x0, lower, upper, ftol=1e-14, xtol=1e-14, gtol=1e-14)
+            if polished is not None and polished.cost <= best_result.cost:
                 best_result = polished
-        except Exception:
-            logger.debug("Model '%s': polishing the best fit failed", name, exc_info=True)
+                polished_any = True
+        if not polished_any:
+            # Never return a fit looser than the default tolerances give.
+            refined = _solve(residuals, best_result.x, lower, upper)
+            if refined is not None and refined.success and refined.cost <= best_result.cost:
+                best_result = refined
 
     with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
         values = np.array(
@@ -942,6 +966,31 @@ def _fit_nls(
         converged=True,
         data=data,
     )
+
+
+def _keep_best_distinct(
+    top: list[tuple[float, np.ndarray]], cost: float, x: np.ndarray
+) -> list[tuple[float, np.ndarray]]:
+    """The best ``_N_POLISH`` grid results, ``(cost, x)``, no two in the same
+    place: a result close to one already kept replaces it only if it's better."""
+    for i, (kept_cost, kept_x) in enumerate(top):
+        if np.allclose(x, kept_x, rtol=1e-3, atol=1e-8):
+            if cost < kept_cost:
+                top = [*top[:i], (cost, x), *top[i + 1 :]]
+            return sorted(top, key=lambda t: t[0])
+    return sorted([*top, (cost, x)], key=lambda t: t[0])[:_N_POLISH]
+
+
+def _solve(residuals, x0, lower, upper, **tol):
+    """One bounded least-squares solve from ``x0``, or None if it raises."""
+    try:
+        with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+            return least_squares(
+                residuals, x0=x0, bounds=(lower, upper), method="trf", max_nfev=5000, **tol
+            )
+    except Exception:
+        logger.debug("A least-squares solve raised", exc_info=True)
+        return None
 
 
 def _failed_fit(name: str, param_names: list[str], n: int, data: pd.DataFrame) -> SARFit:

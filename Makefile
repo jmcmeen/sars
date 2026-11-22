@@ -41,8 +41,8 @@ shell: ## Spawn a subshell with the project venv activated
 test: ## Run the full test suite
 	$(UV) run --extra dev pytest
 
-test-fast: ## Run tests, skipping slow/integration markers
-	$(UV) run --extra dev pytest -m "not slow and not integration"
+test-fast: ## Run tests, skipping the example notebooks
+	$(UV) run --extra dev pytest -m "not notebook"
 
 cov: ## Run tests with coverage report
 	$(UV) run --extra dev pytest --cov --cov-report=term-missing
