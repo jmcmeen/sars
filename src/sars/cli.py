@@ -368,6 +368,7 @@ def _cmd_cv(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
         models="all" if models == ["all"] else models,
         warm_start=args.warm,
         ic=args.ic,
+        label=args.label_col or "auto",
         n_jobs=args.n_jobs,
     )
     return _finish(obj, args)
@@ -646,6 +647,28 @@ def build_parser() -> argparse.ArgumentParser:
     _add_output_args(predict, save=False)
     predict.set_defaults(handler=_cmd_predict)
 
+    serve = commands.add_parser(
+        "serve",
+        help="run the HTTP API (needs the [server] extra)",
+        description="Serve the sars commands over HTTP (see the documentation's Server page). "
+        "Needs the [server] extra: pip install 'sars[server]'.",
+    )
+    serve.add_argument(
+        "--host", default="127.0.0.1", help="address to listen on (default: 127.0.0.1)"
+    )
+    serve.add_argument("--port", type=int, default=8765, help="port (default: 8765)")
+    serve.add_argument(
+        "--token-file",
+        type=Path,
+        metavar="FILE",
+        help="require 'Authorization: Bearer <token>', the token read from this file "
+        "(or set SARS_SERVER_TOKEN)",
+    )
+    serve.add_argument(
+        "--timeout", type=float, default=600.0, help="seconds a command may run (default: 600)"
+    )
+    serve.set_defaults(handler=None)
+
     datasets = commands.add_parser(
         "datasets",
         help="list the bundled datasets, or write one as CSV",
@@ -655,6 +678,41 @@ def build_parser() -> argparse.ArgumentParser:
     _add_output_args(datasets, save=False)
     datasets.set_defaults(handler=_cmd_datasets)
     return parser
+
+
+def _serve(args: argparse.Namespace) -> int:
+    """Run the HTTP API until interrupted."""
+    import os
+
+    try:
+        import uvicorn
+
+        from sars.server import ServerConfig, create_app
+    except ImportError as exc:
+        print(f"sars serve: {exc}", file=sys.stderr)
+        return 1
+    if not args.timeout > 0:
+        print("sars serve: --timeout must be a positive number of seconds.", file=sys.stderr)
+        return 2
+    token = os.environ.get("SARS_SERVER_TOKEN", "").strip() or None
+    if args.token_file is not None:
+        try:
+            token = args.token_file.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            print(f"sars serve: can't read the token file: {exc}", file=sys.stderr)
+            return 1
+        if not token:
+            print(f"sars serve: the token file {args.token_file} is empty.", file=sys.stderr)
+            return 1
+    if token is None and args.host not in ("127.0.0.1", "localhost", "::1"):
+        print(
+            f"warning: serving on {args.host} without a token: anyone who can reach it can run "
+            "fits on this machine. Use --token-file, or reach it through an SSH tunnel.",
+            file=sys.stderr,
+        )
+    app = create_app(ServerConfig(token=token, timeout=args.timeout))
+    uvicorn.run(app, host=args.host, port=args.port)
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -679,6 +737,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.print_usage(sys.stderr)
             print(f"error: {exc}", file=sys.stderr)
         return 2
+    if args.command == "serve":
+        return _serve(args)
     envelope: dict[str, Any] = {"sars": _version(), "command": args.command}
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")

@@ -285,3 +285,13 @@ def test_loss(capsys):
         capsys, "loss", "gala", "--area", "900", "--remaining", "450", "--fraction-lost", "0.5"
     )
     assert code == 2 and "not allowed with" in err
+
+
+def test_cv_labels_islands_by_a_named_column(capsys, tmp_path):
+    path = tmp_path / "gala.csv"
+    sars.load_gala().rename(columns={"island": "Site_Name"}).to_csv(path, index=False)
+    code, envelope = run_json(
+        capsys, "cv", str(path), "-m", "power", "--warm", "--label-col", "Site_Name"
+    )
+    rows = {row["model"]: row for row in envelope["result"]["summary"]["models"]}
+    assert code == 0 and rows["power"]["worst"] == "Isabela"

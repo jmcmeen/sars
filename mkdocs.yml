@@ -69,6 +69,7 @@ nav:
   - Datasets: datasets.md
   - Validation: validation.md
   - Command Line: cli.md
+  - HTTP Server: server.md
   - Examples:
       - Galápagos plants: examples/galapagos.ipynb
       - Appalachian amphibians: examples/appalachian.ipynb

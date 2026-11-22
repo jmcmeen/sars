@@ -42,6 +42,11 @@ reconstructed from the commit history and the
   its known upward bias. The CLI runs it as `sars loss` (#224)
 - `bootstrap_ci(keep_samples=True)` keeps every resample's prediction in
   `BootstrappedCI.samples` (#224)
+- An optional HTTP server, `sars serve` (the `server` extra: FastAPI and uvicorn). Each
+  endpoint (`/v1/fit`, `average`, `threshold`, `cv`, `loss`, `predict`, `datasets`)
+  runs the matching `sars` command in a subprocess and returns its JSON envelope. It
+  listens on localhost by default, takes an optional bearer token, and stops commands
+  after a time limit. Its OpenAPI document is in the docs (#228)
 - A Galápagos example for `from_geodataframe`: 28 island outlines from OpenStreetMap,
   joined by name to `load_gala()`'s plant counts, fitted over 0.02 to 4,700 km² and
   compared with the published areas (#153)
@@ -54,6 +59,8 @@ reconstructed from the commit history and the
 
 ### Fixed
 
+- `sars cv --label-col` now labels the islands by that column; before, only an
+  auto-detected name column was used (#228)
 - `n_jobs` from a script the worker processes can't open, one read from standard input
   (`python - < script.py`) or a pipe (`python <(...)`), runs in the calling process with a
   warning, instead of failing with an obscure error from the worker pool (#225)

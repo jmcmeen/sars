@@ -1,0 +1,1029 @@
+{
+  "components": {
+    "schemas": {
+      "AverageRequest": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Data"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "enum": [
+                  "galap",
+                  "gala",
+                  "aegean",
+                  "aegean2",
+                  "niering",
+                  "schrader",
+                  "xu"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "a bundled dataset (GET /v1/datasets)",
+            "title": "Dataset"
+          },
+          "homoscedasticity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "cor.fitted",
+                  "cor.area"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Homoscedasticity"
+          },
+          "ic": {
+            "default": "AICc",
+            "enum": [
+              "AICc",
+              "AIC",
+              "BIC"
+            ],
+            "title": "Ic",
+            "type": "string"
+          },
+          "models": {
+            "default": [
+              "all"
+            ],
+            "items": {
+              "maxLength": 32,
+              "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Models",
+            "type": "array"
+          },
+          "neg_check": {
+            "default": false,
+            "title": "Neg Check",
+            "type": "boolean"
+          },
+          "normality": {
+            "anyOf": [
+              {
+                "enum": [
+                  "shapiro",
+                  "lillie",
+                  "kolmogorov"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normality"
+          }
+        },
+        "title": "AverageRequest",
+        "type": "object"
+      },
+      "CVRequest": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Data"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "enum": [
+                  "galap",
+                  "gala",
+                  "aegean",
+                  "aegean2",
+                  "niering",
+                  "schrader",
+                  "xu"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "a bundled dataset (GET /v1/datasets)",
+            "title": "Dataset"
+          },
+          "ic": {
+            "default": "AICc",
+            "enum": [
+              "AICc",
+              "AIC",
+              "BIC"
+            ],
+            "title": "Ic",
+            "type": "string"
+          },
+          "models": {
+            "default": [
+              "all"
+            ],
+            "items": {
+              "maxLength": 32,
+              "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Models",
+            "type": "array"
+          },
+          "n_jobs": {
+            "default": 1,
+            "description": "processes; -1: the server's limit",
+            "maximum": 64.0,
+            "minimum": -1.0,
+            "title": "N Jobs",
+            "type": "integer"
+          },
+          "warm": {
+            "default": false,
+            "title": "Warm",
+            "type": "boolean"
+          }
+        },
+        "title": "CVRequest",
+        "type": "object"
+      },
+      "Data": {
+        "description": "Species-area data: an area and a richness per site, and optionally a\nname per site (used to label results).",
+        "properties": {
+          "area": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 100000,
+            "minItems": 1,
+            "title": "Area",
+            "type": "array"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 100000,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "species": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 100000,
+            "minItems": 1,
+            "title": "Species",
+            "type": "array"
+          }
+        },
+        "required": [
+          "area",
+          "species"
+        ],
+        "title": "Data",
+        "type": "object"
+      },
+      "FitRequest": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Data"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "enum": [
+                  "galap",
+                  "gala",
+                  "aegean",
+                  "aegean2",
+                  "niering",
+                  "schrader",
+                  "xu"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "a bundled dataset (GET /v1/datasets)",
+            "title": "Dataset"
+          },
+          "homoscedasticity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "cor.fitted",
+                  "cor.area"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Homoscedasticity"
+          },
+          "models": {
+            "default": [
+              "power"
+            ],
+            "description": "one model, several, or [\"all\"]",
+            "items": {
+              "maxLength": 32,
+              "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Models",
+            "type": "array"
+          },
+          "neg_check": {
+            "default": false,
+            "title": "Neg Check",
+            "type": "boolean"
+          },
+          "normality": {
+            "anyOf": [
+              {
+                "enum": [
+                  "shapiro",
+                  "lillie",
+                  "kolmogorov"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normality"
+          }
+        },
+        "title": "FitRequest",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LossRequest": {
+        "properties": {
+          "area": {
+            "description": "the area before the loss",
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Area",
+            "type": "array"
+          },
+          "conf": {
+            "default": 0.95,
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Conf",
+            "type": "number"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Data"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "enum": [
+                  "galap",
+                  "gala",
+                  "aegean",
+                  "aegean2",
+                  "niering",
+                  "schrader",
+                  "xu"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "a bundled dataset (GET /v1/datasets)",
+            "title": "Dataset"
+          },
+          "fraction_lost": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 1000,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fraction Lost"
+          },
+          "ic": {
+            "default": "AICc",
+            "enum": [
+              "AICc",
+              "AIC",
+              "BIC"
+            ],
+            "title": "Ic",
+            "type": "string"
+          },
+          "models": {
+            "default": [
+              "all"
+            ],
+            "items": {
+              "maxLength": 32,
+              "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Models",
+            "type": "array"
+          },
+          "n_boot": {
+            "default": 1000,
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "N Boot",
+            "type": "integer"
+          },
+          "n_jobs": {
+            "default": 1,
+            "description": "processes; -1: the server's limit",
+            "maximum": 64.0,
+            "minimum": -1.0,
+            "title": "N Jobs",
+            "type": "integer"
+          },
+          "remaining": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 1000,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          }
+        },
+        "required": [
+          "area"
+        ],
+        "title": "LossRequest",
+        "type": "object"
+      },
+      "PredictRequest": {
+        "properties": {
+          "areas": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 100000,
+            "minItems": 1,
+            "title": "Areas",
+            "type": "array"
+          },
+          "result": {
+            "additionalProperties": true,
+            "description": "a result saved by --save, or an envelope's result.object",
+            "title": "Result",
+            "type": "object"
+          }
+        },
+        "required": [
+          "result",
+          "areas"
+        ],
+        "title": "PredictRequest",
+        "type": "object"
+      },
+      "ThresholdRequest": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Data"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "enum": [
+                  "galap",
+                  "gala",
+                  "aegean",
+                  "aegean2",
+                  "niering",
+                  "schrader",
+                  "xu"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "a bundled dataset (GET /v1/datasets)",
+            "title": "Dataset"
+          },
+          "interval": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval"
+          },
+          "log_area": {
+            "default": true,
+            "title": "Log Area",
+            "type": "boolean"
+          },
+          "models": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 32,
+                  "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "default: ContOne, ZslopeOne, Linear",
+            "title": "Models"
+          }
+        },
+        "title": "ThresholdRequest",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Each endpoint runs one `sars` command (see the command line documentation) and returns its JSON envelope: `{sars, command, ok, result | error, warnings}`. A failed command returns 422 with `ok: false`.",
+    "summary": "Species-area relationship models over HTTP",
+    "title": "sars",
+    "version": "v1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/average": {
+      "post": {
+        "description": "The model average (`sars average`).",
+        "operationId": "average_v1_average_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AverageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Average",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/v1/cv": {
+      "post": {
+        "description": "Leave-one-island-out cross-validation (`sars cv`).",
+        "operationId": "cv_v1_cv_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CVRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cv",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/v1/datasets": {
+      "get": {
+        "description": "The bundled datasets (`sars datasets`).",
+        "operationId": "datasets_v1_datasets_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Datasets",
+        "tags": [
+          "service"
+        ]
+      }
+    },
+    "/v1/fit": {
+      "post": {
+        "description": "Fit one model, or several ranked by AICc (`sars fit`).",
+        "operationId": "fit_v1_fit_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fit",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/v1/loss": {
+      "post": {
+        "description": "Species expected to be lost with habitat (`sars loss`).",
+        "operationId": "loss_v1_loss_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LossRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Loss",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/v1/predict": {
+      "post": {
+        "description": "Predictions from a saved result (`sars predict`).",
+        "operationId": "predict_v1_predict_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Predict",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/v1/threshold": {
+      "post": {
+        "description": "Piecewise (threshold) models (`sars threshold`).",
+        "operationId": "threshold_v1_threshold_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThresholdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Threshold",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/v1/version": {
+      "get": {
+        "description": "The sars version and the API version.",
+        "operationId": "version_v1_version_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Version V1 Version Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Version",
+        "tags": [
+          "service"
+        ]
+      }
+    }
+  }
+}

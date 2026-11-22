@@ -33,6 +33,7 @@ $ sars datasets xu > xu.csv
 | `sars cv DATA [-m MODEL ...] [--ic AICc\|AIC\|BIC] [--warm] [--label-col COL] [--n-jobs N]` | Ranks the models by leave-one-island-out cross-validation (see [`loo_cv`](api/inference.md)). |
 | `sars loss DATA --area A ... (--remaining R ... \| --fraction-lost F ...) [-m MODEL ...] [--n-boot N] [--seed S]` | Species expected to be lost with habitat, with bootstrap intervals (see [`habitat_loss`](api/inference.md)). |
 | `sars predict FILE AREA ...` | Predicts richness at the areas from a result saved with `--save`. |
+| `sars serve [--host H] [--port P] [--token-file F] [--timeout S]` | Serves these commands over HTTP; needs the `server` extra (see [HTTP server](server.md)). |
 | `sars datasets [NAME]` | Lists the bundled datasets, or writes one as CSV. |
 
 `fit` and `average` also take the residual checks of [`sar_multi`](api/inference.md):

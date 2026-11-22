@@ -14,6 +14,9 @@ sars needs Python 3.11 or later.
 # GeoDataFrame support (geopandas + shapely)
 pip install "sars[geo]"
 
+# The HTTP server, `sars serve` (FastAPI + uvicorn)
+pip install "sars[server]"
+
 # Everything
 pip install "sars[all]"
 ```

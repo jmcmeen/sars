@@ -22,6 +22,9 @@ polygons, needs the `geo` extra (geopandas and shapely):
 pip install "sars[geo]"
 ```
 
+`sars serve`, an HTTP API over the command line, needs the `server` extra (FastAPI and
+uvicorn): `pip install "sars[server]"`.
+
 ## Features
 
 - **20 SAR models** — power, logarithmic, asymptotic, sigmoid, and more
@@ -30,6 +33,7 @@ pip install "sars[geo]"
 - **Habitat loss** — species expected to be lost with habitat, with model-averaged bootstrap intervals
 - **Cross-validation** — rank models by how well they predict a left-out island, beside AICc
 - **Save and reload results** — any fit or result as standard JSON, data and settings included
+- **HTTP server** — the command line as a small JSON API (`sars serve`, optional extra)
 - **Command line** — `sars fit|average|threshold|cv|loss|predict|datasets`, with JSON output for scripts
 - **Many datasets at once** — the same models fitted to many datasets, summarised in one table, in parallel if you like
 - **Parameter uncertainty** — standard errors, t tests and confidence intervals for each fitted parameter
