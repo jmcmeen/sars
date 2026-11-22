@@ -475,6 +475,41 @@ def test_param_table_has_no_standard_error_for_a_parameter_on_a_bound(galap_fits
     assert table.loc["c", "std_error"] > 10 * table.loc["c", "estimate"]
 
 
+def test_at_bounds_names_parameters_on_a_bound(galap_fits):
+    """weibull4's z runs to its bound on the Galápagos data; the power fit's
+    parameters are estimates."""
+    assert galap_fits["weibull4"].at_bounds == ("z",)
+    assert galap_fits["power"].at_bounds == ()
+
+
+def test_at_bounds_on_a_near_vertical_curve():
+    """Richness rising steeply over a tiny range of area drives the power
+    model's z to its upper bound, 5, though the fit converges."""
+    area = np.linspace(4.90, 5.00, 30)
+    species = np.linspace(3, 750, 30)
+    fit = sars.sar_power(pd.DataFrame({"area": area, "species": species}))
+    assert fit.converged
+    assert fit.at_bounds == ("z",)
+    with pytest.warns(UserWarning, match="stopped on a bound"):
+        assert np.isnan(fit.param_table().loc["z", "std_error"])
+
+
+def test_at_bounds_and_param_table_follow_the_model_order(galap_fits):
+    """A fit built with its params in another order: both line the values up
+    with the model's parameters, not the dict's order."""
+    fit = galap_fits["weibull4"]
+    shuffled = dataclasses.replace(fit, params=dict(reversed(list(fit.params.items()))))
+    assert shuffled.at_bounds == ("z",)
+    with pytest.warns(UserWarning):
+        table = shuffled.param_table()
+    assert list(table.index) == list(fit.params)
+
+
+def test_at_bounds_is_empty_for_a_fit_that_didnt_converge(galap_fits):
+    failed = dataclasses.replace(galap_fits["power"], converged=False)
+    assert failed.at_bounds == ()
+
+
 def test_param_table_warns_where_the_curve_cant_be_differentiated(monkeypatch):
     """A curve that is rough in one parameter: the warning names it, and it and
     the parameters whose standard errors depend on it have none."""

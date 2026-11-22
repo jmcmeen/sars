@@ -85,7 +85,7 @@ jobs:
       # One math-library thread per test worker (env above): xdist already runs a
       # worker per vCPU, and each BLAS pool sized to the whole runner would
       # oversubscribe it. --durations lists the slowest tests.
-      # The notebooks and the 34-dataset fits (slow) run once, in the notebooks job.
+      # The notebooks and the 34-dataset fits (slow) run once, in jobs of their own.
       # Coverage (only printed) runs on 3.14, which every run tests, with coverage's
       # sys.monitoring core, much faster than its C tracer.
       - name: pytest
@@ -98,10 +98,9 @@ jobs:
           uv run --frozen --no-sync pytest -m "not notebook and not slow" $cov --durations=15
 
   notebooks:
-    name: notebooks and datasets
-    # The example notebooks, end to end, and the fits to 34 published datasets,
-    # once: they test the examples and the fitting on varied data, not
-    # compatibility with each Python, and are the slowest tests by far.
+    name: notebooks
+    # The example notebooks, end to end, once: they test the examples, not
+    # compatibility with each Python.
     runs-on: ubuntu-latest
     env:
       OMP_NUM_THREADS: "1"
@@ -118,7 +117,30 @@ jobs:
           enable-cache: true
       - run: uv sync --frozen --extra dev
       - name: pytest
-        run: uv run --frozen --no-sync pytest -m "notebook or slow" --no-cov --durations=5
+        run: uv run --frozen --no-sync pytest -m notebook --no-cov --durations=5
+
+  datasets:
+    name: datasets
+    # The fits to 34 published datasets, once: they test the fitting on varied
+    # data, not compatibility with each Python, and are slow. Run beside the
+    # notebooks, so a failure says which of the two broke.
+    runs-on: ubuntu-latest
+    env:
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # tags, for the hatch-vcs version
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - run: uv sync --frozen --extra dev
+      - name: pytest
+        run: uv run --frozen --no-sync pytest -m slow --no-cov --durations=5
 
   minimums:
     name: minimum dependencies

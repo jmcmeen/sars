@@ -199,6 +199,39 @@ class SARFit:
         species = self.data["species"].to_numpy(dtype=float)
         return run_checks(self.model, area, species, self.predict(area), options)
 
+    @property
+    def at_bounds(self) -> tuple[str, ...]:
+        """The parameters that stopped on a bound of the fit's search.
+
+        The fit searches each parameter within bounds (the power model's z
+        within -5 and 5, for example). A parameter that ends on one is the
+        bound's value, not an estimate from the data, though the fit reports
+        ``converged``: the data want it further out. ``param_table`` gives
+        such a parameter no standard error.
+
+        Computed from the fit's data on each access, so it raises if that
+        data has been changed since.
+
+        Returns
+        -------
+        tuple of str
+            Their names, in the model's parameter order; empty when none
+            stopped on a bound, or the fit didn't converge.
+
+        Raises
+        ------
+        ValueError
+            As ``predict``, for a fit whose model or data have been edited.
+        """
+        spec = self._spec()
+        if not self.converged:
+            return ()
+        names = list(spec.param_names)
+        area, species = self._fitted_data(spec)
+        estimate = np.array([self.params[k] for k in names], dtype=float)
+        on_bound = _on_bound(self.model, estimate, area, species)
+        return tuple(n for n, b in zip(names, on_bound, strict=True) if b)
+
     def param_table(self, conf: float = 0.95) -> pd.DataFrame:
         """Standard errors, t tests and confidence intervals for the parameters.
 
@@ -277,7 +310,7 @@ class SARFit:
         if not 0.0 < conf < 1.0:
             raise ValueError(f"conf must be between 0 and 1, got {conf}")
         spec = self._spec()
-        names = list(self.params)
+        names = list(spec.param_names)
         estimate = np.array([self.params[k] for k in names], dtype=float)
         std_error = np.full(len(names), np.nan)
         dof = self.n - len(names)
