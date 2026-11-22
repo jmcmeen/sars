@@ -83,6 +83,9 @@ reconstructed from the commit history and the
   the interval as a prediction of zero (which pulled the lower bound down): it is dropped
   and counted, as with the default method; and it raises at once when `models` is empty
   (#142)
+- The notebook tests shut each notebook's kernel down and close its zmq sockets when the
+  notebook finishes. They used to leave them for garbage collection, which reported them as
+  `ResourceWarning`s on whichever test ran next in the same worker (#161)
 
 ## [0.10.0] - 2026-11-21
 
