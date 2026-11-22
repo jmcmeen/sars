@@ -130,6 +130,57 @@ class TestLoadGala:
         assert sars.load_gala().loc[0, "species"] == 58
 
 
+class TestGooriahDatasets:
+    """Schrader et al. (2019) and Xu et al. (2017), from the CC0 deposit of
+    Gooriah et al. (2021), areas converted from hectares."""
+
+    def test_schrader(self):
+        df = sars.load_schrader()
+        assert list(df.columns) == ["island", "area", "species"]
+        assert len(df) == 60
+        assert df["island"].is_unique
+        assert df["area"].dtype == float
+        assert pd.api.types.is_integer_dtype(df["species"])
+        assert df["area"].sum() == pytest.approx(0.06676041171, rel=1e-12)
+        assert df["species"].sum() == 390
+        assert (df["area"].min(), df["area"].max()) == (2.80627e-06, 0.0118)
+
+    def test_schrader_keeps_the_empty_islets(self):
+        """The 20 islets with no plants recorded are all under 30 m² (3e-5 km²),
+        and only lin_pow fits them."""
+        df = sars.load_schrader()
+        empty = df[df["species"] == 0]
+        assert len(empty) == 20
+        assert empty["area"].max() < 3e-5
+        with pytest.raises(ValueError, match="positive"):
+            sars.sar_power(df)
+        assert sars.lin_pow(df, con=1).z == pytest.approx(0.4315, abs=1e-4)
+        planted = df[df["species"] > 0]
+        _validate_data(planted)
+        assert sars.lin_pow(planted).r_squared == pytest.approx(0.9136, abs=1e-4)
+
+    def test_xu(self):
+        df = sars.load_xu()
+        assert list(df.columns) == ["island", "area", "species"]
+        assert len(df) == 42
+        assert df["island"].is_unique
+        assert df["area"].sum() == pytest.approx(1174.2845, rel=1e-12)
+        assert df["species"].sum() == 672
+        assert df.loc[df["area"].idxmax(), "island"] == "Zhoushan"
+        _validate_data(df)
+        log_log = sars.lin_pow(df)
+        assert log_log.z == pytest.approx(0.3511, abs=1e-4)
+        assert log_log.r_squared == pytest.approx(0.7939, abs=1e-4)
+
+    @pytest.mark.parametrize("name", ["schrader", "xu"])
+    def test_file_is_package_data_and_copies_are_fresh(self, name):
+        assert importlib.resources.files("sars.data").joinpath(f"{name}.csv").is_file()
+        loader = getattr(sars, f"load_{name}")
+        df = loader()
+        df.loc[0, "species"] = -1
+        assert loader().loc[0, "species"] >= 0
+
+
 class TestLoadDataset:
     def test_missing_file_names_it(self):
         with pytest.raises(FileNotFoundError, match=r"nosuch\.csv is not available.*reinstall"):
@@ -154,6 +205,8 @@ class TestLoadDataset:
             sars.load_aegean,
             sars.load_aegean2,
             sars.load_niering,
+            sars.load_schrader,
+            sars.load_xu,
         ):
             with pytest.raises(FileNotFoundError, match="reinstall"):
                 loader()

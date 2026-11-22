@@ -17,6 +17,13 @@ reconstructed from the commit history and the
   A different compilation from `load_galap` (Preston 1962, 16 islands) with a much
   tighter species-area relationship (log-log z = 0.39, R² = 0.76), and a threshold
   near 11 km² (#185)
+- `load_schrader()` and `load_xu()`: plants on 60 small islands in Raja Ampat (Schrader
+  et al. 2019) and butterflies on 42 islands of the Zhoushan Archipelago (Xu et al.
+  2017), from the CC0 compilation of Gooriah et al. (2021), with areas converted from
+  hectares to km². Both relationships are tight: log-log z = 0.42 and R² = 0.91 on
+  Schrader's 40 islands with plants, z = 0.35 and R² = 0.79 on Xu's. Twenty of
+  Schrader's islets, all under 30 m², have no plants recorded; they are kept, and only
+  `lin_pow` fits them, so drop them for the other models (#186)
 
 ### Fixed
 

@@ -14,6 +14,10 @@ See [Datasets](../datasets.md) for a summary table and an example.
 
 ::: sars.load_niering
 
+::: sars.load_schrader
+
+::: sars.load_xu
+
 ## from_df
 
 ::: sars.from_df

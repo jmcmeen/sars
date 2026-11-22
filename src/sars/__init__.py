@@ -34,6 +34,8 @@ from sars._io import (
     load_gala,
     load_galap,
     load_niering,
+    load_schrader,
+    load_xu,
 )
 from sars._linpow import LinPowFit, lin_pow
 from sars._models import (
@@ -99,6 +101,8 @@ __all__ = [
     "load_gala",
     "load_galap",
     "load_niering",
+    "load_schrader",
+    "load_xu",
     "sar_average",
     "sar_gdm",
     "sar_multi",

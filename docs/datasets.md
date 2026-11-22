@@ -1,8 +1,9 @@
 # Datasets
 
-Five published island datasets ship with the package. Each loader returns a
-DataFrame with `area` and `species` columns, ready for any fitting function;
-`load_gala` adds `island` (the island's name) and `endemics`.
+Seven published island datasets ship with the package. Each loader returns a
+DataFrame with `area` and `species` columns; `load_gala`, `load_schrader` and
+`load_xu` add `island` (the island's name or survey code), and `load_gala`
+`endemics`.
 
 | Loader | Islands | Taxon | Area units | Source |
 | ------ | ------- | ----- | ---------- | ------ |
@@ -11,11 +12,15 @@ DataFrame with `area` and `species` columns, ready for any fitting function;
 | `load_aegean()` | 90, Aegean Sea, Greece | Terrestrial isopods | km² | Sfenthourakis & Triantis (2009) |
 | `load_aegean2()` | 173, Aegean Sea, Greece | Plants | km² | Matthews et al. (2020) |
 | `load_niering()` | 32, Kapingamarangi Atoll, Micronesia | Plants | km² | Niering (1963) |
+| `load_schrader()` | 60, Raja Ampat, Indonesia | Plants | km² | Schrader et al. (2019) |
+| `load_xu()` | 42, Zhoushan Archipelago, China | Butterflies | km² | Xu et al. (2017) |
 
-The values of all but `load_gala` are those shipped with R `sars` 2.1.1, in the same
-row order, so results can be compared with R's directly; `load_gala`'s are those in R
-`faraway`'s `gala`. No island in any of them has zero
-species, so none needs filtering before a fit.
+The values of `load_galap`, `load_aegean`, `load_aegean2` and `load_niering` are
+those shipped with R `sars` 2.1.1, in the same row order, so results can be compared
+with R's directly; `load_gala`'s are those in R `faraway`'s `gala`. `load_schrader` and
+`load_xu` come from the compilation of Gooriah et al. (2021), released under CC0, with
+the areas converted from hectares. Only `load_schrader` has islands with no species,
+which have to be dropped before most fits (see below).
 
 Some things to know about each:
 
@@ -36,6 +41,24 @@ Some things to know about each:
 - **`load_aegean`** and **`load_aegean2`** come from separate studies of
   different taxa and are different sets of islands. Both run from islets of
   well under a hectare to Crete, six to seven orders of magnitude in area.
+- **`load_schrader`** and **`load_xu`** count the species recorded on each
+  island's transects, not complete island lists, and the survey effort varied
+  between islands (Schrader's number of transects rose with island size). Both
+  relationships are tight: log-log z = 0.42 and R² = 0.91 for Schrader's 40
+  islands with plants (0.43 and 0.89 on all 60 through `lin_pow`, which adds 1
+  to every richness), z = 0.35 and R² = 0.79 for Xu's butterflies.
+- **`load_schrader`**'s islands are tiny, from rocks of 3 m² to 1.2 ha
+  (2.8e-6 to 0.0118 km²); the deposit gives areas from 0.01 ha up rounded to
+  the nearest 0.01 ha, so four islands share 0.0001 km². Twenty islets, all
+  under 30 m², have no plants
+  recorded. They are kept, since they are the small-island end of the study,
+  but only `lin_pow` (which adds `con` before taking logs) fits zero richness;
+  drop them for the other models:
+
+  ```python
+  schrader = sars.load_schrader()
+  sars.sar_multi(schrader[schrader["species"] > 0])
+  ```
 - **`load_niering`**'s islands are all small: 0.00012 to 0.318 km² (120 m² to
   32 ha). Fitted parameters are in those units, so the power model's `c` is
   the richness expected on 1 km², three times the size of the largest island.
@@ -86,17 +109,28 @@ sars.sar_threshold(sars.load_gala())
 
 ## Sources
 
-- Preston FW (1962). The canonical distribution of commonness and rarity.
-  *Ecology*, 43, 185-215, 410-432. (`load_galap`)
+- Gooriah L, Blowes SA, Sagouis A, Schrader J, Karger DN, Kreft H, Chase JM
+  (2021). Synthesis reveals that island species-area relationships emerge from
+  processes beyond passive sampling. *Global Ecology and Biogeography*, 30,
+  2119-2131. Data: Zenodo record 7311286, CC0. (`load_schrader`, `load_xu`)
 - Johnson MP, Raven PH (1973). Species number and endemism: the Galápagos
   Archipelago revisited. *Science*, 179, 893-895. (`load_gala`)
-- Sfenthourakis S, Triantis KA (2009). Habitat diversity, ecological
-  requirements of species and the Small Island Effect. *Diversity and
-  Distributions*, 15, 131-140. (`load_aegean`)
 - Matthews TJ, Rigal F, Kougioumoutzis K, Trigas P, Triantis KA (2020).
   Unravelling the small-island effect through phylogenetic community ecology.
   *Journal of Biogeography*, 47, 2341-2352. (`load_aegean2`)
 - Niering WA (1963). Terrestrial ecology of Kapingamarangi Atoll, Caroline
   Islands. *Ecological Monographs*, 33, 131-160. (`load_niering`)
+- Preston FW (1962). The canonical distribution of commonness and rarity.
+  *Ecology*, 43, 185-215, 410-432. (`load_galap`)
+- Schrader J, Moeljono S, Keppel G, Kreft H (2019). Plants on small islands
+  revisited: the effects of spatial scale and habitat quality on the
+  species-area relationship. *Ecography*, 42, 1405-1414. (`load_schrader`)
+- Sfenthourakis S, Triantis KA (2009). Habitat diversity, ecological
+  requirements of species and the Small Island Effect. *Diversity and
+  Distributions*, 15, 131-140. (`load_aegean`)
+- Xu A, Han X, Zhang X, Millien V, Wang Y (2017). Nestedness of butterfly
+  assemblages in the Zhoushan Archipelago, China: area effects, life-history
+  traits and conservation implications. *Biodiversity and Conservation*, 26,
+  1375-1392. (`load_xu`)
 
 If you publish results from one of these datasets, cite its source.
