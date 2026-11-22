@@ -10,6 +10,8 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+## [0.11.5] - 2026-11-22
+
 ### Added
 
 - `SARFit.at_bounds`: the parameters that stopped on a bound of the fit's
@@ -747,7 +749,8 @@ reconstructed from the commit history and the
 - Project skeleton: package layout, CI, publishing workflow, license, and
   citation file.
 
-[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.4...HEAD
+[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.5...HEAD
+[0.11.5]: https://github.com/jmcmeen/sars/compare/v0.11.4...v0.11.5
 [0.11.4]: https://github.com/jmcmeen/sars/compare/v0.11.3...v0.11.4
 [0.11.3]: https://github.com/jmcmeen/sars/compare/v0.11.2...v0.11.3
 [0.11.2]: https://github.com/jmcmeen/sars/compare/v0.11.1...v0.11.2
