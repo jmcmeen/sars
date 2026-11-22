@@ -279,6 +279,44 @@ if __name__ == "__main__":
     ci = sars.bootstrap_ci(galap, n_boot=1000, n_jobs=-1)
 ```
 
+## Cross-validation
+
+AICc ranks models by how well they fit, with a penalty for parameters. With few islands,
+models it ranks closely can predict quite differently, and its small-sample correction
+is itself an approximation. `loo_cv` asks the question directly: leave each island out,
+fit every model to the rest, and see how well it predicts the island it didn't see.
+
+```python
+gala = sars.load_gala()
+cv = sars.loo_cv(gala, n_jobs=-1)
+cv.summary[["model", "rmse", "max_error", "worst", "cv_rank", "ic_rank"]].head()
+#       model   rmse  max_error       worst  cv_rank  ic_rank
+# 0      koba  64.43     203.43  Santa Cruz        1          2
+# 1     ratio  66.31     213.88  Fernandina        2          7
+# 2     monod  69.04     217.29  Fernandina        3          8
+# ...
+```
+
+`rmse` and `mae` are the root mean square and mean absolute errors of the left-out
+predictions, in species. `max_error` and `worst` give the largest error and the island it
+was for (named from an `island`, `site`, `locality` or `name` column, or the one `label`
+gives). `ic_rank` is the model's rank by AICc on all the data; `ic="AIC"` or `"BIC"`
+compares with those instead, and with very few islands, where AICc is undefined, it has
+to. On Johnson and Raven's 30 Galápagos islands, AICc's best model, p1, comes 16th
+by cross-validation: it predicts Isabela, the largest island, poorly when Isabela is left
+out. The row `"average"` is the AICc model average, refitted in each fold. One model that
+extrapolates wildly in some fold can spoil it, as epm2 does on the 16-island `galap` data.
+`cv.predictions` holds every left-out prediction. A model whose fit fails in some fold
+is ranked after those that never fail; `rmse_common` compares every model on the islands
+all of them predicted.
+
+Each fold runs the full multi-start search, so `n_jobs=-1` is worth using. On these 30
+islands it takes about 3 minutes on one core. `warm_start=True` instead starts each fold
+from the fit to all the data, as the bootstrap's fast method does: 15 to 30 times faster,
+but those starting values have seen the island left out. A flexible model can stay near
+them rather than find the best fit to the other islands, and its error comes out too
+small. Here, warm starts move weibull4 from 15th to 4th.
+
 ## Saving and loading results
 
 Any result `sars` returns (a single fit, a multi-model fit, an average, a threshold fit,

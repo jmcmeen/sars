@@ -240,3 +240,16 @@ def test_unexpected_errors_are_an_envelope_under_json(capsys, monkeypatch):
     assert code == 1 and envelope["error"] == {"type": "ZeroDivisionError", "message": "boom"}
     with pytest.raises(ZeroDivisionError):  # without --json, a bug keeps its traceback
         main(["fit", "galap"])
+
+
+def test_cv(capsys):
+    code, envelope = run_json(capsys, "cv", "galap", "-m", "power,loga")
+    summary = envelope["result"]["summary"]
+    assert code == 0 and summary["type"] == "LOOCV"
+    assert [row["cv_rank"] for row in summary["models"]] == [1, 2, 3]
+    assert isinstance(summary["models"][0]["n_failed"], int)
+    code, out, _ = run(capsys, "cv", "galap", "-m", "power,loga", "--warm")
+    assert code == 0 and out.startswith("Leave-one-island-out: best")
+    code, envelope = run_json(capsys, "cv", "gala", "-m", "power", "--ic", "AIC")
+    rows = {row["model"]: row for row in envelope["result"]["summary"]["models"]}
+    assert rows["power"]["worst"] == "Isabela" and "AIC" in rows["power"]

@@ -13,6 +13,7 @@ except PackageNotFoundError:
 
 from sars._checks import ResidualChecks
 from sars._coleman import ColemanFit, ColemanTest, coleman
+from sars._crossval import LOOCV, loo_cv
 from sars._gdm import GDMFit, GDMMultiFit, sar_gdm
 from sars._inference import (
     AveragedSAR,
@@ -84,6 +85,7 @@ __all__ = [
     "ColemanTest",
     "GDMFit",
     "GDMMultiFit",
+    "LOOCV",
     "ManySARFit",
     "MultiSARFit",
     "ResidualChecks",
@@ -108,6 +110,7 @@ __all__ = [
     "load_niering",
     "load_schrader",
     "load_xu",
+    "loo_cv",
     "sar_average",
     "sar_gdm",
     "sar_many",

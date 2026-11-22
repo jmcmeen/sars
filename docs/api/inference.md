@@ -24,6 +24,14 @@
 
 ::: sars.ManySARFit
 
+## loo_cv
+
+::: sars.loo_cv
+
+## LOOCV
+
+::: sars.LOOCV
+
 ## sar_pred
 
 ::: sars.sar_pred

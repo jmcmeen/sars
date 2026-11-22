@@ -18,6 +18,7 @@ FORMAT_VERSION = 1
 def _result_types() -> dict[str, type]:
     """The result classes JSON may rebuild, by name. Nothing else is ever
     constructed from a file, so loading one can't run arbitrary code."""
+    from sars._crossval import LOOCV
     from sars._inference import AveragedSAR, BootstrappedCI, MultiSARFit
     from sars._linpow import LinPowFit
     from sars._many import ManySARFit
@@ -33,6 +34,7 @@ def _result_types() -> dict[str, type]:
         ThresholdFit,
         ThresholdCI,
         ManySARFit,
+        LOOCV,
     ]
     return {cls.__name__: cls for cls in classes}
 
@@ -42,7 +44,8 @@ def to_json(obj: Any, indent: int | None = None) -> str:
 
     Works for every result the package returns (`SARFit`, `MultiSARFit`,
     `AveragedSAR`, `BootstrappedCI`, `LinPowFit`, `ThresholdFit`,
-    `ThresholdCI`, `ManySARFit`), with its data, parameters and settings. The
+    `ThresholdCI`, `ManySARFit`, `LOOCV`), with its data, parameters and
+    settings. The
     text is standard JSON: NaN and infinite numbers (an AICc that is
     undefined, say) are written as strings and read back as numbers. It
     records the format version and the sars version that wrote it.

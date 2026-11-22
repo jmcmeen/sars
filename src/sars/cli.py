@@ -56,9 +56,11 @@ def _version() -> str:
 # ---------------------------------------------------------------------------
 
 
-def _read_data(source: str, area_col: str, species_col: str) -> Any:
+def _read_data(source: str, area_col: str, species_col: str, label_col: str | None = None) -> Any:
     """A data frame of area and species from a CSV file, standard input
-    (``-``) or a bundled dataset's name."""
+    (``-``) or a bundled dataset's name. ``label_col`` keeps a column naming the
+    islands too: its name, or "auto" for the first of island, site, locality
+    and name found."""
     import pandas as pd
 
     import sars
@@ -82,7 +84,20 @@ def _read_data(source: str, area_col: str, species_col: str) -> Any:
                 f"No column {column!r} in {source}; its columns are {list(frame.columns)}. "
                 "Name the columns with --area-col and --species-col."
             )
-    return sars.from_df(frame, area_col=area_col, species_col=species_col)
+    data = sars.from_df(frame, area_col=area_col, species_col=species_col)
+    if label_col is not None:
+        from sars._crossval import _LABEL_GUESSES
+
+        if label_col == "auto":
+            lower = {str(c).lower(): c for c in frame.columns}
+            label_col = next((lower[g] for g in _LABEL_GUESSES if g in lower), None)
+        elif label_col not in frame.columns:
+            raise CLIError(
+                f"No column {label_col!r} in {source}; its columns are {list(frame.columns)}."
+            )
+        if label_col is not None and label_col not in data.columns:
+            data[label_col] = frame[label_col].to_numpy()
+    return data
 
 
 def _model_list(values: Sequence[str] | None) -> list[str] | None:
@@ -110,21 +125,27 @@ def _number(value: Any) -> Any:
 
 
 def _records(frame: Any) -> list[dict[str, Any]]:
-    out = []
-    for row in frame.to_dict(orient="records"):
-        out.append(
-            {
-                key: _number(value)
-                if isinstance(value, (int, float)) and not isinstance(value, bool)
-                else (
-                    None
-                    if value is None or (isinstance(value, float) and math.isnan(value))
-                    else value
-                )
-                for key, value in row.items()
-            }
-        )
-    return out
+    """A table's rows as plain JSON values: whole numbers stay integers,
+    undefined numbers and missing values become None."""
+    return [
+        {key: _cell_value(value) for key, value in row.items()}
+        for row in frame.to_dict(orient="records")
+    ]
+
+
+def _cell_value(value: Any) -> Any:
+    import numpy as np
+    import pandas as pd
+
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    if isinstance(value, (int, np.integer)):
+        return int(value)
+    if isinstance(value, (float, np.floating)):
+        return _number(value)
+    if value is None or value is pd.NA or value is pd.NaT:
+        return None
+    return value
 
 
 def _summary(obj: Any) -> dict[str, Any]:
@@ -168,6 +189,14 @@ def _summary(obj: Any) -> dict[str, Any]:
             "segments": [{k: _number(v) for k, v in s.items()} for s in obj.best_segments],
             "models": _records(obj.summary),
         }
+    if kind == "LOOCV":
+        return {
+            "type": kind,
+            "best": obj.summary.iloc[0]["model"],
+            "warm_start": obj.warm_start,
+            "models": _records(obj.summary),
+            "not_fitted": dict(obj.multi.not_fitted),
+        }
     raise CLIError(f"Can't summarise a {kind}.")  # pragma: no cover
 
 
@@ -196,6 +225,10 @@ def _print_summary(summary: dict[str, Any], out: Any) -> None:
         return
     if kind == "AveragedSAR":
         print(f"Model average, weights by {summary['ic']}:", file=out)
+    elif kind == "LOOCV":
+        print(
+            f"Leave-one-island-out: best {summary['best']} (by RMSE of left-out islands)", file=out
+        )
     elif kind == "ThresholdFit":
         points = ", ".join(_fmt(b) for b in summary["breakpoints"]) or "none"
         scale = "log area" if summary["log_area"] else "area"
@@ -302,6 +335,23 @@ def _cmd_threshold(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
         models=_model_list(args.models),
         interval=args.interval,
         log_area=not args.no_log_area,
+    )
+    return _finish(obj, args)
+
+
+def _cmd_cv(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
+    import sars
+
+    data = _read_data(
+        args.data, args.area_col, args.species_col, label_col=args.label_col or "auto"
+    )
+    models = _model_list(args.models) or ["all"]
+    obj = sars.loo_cv(
+        data,
+        models="all" if models == ["all"] else models,
+        warm_start=args.warm,
+        ic=args.ic,
+        n_jobs=args.n_jobs,
     )
     return _finish(obj, args)
 
@@ -483,6 +533,38 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_output_args(threshold)
     threshold.set_defaults(handler=_cmd_threshold)
+
+    cv = commands.add_parser(
+        "cv",
+        help="rank models by leave-one-island-out cross-validation",
+        description="Leave each island out in turn, fit the models to the rest, predict it, "
+        "and rank the models by the error of those predictions, beside their AICc rank.",
+    )
+    _add_data_args(cv)
+    cv.add_argument(
+        "-m", "--models", action="append", metavar="NAME", help="models to compare (default: all)"
+    )
+    cv.add_argument(
+        "--warm",
+        action="store_true",
+        help="start each fold from the full fit: much faster, but optimistic for flexible models",
+    )
+    cv.add_argument(
+        "--ic",
+        choices=["AICc", "AIC", "BIC"],
+        default="AICc",
+        help="criterion to compare with and average by (default: AICc)",
+    )
+    cv.add_argument(
+        "--label-col",
+        metavar="COLUMN",
+        help="the column naming the islands (default: island, site, locality or name if present)",
+    )
+    cv.add_argument(
+        "--n-jobs", type=int, default=1, metavar="N", help="processes to use; -1 for one per core"
+    )
+    _add_output_args(cv)
+    cv.set_defaults(handler=_cmd_cv)
 
     predict = commands.add_parser(
         "predict",

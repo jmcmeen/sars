@@ -28,6 +28,13 @@ reconstructed from the commit history and the
   `nortest::lillie.test`; above 0.1 the p value comes from a simulated null (and is at
   least 0.1), within about 0.01 of the true value, where R's polynomial fit is off by up
   to 0.03 (#152)
+- `sars.loo_cv()`: leave-one-island-out cross-validation. It ranks the models by the
+  error of their predictions for left-out islands, beside their AICc (or AIC, BIC) rank, with the
+  largest error and its island, the AICc average refitted in each fold, and every
+  prediction. Each fold runs the full search (warm starts are optional, and optimistic
+  for flexible models), and folds can run in parallel (`n_jobs`). The
+  CLI runs it as `sars cv`, and its result saves as JSON (#222)
+- The CLI's JSON tables keep whole numbers as integers (#222)
 - A Galápagos example for `from_geodataframe`: 28 island outlines from OpenStreetMap,
   joined by name to `load_gala()`'s plant counts, fitted over 0.02 to 4,700 km² and
   compared with the published areas (#153)

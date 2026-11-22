@@ -30,6 +30,7 @@ $ sars datasets xu > xu.csv
 | `sars fit DATA [-m MODEL ...]` | Fits one model (`power` by default). With several models (`-m power,loga -m koba`) or `-m all`, fits each and ranks them by AICc. |
 | `sars average DATA [-m MODEL ...] [--ic AICc\|AIC\|BIC]` | Averages the models (all by default), weighted by the criterion. |
 | `sars threshold DATA [-m MODEL ...] [--interval X] [--no-log-area]` | Fits piecewise models (ContOne, ZslopeOne and Linear by default) and picks one by AICc. |
+| `sars cv DATA [-m MODEL ...] [--ic AICc\|AIC\|BIC] [--warm] [--label-col COL] [--n-jobs N]` | Ranks the models by leave-one-island-out cross-validation (see [`loo_cv`](api/inference.md)). |
 | `sars predict FILE AREA ...` | Predicts richness at the areas from a result saved with `--save`. |
 | `sars datasets [NAME]` | Lists the bundled datasets, or writes one as CSV. |
 
