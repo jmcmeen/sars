@@ -32,6 +32,12 @@ reconstructed from the commit history and the
 
 ### Changed
 
+- **Behavior change:** `sar_multi` and `sar_average` warn when a model doesn't converge
+  or its fit raises, naming each, and list them with the reason in the new
+  `MultiSARFit.not_fitted`. They used to drop them without a word, so the only way to
+  find a missing model was to compare names with the full list. `bootstrap_ci` warns
+  once, never per resample: for the fit to the original data, or, with
+  `method="full"`, for a model that couldn't be fitted in any resample (#179)
 - **Behavior change:** sars requires Python 3.11 or later. Python 3.10 reached end of
   life in October 2026; on 3.10, pip keeps installing 0.10. The minimum versions of
   numpy, scipy, pandas and matplotlib rise to their first releases with Python 3.11

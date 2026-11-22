@@ -148,9 +148,10 @@ making the small-sample correction material rather than cosmetic [@Burnham2002].
 **Graceful convergence handling.** When the NLS solver exhausts its starting
 grid without converging, `sars` returns a `SARFit` with `converged=False`
 rather than raising an exception. The multi-model functions leave
-non-converged fits out of the comparison and the average, and list any model
-dropped by the optional residual checks, with the check it failed, so a
-partial failure narrows the candidate set instead of stopping the analysis.
+non-converged fits out of the comparison and the average, warn, and list
+each model left out with the reason: it did not converge, its fit failed, or
+it failed one of the optional residual checks. A partial failure narrows the
+candidate set instead of stopping the analysis.
 
 **Layered optional dependencies.** The base install requires only `numpy`,
 `scipy`, `pandas`, and `matplotlib`. Geospatial I/O via `geopandas` and

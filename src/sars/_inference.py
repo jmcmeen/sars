@@ -192,12 +192,18 @@ class MultiSARFit:
         asked for. A model that fails several checks is listed under the
         first, in the order normality, homoscedasticity, negative fitted
         values.
+    not_fitted : dict[str, str]
+        Models that were asked for but have no fit, keyed by model name:
+        ``"did not converge"``, or ``"fitting failed: "`` followed by the
+        first line of the error raised (up to 60 characters). Empty when
+        every model converged.
     """
 
     fits: list[SARFit]
     data: pd.DataFrame
     summary: pd.DataFrame = field(repr=False)
     excluded: dict[str, str] = field(default_factory=dict)
+    not_fitted: dict[str, str] = field(default_factory=dict)
 
     def __repr__(self) -> str:
         n = len(self.fits)
@@ -226,14 +232,32 @@ def _exclude_failing(
     return kept, excluded
 
 
+def _unfitted_reason(exc: Exception) -> str:
+    """The first line of an error raised while fitting, cut short as
+    ``_drop_reason`` cuts it, as a reason."""
+    text = str(exc).strip()
+    first = text.splitlines()[0][:60] if text else type(exc).__name__
+    return f"fitting failed: {first}"
+
+
+def _warn_not_fitted(not_fitted: dict[str, str], n_asked: int, stacklevel: int) -> None:
+    listed = "; ".join(f"{model}: {reason}" for model, reason in not_fitted.items())
+    warnings.warn(
+        f"{len(not_fitted)} of {n_asked} models could not be fitted and were left out: {listed}",
+        stacklevel=stacklevel + 1,
+    )
+
+
 def _sar_multi(
     data: pd.DataFrame,
     models: str | list[str],
     checks: CheckOptions,
     stacklevel: int,
+    warn: bool = True,
 ) -> MultiSARFit:
-    """``sar_multi``, with the exclusion warning aimed ``stacklevel`` frames up
-    so it points at the user's call whichever public function made it."""
+    """``sar_multi``, with its warnings aimed ``stacklevel`` frames up so they
+    point at the user's call whichever public function made it. ``warn=False``
+    keeps a bootstrap resample from repeating them once per resample."""
     # Validate once up front so bad input raises here. The per-model
     # except below is only for errors raised while fitting.
     _validate_data(data)
@@ -244,17 +268,24 @@ def _sar_multi(
         model_names = list(models)
 
     fits: list[SARFit] = []
+    not_fitted: dict[str, str] = {}
     for name in model_names:
         _model_spec(name)  # an unknown name raises
         try:
             fit = _fit_nls(name, data)
-        except ValueError:
+        except ValueError as exc:
+            not_fitted[name] = _unfitted_reason(exc)
             continue
         if fit.converged:
             fits.append(fit)
+        else:
+            not_fitted[name] = "did not converge"
+    if not_fitted and warn:
+        # A name asked for twice is fitted twice but counted once.
+        _warn_not_fitted(not_fitted, len(dict.fromkeys(model_names)), stacklevel + 1)
 
     fits, excluded = _exclude_failing(fits, checks)
-    if excluded:
+    if excluded and warn:
         listed = "; ".join(f"{model}: {reason}" for model, reason in excluded.items())
         warnings.warn(
             f"{len(excluded)} of {len(excluded) + len(fits)} fitted models failed a residual "
@@ -263,7 +294,9 @@ def _sar_multi(
         )
 
     summary = _build_summary(fits)
-    return MultiSARFit(fits=fits, data=data, summary=summary, excluded=excluded)
+    return MultiSARFit(
+        fits=fits, data=data, summary=summary, excluded=excluded, not_fitted=not_fitted
+    )
 
 
 def sar_multi(
@@ -314,12 +347,14 @@ def sar_multi(
     -------
     MultiSARFit
         Container with the converged fits that passed the checks asked for, a
-        summary table, and the models left out in ``excluded``.
+        summary table, the models left out by the checks in ``excluded``, and
+        those that didn't converge or failed to fit in ``not_fitted``.
 
     Warns
     -----
     UserWarning
-        If any model fails a check that was asked for.
+        If any model doesn't converge or fails to fit, and if any model fails
+        a check that was asked for.
     """
     checks = CheckOptions(
         normality=normality,
@@ -530,7 +565,9 @@ def sar_average(
     Warns
     -----
     UserWarning
-        If any model fails a check that was asked for.
+        If any model doesn't converge or fails to fit (they are listed in
+        ``multi.not_fitted``), and if any model fails a check that was asked
+        for.
     """
     if ic not in _VALID_ICS:
         raise ValueError(f"Unsupported IC: {ic!r}. Choose from {sorted(_VALID_ICS)}.")
@@ -637,13 +674,16 @@ def _sar_multi_fast(
     MultiSARFit
     """
     fits: list[SARFit] = []
+    not_fitted: dict[str, str] = {}
     for name, params in warm_starts.items():
         fit = _fit_nls(name, data, start_from=params)
         if fit.converged:
             fits.append(fit)
+        else:
+            not_fitted[name] = "did not converge"
 
     summary = _build_summary(fits, shapes=False)
-    return MultiSARFit(fits=fits, data=data, summary=summary)
+    return MultiSARFit(fits=fits, data=data, summary=summary, not_fitted=not_fitted)
 
 
 def bootstrap_ci(
@@ -727,7 +767,10 @@ def bootstrap_ci(
     Warns
     -----
     UserWarning
-        If any model fails a check that was asked for; if resamples were
+        If any model doesn't converge or fails to fit the original data (fitted
+        for the "fast" method, or when checks are asked for), or, for the
+        "full" method, can't be fitted in any resample (once, not per
+        resample); if any model fails a check that was asked for; if resamples were
         dropped (``BootstrappedCI.dropped`` says why); if the mean is pulled
         outside the central 95% of the resample predictions; or if the upper
         bound runs away, exceeding ten times the largest observed richness.
@@ -759,6 +802,7 @@ def bootstrap_ci(
     # Residual checks need that fit too, whatever the method: the models that
     # pass on the original data are the ones every resample averages.
     warm_starts: dict[str, dict[str, float]] | None = None
+    base_multi: MultiSARFit | None = None
     if method == "fast" or checks.requested:
         base_multi = _sar_multi(data, models, checks, stacklevel=2)
         if base_multi.excluded:
@@ -798,6 +842,9 @@ def bootstrap_ci(
     preds = []
     convergence_counts: list[int] = []
     dropped: Counter[str] = Counter()
+    # For the "full" method: in how many resamples each model had no fit.
+    unfitted_in: Counter[str] = Counter()
+    n_full_fitted = 0
 
     for _ in range(n_boot):
         idx = rng.integers(0, n, size=n)
@@ -817,7 +864,9 @@ def bootstrap_ci(
                     weights = dict(zip(multi.summary["model"], w_arr, strict=True))
                     avg = AveragedSAR(multi=multi, ic=ic, weights=weights)
                 else:
-                    multi = sar_multi(boot_data, models=models)
+                    multi = _sar_multi(boot_data, models, CheckOptions(), 2, warn=False)
+                    unfitted_in.update(multi.not_fitted.keys())
+                    n_full_fitted += 1
                     n_converged = len(multi.fits)
                     if not multi.fits:
                         dropped["no model converged"] += 1
@@ -842,6 +891,17 @@ def bootstrap_ci(
             convergence_counts.append(n_converged)
         else:
             dropped["prediction not finite"] += 1
+
+    # A model the "full" method never managed to fit was never in the candidate
+    # set. Say so once here, unless the fit to the original data already did.
+    reported = base_multi.not_fitted if base_multi is not None else {}
+    never = {
+        name: f"not fitted in any of {n_full_fitted} resamples"
+        for name, count in unfitted_in.items()
+        if count == n_full_fitted and name not in reported
+    }
+    if never:
+        _warn_not_fitted(never, n_attempted, stacklevel=2)
 
     if dropped:
         listed = dropped.most_common(3)

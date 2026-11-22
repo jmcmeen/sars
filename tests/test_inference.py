@@ -260,7 +260,10 @@ class TestAverageOfNoModels:
         failed = _inference._fit_nls("power", galap)
         failed.converged = False
         monkeypatch.setattr(_inference, "_fit_nls", lambda name, data, **kw: failed)
-        with pytest.raises(ValueError, match="nothing to average: no model converged"):
+        with (
+            pytest.warns(UserWarning, match="2 of 2 models could not be fitted"),
+            pytest.raises(ValueError, match="nothing to average: no model converged"),
+        ):
             sars.sar_average(galap, models=["power", "loga"])
 
     def test_sar_average_of_no_models_raises(self, galap):
@@ -277,24 +280,104 @@ class TestAverageOfNoModels:
     def test_a_full_bootstrap_counts_resamples_where_no_model_converged(self, galap, monkeypatch):
         from sars import _inference
 
-        real = _inference.sar_multi
+        real = _inference._sar_multi
         calls = {"n": 0}
 
-        def multi(data, models="all"):
+        def multi(data, models, checks, stacklevel, warn=True):
             calls["n"] += 1
             if calls["n"] % 2 == 0:
                 return _inference.MultiSARFit(
                     fits=[], data=data, summary=_inference._build_summary([])
                 )
-            return real(data, models=models)
+            return real(data, models, checks, stacklevel, warn=warn)
 
-        monkeypatch.setattr(_inference, "sar_multi", multi)
+        monkeypatch.setattr(_inference, "_sar_multi", multi)
         with pytest.warns(UserWarning, match="dropped"):
             ci = sars.bootstrap_ci(
                 galap, models=["power"], method="full", n_boot=6, rng=np.random.default_rng(0)
             )
         assert ci.dropped == {"no model converged": 3}
         assert ci.n_boot == 3
+
+
+class TestModelsThatCannotBeFitted:
+    """Models that don't converge, or raise while fitting, used to vanish from
+    sar_multi's result without a word."""
+
+    @pytest.fixture()
+    def failing(self, galap, monkeypatch):
+        """loga never converges and koba raises; the rest fit normally."""
+        import dataclasses
+
+        from sars import _inference
+
+        real = _inference._fit_nls
+
+        def fit(name, data, **kw):
+            if name == "koba":
+                raise ValueError("too few points\nfor this model")
+            result = real(name, data, **kw)
+            return dataclasses.replace(result, converged=False) if name == "loga" else result
+
+        monkeypatch.setattr(_inference, "_fit_nls", fit)
+        return ["power", "loga", "koba"]
+
+    def test_sar_multi_lists_and_warns_about_them(self, galap, failing):
+        with pytest.warns(UserWarning, match="2 of 3 models could not be fitted") as record:
+            multi = sars.sar_multi(galap, models=failing)
+        assert [f.model for f in multi.fits] == ["power"]
+        assert multi.not_fitted == {
+            "loga": "did not converge",
+            "koba": "fitting failed: too few points",
+        }
+        assert multi.excluded == {}
+        assert record[0].filename == __file__  # points at the caller
+
+    def test_sar_average_warns_and_keeps_the_list(self, galap, failing):
+        with pytest.warns(
+            UserWarning, match="could not be fitted and were left out: loga: did not converge"
+        ):
+            avg = sars.sar_average(galap, models=failing)
+        assert list(avg.multi.not_fitted) == ["loga", "koba"]
+        assert list(avg.weights) == ["power"]
+
+    def test_no_warning_when_every_model_fits(self, galap):
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            multi = sars.sar_multi(galap, models=["power", "loga"])
+        assert multi.not_fitted == {}
+
+    @pytest.mark.parametrize(
+        ("method", "reason"),
+        [("fast", "did not converge"), ("full", "not fitted in any of 4 resamples")],
+    )
+    def test_bootstrap_warns_once(self, galap, failing, method, reason):
+        """Once, never per resample: the fast method reports the fit to the
+        original data, the full method the models no resample could fit."""
+        import warnings
+
+        with warnings.catch_warnings(record=True) as record:
+            warnings.simplefilter("always")
+            sars.bootstrap_ci(
+                galap, models=failing, method=method, n_boot=4, rng=np.random.default_rng(0)
+            )
+        unfitted = [w for w in record if "could not be fitted" in str(w.message)]
+        assert len(unfitted) == 1
+        assert f"loga: {reason}" in str(unfitted[0].message)
+        assert unfitted[0].filename == __file__
+
+    def test_a_long_error_is_cut_short_and_duplicates_count_once(self, galap, monkeypatch):
+        from sars import _inference
+
+        def fit(name, data, **kw):
+            raise ValueError("x" * 200 + "\nsecond line")
+
+        monkeypatch.setattr(_inference, "_fit_nls", fit)
+        with pytest.warns(UserWarning, match="1 of 1 models could not be fitted"):
+            multi = sars.sar_multi(galap, models=["power", "power"])
+        assert multi.not_fitted == {"power": "fitting failed: " + "x" * 60}
 
 
 class TestBootstrapCI:

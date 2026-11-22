@@ -133,6 +133,16 @@ The summary table is sorted by AICc. The `weight` column gives Akaike weights
 that sum to 1. `shape` is each model's general shape and `observed_shape` the shape its
 fitted curve took over the observed areas (see [Models](models.md)).
 
+A model that doesn't converge, or whose fit fails, is left out of the summary, the
+weights and any average. `sar_multi` and `sar_average` warn, naming it, and list it with
+the reason in `not_fitted`:
+
+```python
+multi.not_fitted
+# {} when every model converged, as on these data; otherwise e.g.
+# {'betap': 'did not converge'}
+```
+
 ## Model averaging
 
 Rather than picking a single best model, use `sar_average()` for
