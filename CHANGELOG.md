@@ -32,6 +32,13 @@ reconstructed from the commit history and the
 
 ### Changed
 
+- **Behavior change:** sars requires Python 3.11 or later. Python 3.10 reached end of
+  life in October 2026; on 3.10, pip keeps installing 0.10. The minimum versions of
+  numpy, scipy, pandas and matplotlib rise to their first releases with Python 3.11
+  wheels (numpy 1.23.2, scipy 1.9.2, pandas 1.5, matplotlib 3.6) (#169)
+- **Behavior change:** the `interactive` extra is gone. It installed plotly, which no part
+  of sars uses: every plot is matplotlib. `sars[all]` now installs the `geo` extra only
+  (#170)
 - **Behavior change:** `from_geodataframe` keeps the GeoDataFrame's index when the areas
   come from `area_col`, as it already did for areas computed from the geometries (and as
   `from_df` keeps its input's). It used to return a fresh `RangeIndex` on that path only,

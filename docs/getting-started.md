@@ -6,17 +6,16 @@
 pip install sars
 ```
 
+sars needs Python 3.11 or later.
+
 ### Optional dependencies
 
 ```bash
-# Interactive Plotly plots
-pip install sars[interactive]
-
 # GeoDataFrame support (geopandas + shapely)
-pip install sars[geo]
+pip install "sars[geo]"
 
 # Everything
-pip install sars[all]
+pip install "sars[all]"
 ```
 
 ## Your first SAR fit
@@ -484,7 +483,7 @@ data = sars.from_csv("my_islands.csv", area_col="island_area", species_col="rich
 data = sars.from_geodataframe(gdf, species_col="n_species")
 ```
 
-`from_geodataframe` needs the `geo` extra (`pip install sars[geo]`). It measures each
+`from_geodataframe` needs the `geo` extra (`pip install "sars[geo]"`). It measures each
 polygon in the GeoDataFrame's own coordinate system, so reproject longitude/latitude
 data to an equal-area projection first, for example `gdf.to_crs("EPSG:6933")`; it raises
 an error for coordinates in degrees, whose "areas" mean nothing. `area_units` chooses

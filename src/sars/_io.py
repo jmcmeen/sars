@@ -268,7 +268,7 @@ def from_geodataframe(
     """Convert a GeoDataFrame of polygons to SAR format.
 
     Computes area from polygon geometries if no area column is specified.
-    Requires geopandas and shapely (install with ``pip install sars[geo]``).
+    Requires geopandas and shapely (install with ``pip install "sars[geo]"``).
 
     Areas are measured in the GeoDataFrame's own coordinate reference system
     (CRS), so it must be a projected one: reproject longitude/latitude data
@@ -328,7 +328,7 @@ def from_geodataframe(
         import geopandas as gpd  # noqa: F401
     except ImportError as e:
         raise ImportError(
-            "geopandas is required for from_geodataframe(). Install with: pip install sars[geo]"
+            "geopandas is required for from_geodataframe(). Install with: pip install 'sars[geo]'"
         ) from e
 
     if crs_units is not None:

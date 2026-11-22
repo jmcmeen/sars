@@ -9,7 +9,7 @@ description = "Species-area relationship curve fitting in Python"
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "John McMeen" }]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = ["species-area relationship", "SAR", "macroecology",
             "biodiversity", "ecology", "biogeography"]
 classifiers = [
@@ -17,7 +17,6 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -26,10 +25,10 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    "numpy>=1.22",
-    "scipy>=1.8",
-    "pandas>=1.4",
-    "matplotlib>=3.5",
+    "numpy>=1.23.2",
+    "scipy>=1.9.2",
+    "pandas>=1.5",
+    "matplotlib>=3.6",
 ]
 
 [project.optional-dependencies]
@@ -50,9 +49,8 @@ docs = [
     "mkdocs-material",
     "mkdocstrings[python]",
 ]
-interactive = ["plotly>=5"]
 geo = ["geopandas>=0.12", "shapely>=2.0"]
-all = ["sars[interactive,geo]"]
+all = ["sars[geo]"]
 
 [project.urls]
 Homepage = "https://github.com/jmcmeen/sars"
@@ -67,7 +65,7 @@ source = "vcs"
 packages = ["src/sars"]
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 100
 src = ["src", "tests"]
 

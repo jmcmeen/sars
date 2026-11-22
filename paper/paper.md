@@ -145,8 +145,7 @@ composability of the pipeline under partial failures.
 
 **Layered optional dependencies.** The base install requires only `numpy`,
 `scipy`, `pandas`, and `matplotlib`. Geospatial I/O via `geopandas` and
-`shapely` is an optional `geo` extra; interactive visualisation via `plotly`
-is a separate `interactive` extra. This design avoids imposing the geospatial
+`shapely` is an optional `geo` extra. This design avoids imposing the geospatial
 dependency chain, which can be substantial on some platforms, on users who
 work with tabular area-species data only.
 

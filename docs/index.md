@@ -19,7 +19,7 @@ A conceptual mirror of the R [`sars`](https://cran.r-project.org/package=sars) p
 - **Prediction** -- a table of predicted richness at any areas, from any fit
 - **Residual checks** -- normality, homoscedasticity and negative-prediction checks on each fit, optionally leaving out the models that fail before averaging
 - **Bootstrap confidence intervals** -- percentile-based CIs for averaged predictions
-- **Threshold models** -- piecewise regression for detecting breakpoints (small island effect), with bootstrap confidence intervals for the breakpoints
+- **Threshold models** -- piecewise regression for detecting breakpoints (small island effect), with confidence intervals for the breakpoints by bootstrap or by inverted F test
 - **Random placement** -- Coleman's null model for richness from a species-by-site abundance table, with a calibrated simulation test
 - **I/O adapters** -- load from CSV, GeoDataFrame, or pyiNaturalist summaries
 - **General dynamic model** -- richness as a function of island area and a hump in island age (Whittaker et al. 2008), with nested-model comparison
