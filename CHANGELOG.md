@@ -10,6 +10,8 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-11-22
+
 ### Changed
 
 - Fitting is several times faster: `sar_multi` on the Galápagos data takes about a
@@ -612,7 +614,8 @@ reconstructed from the commit history and the
 - Project skeleton: package layout, CI, publishing workflow, license, and
   citation file.
 
-[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.2...HEAD
+[0.11.2]: https://github.com/jmcmeen/sars/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/jmcmeen/sars/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/jmcmeen/sars/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/jmcmeen/sars/compare/v0.9.0...v0.10.0
