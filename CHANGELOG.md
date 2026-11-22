@@ -10,6 +10,18 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Fixed
+
+- `threshold_ci` gives the same bounds with `n_jobs > 1` as serially on every
+  CPU: the batched breakpoint search scores each resample alike however the
+  resamples are split among workers, where a BLAS product could round
+  differently by batch shape and flip a near-tie.
+- `sar_threshold` reports a perfect fit (residual sum of squares exactly 0,
+  which depends on the platform's rounding) as fitting exactly, ranking
+  first, instead of calling its AICc undefined for want of observations (and
+  saying it ranks last). Its AIC, AICc and BIC are -inf without numpy's
+  divide-by-zero warning.
+
 ## [0.11.5] - 2026-11-22
 
 ### Added

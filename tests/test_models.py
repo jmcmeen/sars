@@ -475,6 +475,17 @@ def test_param_table_has_no_standard_error_for_a_parameter_on_a_bound(galap_fits
     assert table.loc["c", "std_error"] > 10 * table.loc["c", "estimate"]
 
 
+def test_a_perfect_fit_has_ics_of_minus_infinity():
+    from sars._models import _compute_ic
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # no divide-by-zero warning from log(0)
+        assert _compute_ic(2, 10, 0.0) == (-np.inf, -np.inf, -np.inf)
+        aic, aicc, _ = _compute_ic(2, 3, 0.0)
+    assert aic == -np.inf and aicc == np.inf  # too few observations: undefined
+    assert sars.aicc(2, 10, 0.0) == -np.inf and sars.aicc(2, 3, 0.0) == np.inf
+
+
 def test_at_bounds_names_parameters_on_a_bound(galap_fits):
     """weibull4's z runs to its bound on the Galápagos data; the power fit's
     parameters are estimates."""

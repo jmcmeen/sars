@@ -124,8 +124,11 @@ def aicc(k: int, n: int, rss: float) -> float:
     Returns
     -------
     float
-        AICc value.
+        AICc value: +inf when ``n <= k + 1`` (undefined), -inf for a perfect
+        fit (``rss`` 0, an unbounded likelihood) otherwise.
     """
+    if rss == 0:
+        return np.inf if n - k - 1 <= 0 else -np.inf
     log_lik = -n / 2.0 * np.log(2.0 * np.pi * rss / n) - n / 2.0
     aic = -2.0 * log_lik + 2.0 * k
     if n - k - 1 > 0:

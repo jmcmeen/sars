@@ -439,6 +439,16 @@ def _fit_basis(columns: list[np.ndarray]) -> np.ndarray:
     return u[:, s > s[0] * 1e-10]
 
 
+def _rowwise(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """``a @ b``, each row of the result computed the same way whatever else
+    is in ``a``. A BLAS matrix product can sum in a different order for a
+    different number of rows on some CPUs, so a resample searched alone, in a
+    worker's chunk or in the whole batch could score its candidates
+    differently in the last bits, and a near-tie then pick a different
+    breakpoint. ``einsum`` without ``optimize`` uses numpy's own loops."""
+    return np.einsum("ij,jk->ik", a, b)
+
+
 def _hinge_gains(x: np.ndarray, q: np.ndarray, r_ys: np.ndarray, t: np.ndarray) -> np.ndarray:
     """How far the RSS falls when a hinge at each of ``t`` joins a fit.
 
@@ -455,7 +465,7 @@ def _hinge_gains(x: np.ndarray, q: np.ndarray, r_ys: np.ndarray, t: np.ndarray) 
     # of the hinge in r_h, so at 1e-10 of it the gain is still good to ~1e-5.
     usable = norms > 1e-20 * np.sum(hinges**2, axis=0)
     gains = np.zeros((len(r_ys), len(t)))
-    gains[:, usable] = (r_ys @ r_h[:, usable]) ** 2 / norms[usable]
+    gains[:, usable] = _rowwise(r_ys, r_h[:, usable]) ** 2 / norms[usable]
     return gains
 
 
@@ -477,7 +487,7 @@ def _best_hinge(
     when added to the fit with basis ``q``: its index in ``t`` and that RSS.
     The first wins a tie. The candidates are scored in blocks, so memory stays
     bounded however many there are."""
-    r_ys = ys - (ys @ q) @ q.T
+    r_ys = ys - _rowwise(_rowwise(ys, q), q.T)
     rss_without = np.sum(r_ys**2, axis=1)
     tie = _tie(ys)
     rows = np.arange(len(ys))
@@ -939,7 +949,9 @@ def sar_threshold(
     UserWarning
         If the dataset has fewer than 7 observations, or AICc is undefined for
         some of the models fitted (they rank last), as R sars's ``summary``
-        warns.
+        warns; or if a model fits the data exactly (residual sum of squares
+        0), whose AICc is -inf for want of residual variance: it ranks first,
+        and the ranking then reflects rounding, not evidence.
 
     References
     ----------
@@ -1016,7 +1028,19 @@ def sar_threshold(
         )
     summary = pd.DataFrame(rows).sort_values("AICc").reset_index(drop=True)
 
-    undefined = summary.loc[np.isinf(summary["AICc"]), "model"].tolist()
+    # +inf: too few observations for the model's parameters. -inf: a perfect
+    # fit (RSS 0), whose likelihood is unbounded; it ranks first, as a fit
+    # whose RSS rounds to a tiny positive number would anyway.
+    undefined = summary.loc[summary["AICc"] == np.inf, "model"].tolist()
+    perfect = summary.loc[summary["AICc"] == -np.inf, "model"].tolist()
+    if perfect:
+        warnings.warn(
+            f"{', '.join(perfect)} fit the data exactly (RSS 0): with no residual "
+            f"variance, AICc is -inf, so they rank first. Between such fits, and "
+            f"against fits with a tiny RSS, the ranking reflects rounding, not evidence.",
+            UserWarning,
+            stacklevel=2,
+        )
     if len(undefined) == len(summary):
         raise ValueError(
             f"AICc is undefined for every model fitted ({', '.join(undefined)}): with "

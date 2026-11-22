@@ -1,6 +1,7 @@
 """Tests for threshold / piecewise SAR models."""
 
 import dataclasses
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -304,6 +305,49 @@ class TestMoreThresholdModels:
         assert two.all_fits["DiscTwo"]["rss"] == pytest.approx(0.0, abs=1e-18)
         # A point at a breakpoint is in the segment to its left, as in the fit.
         assert two.predict(np.exp([4.0, 8.0])) == pytest.approx([9.0, 46.0])
+
+    def test_a_perfect_fit_ranks_first_and_says_why(self, monkeypatch):
+        """Where DiscTwo's RSS rounds to exactly 0 (it's about 1e-28 on some
+        machines, 0 on others), its AICc is -inf: the warning says it fits
+        exactly, not that n > k + 1 is needed, and it ranks first."""
+        from sars import _threshold as th
+
+        real = th._compute_ic
+        monkeypatch.setattr(
+            th, "_compute_ic", lambda k, n, rss: real(k, n, 0.0 if rss < 1e-20 else rss)
+        )
+        x = np.arange(1.0, 13.0)
+        y = np.where(x <= 4, 5.0 + x, np.where(x <= 8, 30.0 + 2 * x, 80.0 - x))
+        data = pd.DataFrame({"area": np.exp(x), "species": y})
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            fit = sars.sar_threshold(data, models=["DiscTwo", "DiscOne", "Linear"])
+        messages = [str(w.message) for w in caught]
+        assert any("DiscTwo fit the data exactly (RSS 0)" in m for m in messages)
+        assert not any("n > k + 1" in m for m in messages)
+        assert fit.best_model == "DiscTwo"
+        assert fit.summary.iloc[0]["AICc"] == -np.inf
+
+    @pytest.mark.parametrize("model", ["ContOne", "ZslopeOne", "ContTwo", "ZslopeTwo"])
+    def test_a_resample_gets_the_same_breakpoints_however_it_is_batched(self, model):
+        """Serially the bootstrap searches a whole batch of resamples; in
+        parallel each worker searches a chunk. Each resample's breakpoints
+        must not depend on which (#239)."""
+        from sars import _threshold as th
+
+        data = sars.load_aegean()
+        x = np.log(data["area"].to_numpy(float))
+        y = data["species"].to_numpy(float)
+        ys = y + np.random.default_rng(5).normal(0, np.std(y) * 0.3, size=(60, len(y)))
+        whole = th._resample_breakpoints(model, x, ys, None)
+        chunks = np.vstack(
+            [th._resample_breakpoints(model, x, c, None) for c in np.array_split(ys, 7)]
+        )
+        alone = np.vstack(
+            [th._resample_breakpoints(model, x, ys[i : i + 1], None) for i in range(0, 60, 6)]
+        )
+        np.testing.assert_array_equal(chunks, whole)
+        np.testing.assert_array_equal(alone, whole[::6])
 
     def test_vectorised_searches_match_trying_every_pair(self):
         """The two-threshold searches score pairs in bulk; the pair they pick must be the
