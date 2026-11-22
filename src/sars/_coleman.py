@@ -49,17 +49,22 @@ def _counts_array(abundance: pd.DataFrame | ArrayLike) -> np.ndarray:
     wrong with it. Missing values are looked for before anything else, so a
     table with gaps is reported as that, whatever type pandas gave it."""
     not_numbers = "abundance must hold numbers only (species in rows, sites in columns)."
+    not_rectangular = "abundance must be a rectangular table (species in rows, sites in columns)."
     try:
-        raw = (
-            abundance.to_numpy(dtype=object)
-            if isinstance(abundance, pd.DataFrame)
-            else np.asarray(abundance)
-        )
+        with warnings.catch_warnings():
+            # numpy before 1.24 warns, and builds a 1-D object array, where later
+            # versions refuse rows of unequal length; both are reported below.
+            warnings.filterwarnings("ignore", "Creating an ndarray from ragged")
+            raw = (
+                abundance.to_numpy(dtype=object)
+                if isinstance(abundance, pd.DataFrame)
+                else np.asarray(abundance)
+            )
     except (TypeError, ValueError) as exc:
-        # numpy refuses rows of unequal length.
-        raise ValueError(
-            "abundance must be a rectangular table (species in rows, sites in columns)."
-        ) from exc
+        raise ValueError(not_rectangular) from exc
+    if raw.dtype.kind == "O" and any(np.ndim(v) for v in raw.ravel()):
+        # An element that is itself a sequence: ragged at some depth.
+        raise ValueError(not_rectangular)
     if raw.ndim != 2:
         raise ValueError(
             f"abundance must be two-dimensional (species in rows, sites in columns), "

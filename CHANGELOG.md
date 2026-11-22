@@ -34,8 +34,20 @@ reconstructed from the commit history and the
   under `tests/data/gooriah2021/`; the test is marked `slow` and runs in CI's notebooks
   job (#187)
 
+### Changed
+
+- CI's test jobs install exactly the versions in `uv.lock` with uv, instead of resolving
+  the newest releases with pip on every run, so a failure comes from the change under
+  test. Two jobs run on pushes to `main`, manual runs and a new weekly schedule: one on
+  the minimum versions of the runtime dependencies, which gates the release, and one on
+  the newest releases, ignoring the lockfile, which only reports (#211, #212, #213)
+
 ### Fixed
 
+- The Kendall homoscedasticity check (`cor_method="kendall"`) no longer fails with an
+  AttributeError on scipy before 1.10, which `pyproject.toml` allows: those versions
+  name the estimate differently. `coleman` reports a ragged abundance table as not
+  rectangular on numpy before 1.24 too, as it does on later versions (#213)
 - `plot_multi` raises `ValueError` for a negative `top_n`, which it used to read as
   "all but the last n" models (`top_n=-1` drew 19 of 20). `top_n=0` still draws the
   observed data alone, now documented (#184)

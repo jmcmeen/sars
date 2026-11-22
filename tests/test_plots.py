@@ -306,7 +306,12 @@ class TestPlotThreshold:
         ax = plot_threshold(galap_threshold, ci=ci)  # the model comes from the interval
         assert model in ax.get_title()
         assert len(ax.patches) - len(bare.patches) == len(ci.estimates)
-        spans = sorted((p.get_x(), p.get_x() + p.get_width()) for p in ax.patches)
+        # axvspan draws a Rectangle on matplotlib 3.9+ and a Polygon before it;
+        # the extent of the patch's path, in data units, works for both.
+        extents = [
+            p.get_path().transformed(p.get_patch_transform()).get_extents() for p in ax.patches
+        ]
+        spans = sorted((e.x0, e.x1) for e in extents)
         np.testing.assert_allclose(spans, sorted(zip(ci.lower, ci.upper, strict=True)))
         labels = ax.get_legend_handles_labels()[1]
         assert "95% CI" in labels and "Breakpoint" in labels
