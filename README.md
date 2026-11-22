@@ -27,6 +27,7 @@ pip install "sars[geo]"
 - **20 SAR models** — power, logarithmic, asymptotic, sigmoid, and more
 - **Log-log power model** — the classic straight-line fit of log S on log A, with standard errors and p values
 - **Multi-model inference** — fit all models at once, ranked by AICc with Akaike weights
+- **Many datasets at once** — the same models fitted to many datasets, summarised in one table, in parallel if you like
 - **Parameter uncertainty** — standard errors, t tests and confidence intervals for each fitted parameter
 - **Model averaging** — weighted-average predictions across candidate models
 - **Prediction** — a table of predicted richness at any areas, from any fit

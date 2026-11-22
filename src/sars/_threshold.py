@@ -43,6 +43,7 @@ import pandas as pd
 from scipy import special
 
 from sars._models import _compute_ic, _validate_data
+from sars._parallel import Workers, chunks, n_workers
 
 # ---------------------------------------------------------------------------
 # ThresholdFit dataclass
@@ -777,7 +778,15 @@ _SEARCHES: dict[str, _Search] = {
         lambda x, ys, interval: _disc_two_breakpoints(x, ys),
     ),
 }
+
+# The threshold models, by name, in the order sar_threshold lists them.
+THRESHOLD_MODELS: list[str] = list(_SEARCHES)
 assert set(_SEARCHES) == set(_K)
+
+
+def _search_rows(ys: np.ndarray, model: str, x: np.ndarray, interval: float | None) -> np.ndarray:
+    """``_resample_breakpoints`` with the rows first, for ``map_in_order``."""
+    return _resample_breakpoints(model, x, ys, interval)
 
 
 def _resample_breakpoints(
@@ -1164,6 +1173,7 @@ def threshold_ci(
     conf: float = 0.95,
     rng: np.random.Generator | None = None,
     method: str = "boot",
+    n_jobs: int = 1,
 ) -> ThresholdCI:
     """Confidence intervals for a threshold model's breakpoints.
 
@@ -1238,6 +1248,12 @@ def threshold_ci(
         Random number generator for reproducibility (``method="boot"`` only).
     method : str
         ``"boot"`` (default) or ``"F"``.
+    n_jobs : int
+        Processes to search the bootstrap resamples in: 1 (the default) in this
+        one, -1 one per core. The result doesn't depend on it: the resamples are
+        drawn from ``rng`` here, whatever searches them. The F method ignores
+        it. In a script, run the call under ``if __name__ == "__main__":``:
+        each worker process imports the script.
 
     Returns
     -------
@@ -1249,8 +1265,9 @@ def threshold_ci(
         If ``model`` is "Linear" or isn't among the fit's models, if the fit
         holds no model with a breakpoint, if ``method`` is unknown, or "F" for
         a model other than ContOne or ZslopeOne, if ``n_boot`` isn't a
-        positive whole number (checked for the bootstrap only; the F test
-        ignores ``n_boot`` and ``rng``) or ``conf`` isn't between 0 and 1, or
+        positive whole number or ``n_jobs`` a positive whole number or -1 (checked for the
+        bootstrap only; the F test ignores ``n_boot``, ``rng`` and ``n_jobs``)
+        or ``conf`` isn't between 0 and 1, or
         if the fit's data have changed since it was fitted.
 
     References
@@ -1273,6 +1290,7 @@ def threshold_ci(
         n_boot = 0
     if n_boot < 1:
         raise ValueError(f"n_boot must be a positive whole number, got {given!r}")
+    n_workers(n_jobs)  # a bad n_jobs fails here, before the search
     if not 0 < conf < 1:
         raise ValueError(f"conf must be between 0 and 1, got {conf!r}")
     if rng is None:
@@ -1284,13 +1302,17 @@ def threshold_ci(
     # Every model has an intercept, so its residuals already average zero.
     residuals = y - fitted
 
-    # The resamples are searched together, a batch at a time to bound memory.
-    batches = []
-    for start in range(0, n_boot, _BOOT_BATCH):
-        size = (min(_BOOT_BATCH, n_boot - start), len(y))
-        resampled = fitted + rng.choice(residuals, size=size, replace=True)
-        batches.append(_resample_breakpoints(model, x, resampled, fit.interval))
-    samples = np.concatenate(batches)
+    # The resamples are drawn here, a batch at a time to bound memory, so the
+    # draws don't depend on n_jobs. Each batch's rows are split among the
+    # workers: a resample's breakpoints depend on its own row alone.
+    found = []
+    shared = {"model": model, "x": x, "interval": fit.interval}
+    with Workers(n_jobs, shared) as workers:
+        for start in range(0, n_boot, _BOOT_BATCH):
+            size = (min(_BOOT_BATCH, n_boot - start), len(y))
+            rows = fitted + rng.choice(residuals, size=size, replace=True)
+            found.extend(workers.map(_search_rows, chunks(rows, workers.workers)))
+    samples = np.concatenate(found)
     estimates = tuple(float(t) for t in fitted_model["breakpoints"])
 
     tail = (1 - conf) / 2

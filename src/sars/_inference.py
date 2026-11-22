@@ -17,6 +17,7 @@ from sars._models import (
     _model_spec,
     _validate_data,
 )
+from sars._parallel import map_in_order, n_workers
 
 # All 20 model names in canonical order
 ALL_MODEL_NAMES: list[str] = [
@@ -686,6 +687,55 @@ def _sar_multi_fast(
     return MultiSARFit(fits=fits, data=data, summary=summary, not_fitted=not_fitted)
 
 
+@dataclass(frozen=True)
+class _ResampleOutcome:
+    """What one bootstrap resample gave: a prediction, or the reason it was
+    dropped; and, for the "full" method, the models it couldn't fit (None if
+    its multi-model fit didn't run)."""
+
+    pred: np.ndarray | None = None
+    n_converged: int = 0
+    dropped: str = ""
+    not_fitted: tuple[str, ...] | None = None
+
+
+def _bootstrap_resample(
+    idx: np.ndarray,
+    data: pd.DataFrame,
+    method: str,
+    warm_starts: dict[str, dict[str, float]] | None,
+    models: str | list[str],
+    ic: str,
+    area_grid: np.ndarray,
+) -> _ResampleOutcome:
+    """Fit and predict one bootstrap resample (``bootstrap_ci``'s loop body).
+
+    Module level, and free of shared state, so it can run in a worker process.
+    """
+    boot_data = data.iloc[idx].reset_index(drop=True)
+    not_fitted: tuple[str, ...] | None = None
+    # A resample that fails or overflows is dropped and counted, so numpy's
+    # warnings about it, from the fits or the prediction, say nothing more.
+    try:
+        with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+            if method == "fast":
+                assert warm_starts is not None  # set for the fast method
+                multi = _sar_multi_fast(boot_data, warm_starts)
+            else:
+                multi = _sar_multi(boot_data, models, CheckOptions(), 2, warn=False)
+                not_fitted = tuple(multi.not_fitted)
+            if not multi.fits:
+                return _ResampleOutcome(dropped="no model converged", not_fitted=not_fitted)
+            w_arr = akaike_weights(multi.summary[ic].to_numpy(dtype=float))
+            weights = dict(zip(multi.summary["model"], w_arr, strict=True))
+            pred = AveragedSAR(multi=multi, ic=ic, weights=weights).predict(area_grid)
+    except Exception as exc:
+        return _ResampleOutcome(dropped=_drop_reason(exc), not_fitted=not_fitted)
+    if not np.all(np.isfinite(pred)):
+        return _ResampleOutcome(dropped="prediction not finite", not_fitted=not_fitted)
+    return _ResampleOutcome(pred=pred, n_converged=len(multi.fits), not_fitted=not_fitted)
+
+
 def bootstrap_ci(
     data: pd.DataFrame,
     models: str | list[str] = "all",
@@ -701,6 +751,7 @@ def bootstrap_ci(
     neg_check: bool = False,
     alpha_normality: float = 0.05,
     alpha_homoscedasticity: float = 0.05,
+    n_jobs: int = 1,
 ) -> BootstrappedCI:
     """Compute bootstrap confidence intervals for model-averaged predictions.
 
@@ -753,6 +804,12 @@ def bootstrap_ci(
         Leave out models that predict negative richness at an observed area.
     alpha_normality, alpha_homoscedasticity : float
         A model fails a test when its p value is below its alpha (0.05).
+    n_jobs : int
+        Processes to fit the resamples in: 1 (the default) in this one, -1
+        one per core. The result doesn't depend on it: the resamples are drawn
+        from ``rng`` here, in order, whatever runs them, and warnings come back
+        here. In a script, run the call under ``if __name__ == "__main__":``:
+        each worker process imports the script.
 
     Returns
     -------
@@ -761,8 +818,9 @@ def bootstrap_ci(
     Raises
     ------
     ValueError
-        If ``method`` or ``ic`` is unsupported, or if every fitted model
-        failed the residual checks asked for.
+        If ``method`` or ``ic`` is unsupported, if ``n_jobs`` isn't a positive
+        whole number or -1, or if every fitted model failed the residual checks
+        asked for.
 
     Warns
     -----
@@ -777,6 +835,7 @@ def bootstrap_ci(
     """
     if method not in ("fast", "full"):
         raise ValueError(f"method must be 'fast' or 'full', got {method!r}")
+    n_workers(n_jobs)  # a bad n_jobs fails here, before any fitting
     if ic not in _VALID_ICS:
         raise ValueError(f"Unsupported IC: {ic!r}. Choose from {sorted(_VALID_ICS)}.")
     checks = CheckOptions(
@@ -846,51 +905,26 @@ def bootstrap_ci(
     unfitted_in: Counter[str] = Counter()
     n_full_fitted = 0
 
-    for _ in range(n_boot):
-        idx = rng.integers(0, n, size=n)
-        boot_data = data.iloc[idx].reset_index(drop=True)
-        # A resample that fails or overflows is dropped and counted, so numpy's
-        # warnings about it, from the fits or the prediction, say nothing more.
-        try:
-            with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
-                if method == "fast":
-                    assert warm_starts is not None  # set above for the fast method
-                    multi = _sar_multi_fast(boot_data, warm_starts)
-                    n_converged = len(multi.fits)
-                    if not multi.fits:
-                        dropped["no model converged"] += 1
-                        continue
-                    w_arr = akaike_weights(multi.summary[ic].to_numpy(dtype=float))
-                    weights = dict(zip(multi.summary["model"], w_arr, strict=True))
-                    avg = AveragedSAR(multi=multi, ic=ic, weights=weights)
-                else:
-                    multi = _sar_multi(boot_data, models, CheckOptions(), 2, warn=False)
-                    unfitted_in.update(multi.not_fitted.keys())
-                    n_full_fitted += 1
-                    n_converged = len(multi.fits)
-                    if not multi.fits:
-                        dropped["no model converged"] += 1
-                        continue
-                    avg = AveragedSAR(
-                        multi=multi,
-                        ic=ic,
-                        weights=dict(
-                            zip(
-                                multi.summary["model"],
-                                akaike_weights(multi.summary[ic].to_numpy(dtype=float)),
-                                strict=True,
-                            )
-                        ),
-                    )
-                pred = avg.predict(area_grid)
-        except Exception as exc:
-            dropped[_drop_reason(exc)] += 1
-            continue
-        if np.all(np.isfinite(pred)):
-            preds.append(pred)
-            convergence_counts.append(n_converged)
+    # Every resample's rows are drawn here, in order, so the interval doesn't
+    # depend on n_jobs: the fits can run anywhere and come back in this order.
+    resamples = [rng.integers(0, n, size=n) for _ in range(n_boot)]
+    shared = {
+        "data": data,
+        "method": method,
+        "warm_starts": warm_starts,
+        "models": models,
+        "ic": ic,
+        "area_grid": area_grid,
+    }
+    for result in map_in_order(_bootstrap_resample, resamples, n_jobs, shared):
+        if result.not_fitted is not None:  # the "full" method's multi-model fit ran
+            unfitted_in.update(result.not_fitted)
+            n_full_fitted += 1
+        if result.pred is None:
+            dropped[result.dropped] += 1
         else:
-            dropped["prediction not finite"] += 1
+            preds.append(result.pred)
+            convergence_counts.append(result.n_converged)
 
     # A model the "full" method never managed to fit was never in the candidate
     # set. Say so once here, unless the fit to the original data already did.

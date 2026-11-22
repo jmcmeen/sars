@@ -16,6 +16,14 @@
 
 ::: sars.AveragedSAR
 
+## sar_many
+
+::: sars.sar_many
+
+## ManySARFit
+
+::: sars.ManySARFit
+
 ## sar_pred
 
 ::: sars.sar_pred

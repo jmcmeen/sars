@@ -10,6 +10,48 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- `sar_many()` fits the same models to many datasets and summarises them in one table,
+  one row per dataset: islands, area range, the log-log power fit's z and R², the
+  multi-model average's best model and its weight, and the threshold model and its
+  breakpoint, with the fits kept in a `ManySARFit`. Datasets come as a dict of name to
+  DataFrame or as one long DataFrame with `by=`. A fit that fails is named with its
+  error in the table, without stopping the dataset's other fits or the other datasets;
+  each dataset's warnings are listed against it; `n_jobs` fits them in parallel (#209)
+- `bootstrap_ci` and `threshold_ci` take `n_jobs`, to fit the bootstrap resamples in
+  several processes (`-1` for one per core), with the standard library's
+  `concurrent.futures`, so no new dependency. The default, 1, runs as before, and the
+  result doesn't depend on it: the resamples are drawn from `rng` in the calling
+  process, in order, and the workers' warnings are raised again in it. With 8 workers,
+  1000 fast resamples of the Galápagos data take 26 s instead of 149 s, 48 full ones
+  46 s instead of 288. In a script the call has to be under
+  `if __name__ == "__main__":`, since each worker imports the script (#207)
+- The test suite fits all 34 island datasets compiled by Gooriah et al. (2021), released
+  under CC0, with `sar_average`, `sar_threshold` and `lin_pow`, and a new Validation
+  page in the docs reports the results: all 31 datasets with at least five islands fit
+  without an error. The tables, with a script that rebuilds them from the deposit, are
+  under `tests/data/gooriah2021/`; the test is marked `slow` and runs in CI's notebooks
+  job (#187)
+
+### Changed
+
+- CI's test jobs install exactly the versions in `uv.lock` with uv, instead of resolving
+  the newest releases with pip on every run, so a failure comes from the change under
+  test. Two jobs run on pushes to `main`, manual runs and a new weekly schedule: one on
+  the minimum versions of the runtime dependencies, which gates the release, and one on
+  the newest releases, ignoring the lockfile, which only reports (#211, #212, #213)
+
+### Fixed
+
+- The Kendall homoscedasticity check (`cor_method="kendall"`) no longer fails with an
+  AttributeError on scipy before 1.10, which `pyproject.toml` allows: those versions
+  name the estimate differently. `coleman` reports a ragged abundance table as not
+  rectangular on numpy before 1.24 too, as it does on later versions (#213)
+- `plot_multi` raises `ValueError` for a negative `top_n`, which it used to read as
+  "all but the last n" models (`top_n=-1` drew 19 of 20). `top_n=0` still draws the
+  observed data alone, now documented (#184)
+
 ## [0.11.2] - 2026-11-22
 
 ### Changed

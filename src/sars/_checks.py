@@ -324,7 +324,10 @@ def _correlation(x: np.ndarray, y: np.ndarray, method: str) -> tuple[float, floa
         tied = len(np.unique(x)) < n or len(np.unique(y)) < n
         exact = not tied and n < _KENDALL_EXACT_BELOW_N
         res = stats.kendalltau(x, y, method="exact" if exact else "asymptotic")
-    return float(res.statistic), float(res.pvalue)
+    # Unpacked rather than read as .statistic: scipy before 1.10 named
+    # kendalltau's estimate .correlation, and the tuple works for every version.
+    estimate, p_value = res
+    return float(estimate), float(p_value)
 
 
 def run_checks(

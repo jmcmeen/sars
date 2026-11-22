@@ -38,6 +38,7 @@ from sars._io import (
     load_xu,
 )
 from sars._linpow import LinPowFit, lin_pow
+from sars._many import ManySARFit, sar_many
 from sars._models import (
     SARFit,
     sar_asymp,
@@ -82,6 +83,7 @@ __all__ = [
     "ColemanTest",
     "GDMFit",
     "GDMMultiFit",
+    "ManySARFit",
     "MultiSARFit",
     "ResidualChecks",
     "SARFit",
@@ -105,6 +107,7 @@ __all__ = [
     "load_xu",
     "sar_average",
     "sar_gdm",
+    "sar_many",
     "sar_multi",
     "sar_pred",
     "sar_threshold",

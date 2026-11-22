@@ -110,6 +110,13 @@ class TestPlotMulti:
         assert ax.get_title() == "Top 2 SAR models"
         plt.close("all")
 
+    def test_negative_top_n_is_refused(self, galap_multi):
+        """summary.head(-1) used to draw every model but the last."""
+        plt.close("all")
+        with pytest.raises(ValueError, match="top_n must be 0 or more, got -1"):
+            plot_multi(galap_multi, top_n=-1)
+        assert not plt.get_fignums()  # refused before a figure was made
+
     def test_zero_curves_asked_for_is_not_called_unfitted(self, galap):
         ax = plot_multi(sar_multi(galap, models=["power"]), top_n=0)
         assert ax.get_title() == "Top 0 SAR models"
@@ -299,7 +306,12 @@ class TestPlotThreshold:
         ax = plot_threshold(galap_threshold, ci=ci)  # the model comes from the interval
         assert model in ax.get_title()
         assert len(ax.patches) - len(bare.patches) == len(ci.estimates)
-        spans = sorted((p.get_x(), p.get_x() + p.get_width()) for p in ax.patches)
+        # axvspan draws a Rectangle on matplotlib 3.9+ and a Polygon before it;
+        # the extent of the patch's path, in data units, works for both.
+        extents = [
+            p.get_path().transformed(p.get_patch_transform()).get_extents() for p in ax.patches
+        ]
+        spans = sorted((e.x0, e.x1) for e in extents)
         np.testing.assert_allclose(spans, sorted(zip(ci.lower, ci.upper, strict=True)))
         labels = ax.get_legend_handles_labels()[1]
         assert "95% CI" in labels and "Breakpoint" in labels

@@ -90,7 +90,8 @@ def plot_multi(
         Result of ``sar_multi()``.
     top_n : int
         Number of top models (by AICc) to display. Fewer are drawn when the
-        fit holds fewer, and the title gives the number drawn.
+        fit holds fewer, and the title gives the number drawn. 0 draws the
+        observed data alone.
     ax : matplotlib.axes.Axes, optional
         Axes to plot on. If None, creates a new figure.
     scatter_kw : dict, optional
@@ -104,7 +105,15 @@ def plot_multi(
     Returns
     -------
     matplotlib.axes.Axes
+
+    Raises
+    ------
+    ValueError
+        If ``top_n`` is negative.
     """
+    if top_n < 0:
+        # summary.head() would read it as "all but the last n" models.
+        raise ValueError(f"top_n must be 0 or more, got {top_n}")
     if ax is None:
         _, ax = plt.subplots()
 
