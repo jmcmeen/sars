@@ -251,11 +251,11 @@ class TestFromGeoDataFrame:
         assert df["area"].iloc[1] == pytest.approx(4.0, abs=0.01)
 
     def test_computed_area_m2(self, simple_gdf):
-        df = sars.from_geodataframe(simple_gdf, crs_units="m2")
+        df = sars.from_geodataframe(simple_gdf, area_units="m2")
         assert df["area"].iloc[0] == pytest.approx(1e6, rel=0.01)
 
     def test_computed_area_ha(self, simple_gdf):
-        df = sars.from_geodataframe(simple_gdf, crs_units="ha")
+        df = sars.from_geodataframe(simple_gdf, area_units="ha")
         assert df["area"].iloc[0] == pytest.approx(100.0, abs=1.0)
 
     def test_precomputed_area(self, simple_gdf):
@@ -271,9 +271,42 @@ class TestFromGeoDataFrame:
         with pytest.raises(KeyError, match="nonexistent"):
             sars.from_geodataframe(simple_gdf, area_col="nonexistent")
 
-    def test_invalid_crs_units(self, simple_gdf):
-        with pytest.raises(ValueError, match="crs_units"):
-            sars.from_geodataframe(simple_gdf, crs_units="acres")
+    def test_invalid_area_units(self, simple_gdf):
+        with pytest.raises(ValueError, match="area_units"):
+            sars.from_geodataframe(simple_gdf, area_units="acres")
+
+    def test_crs_units_is_a_deprecated_alias(self, simple_gdf):
+        with pytest.warns(FutureWarning, match="crs_units is deprecated.*area_units"):
+            df = sars.from_geodataframe(simple_gdf, crs_units="ha")
+        assert df["area"].iloc[0] == pytest.approx(100.0, abs=1.0)
+
+    def test_area_units_is_the_fourth_positional_argument(self, simple_gdf):
+        """Where crs_units was, so positional calls keep their meaning."""
+        df = sars.from_geodataframe(simple_gdf, "species", None, "ha")
+        assert df["area"].iloc[0] == pytest.approx(100.0, abs=1.0)
+
+    @pytest.mark.parametrize("area_units", ["ha", "km2"])
+    def test_area_units_and_crs_units_together_are_refused(self, simple_gdf, area_units):
+        """Even an explicit "km2", the default, which a check against the default missed."""
+        with pytest.raises(TypeError, match="not both"):
+            sars.from_geodataframe(simple_gdf, area_units=area_units, crs_units="m2")
+
+    def test_invalid_area_units_with_area_col(self, simple_gdf):
+        """Ignored with area_col, but a misspelt unit is still reported."""
+        simple_gdf["my_area"] = [1.0, 4.0, 9.0]
+        with pytest.raises(ValueError, match="area_units 'acres'"):
+            sars.from_geodataframe(simple_gdf, area_col="my_area", area_units="acres")
+
+    @pytest.mark.parametrize("area_col", [None, "my_area"], ids=["computed", "column"])
+    def test_keeps_the_geodataframe_index(self, simple_gdf, area_col):
+        """Both paths keep the index, as from_df does: the column path used to
+        return a fresh RangeIndex."""
+        gdf = simple_gdf.set_index(pd.Index(["Crete", "Rhodes", "Kos"], name="island"))
+        gdf["my_area"] = [1.0, 4.0, 9.0]
+        df = sars.from_geodataframe(gdf, area_col=area_col)
+        pd.testing.assert_index_equal(df.index, gdf.index)
+        assert df.loc["Rhodes", "area"] == pytest.approx(4.0)
+        assert df.loc["Kos", "species"] == 40
 
     def test_geographic_crs_is_refused(self, simple_gdf):
         """Longitude/latitude coordinates give areas in squared degrees, which used to be
@@ -311,7 +344,7 @@ class TestFromGeoDataFrame:
             crs="EPSG:2264",
         )
         assert sars.from_geodataframe(gdf)["area"].iloc[0] == pytest.approx(1.0)
-        assert sars.from_geodataframe(gdf, crs_units="ha")["area"].iloc[0] == pytest.approx(100.0)
+        assert sars.from_geodataframe(gdf, area_units="ha")["area"].iloc[0] == pytest.approx(100.0)
 
     def test_missing_crs_warns(self, simple_gdf):
         gpd = pytest.importorskip("geopandas")

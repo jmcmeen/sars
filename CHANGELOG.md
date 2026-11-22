@@ -32,6 +32,13 @@ reconstructed from the commit history and the
 
 ### Changed
 
+- **Behavior change:** `from_geodataframe` keeps the GeoDataFrame's index when the areas
+  come from `area_col`, as it already did for areas computed from the geometries (and as
+  `from_df` keeps its input's). It used to return a fresh `RangeIndex` on that path only,
+  so the rows couldn't be joined back to the polygons by index. Its `area` column, passed
+  to `coleman`, is now matched to the abundance table's columns by label, as areas
+  computed from geometries already were. An unknown unit now raises with `area_col` too,
+  where it was ignored (#146)
 - **Behavior change:** a `SARFit` whose `model` isn't one of the package's (built or
   edited by hand) raises `ValueError` ("Unknown model: ...", listing the models) instead
   of `NotImplementedError` from `predict`, `param_table` and everything that predicts from
@@ -54,6 +61,12 @@ reconstructed from the commit history and the
   alone put almost no points among the small islands when areas span orders of magnitude:
   5 of 100 points below 50 km² on the Galápagos data, where most of its islands are,
   against 32 now (#141)
+
+### Deprecated
+
+- `from_geodataframe`'s `crs_units` is renamed `area_units`, which says what it sets: the
+  unit of the areas returned, not a property of the CRS. `crs_units` still works, with a
+  `FutureWarning` (#146)
 
 ### Fixed
 
