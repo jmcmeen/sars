@@ -68,7 +68,7 @@ src/sars/
   _gdm.py         sar_gdm, the general dynamic model (area and island age)
   _io.py          from_csv, from_df, from_geodataframe, from_pyinaturalist, and the load_* dataset loaders
   _plots.py       matplotlib helpers
-  data/           bundled datasets (galap, aegean, aegean2, niering)
+  data/           bundled datasets (galap, gala, aegean, aegean2, niering, schrader, xu)
 tests/
   r_reference/    reference tables written by R sars, and the script that makes them
   test_*.py       one file per module

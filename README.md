@@ -35,7 +35,7 @@ pip install "sars[geo]"
 - **Threshold models** — piecewise regression for detecting breakpoints (small island effect), with confidence intervals for the breakpoints by bootstrap or by inverted F test
 - **Random placement** — Coleman's null model for richness from a species-by-site abundance table, with a calibrated simulation test
 - **General dynamic model** — richness as a function of island area and a hump in island age (Whittaker et al. 2008), with nested-model comparison
-- **Bundled datasets** — four published island datasets: `load_galap`, `load_aegean`, `load_aegean2`, `load_niering`
+- **Bundled datasets** — seven published island datasets: `load_galap`, `load_gala`, `load_aegean`, `load_aegean2`, `load_niering`, `load_schrader`, `load_xu`
 - **R-validated** — fits, AICc weights, model averaging, threshold models, random placement and the general dynamic model are checked against R `sars` reference output, with every known difference listed in `tests/test_r_reference.py`
 
 ## Quick start
@@ -134,9 +134,13 @@ This package is a Python implementation inspired by the R [`sars`](https://githu
 ### Data
 
 - Preston FW (1962). The canonical distribution of commonness and rarity. *Ecology*, 43, 185-215, 410-432. (the bundled Galápagos plant dataset, `load_galap`; areas in km²)
+- Johnson MP, Raven PH (1973). Species number and endemism: the Galápagos Archipelago revisited. *Science*, 179, 893-895. (plants and endemic plants on 30 Galápagos islands, `load_gala`; areas in km²)
 - Sfenthourakis S, Triantis KA (2009). Habitat diversity, ecological requirements of species and the Small Island Effect. *Diversity and Distributions*, 15, 131-140. (terrestrial isopods on 90 Aegean islands, `load_aegean`; areas in km²)
 - Matthews TJ, Rigal F, Kougioumoutzis K, Trigas P, Triantis KA (2020). Unravelling the small-island effect through phylogenetic community ecology. *Journal of Biogeography*, 47, 2341-2352. (plants on 173 Aegean islands, `load_aegean2`; areas in km²)
 - Niering WA (1963). Terrestrial ecology of Kapingamarangi Atoll, Caroline Islands. *Ecological Monographs*, 33, 131-160. (plants on 32 islands of Kapingamarangi Atoll, `load_niering`; areas in km²)
+- Schrader J, Moeljono S, Keppel G, Kreft H (2019). Plants on small islands revisited: the effects of spatial scale and habitat quality on the species-area relationship. *Ecography*, 42, 1405-1414. (plants on 60 small islands in Raja Ampat, `load_schrader`; areas in km²)
+- Xu A, Han X, Zhang X, Millien V, Wang Y (2017). Nestedness of butterfly assemblages in the Zhoushan Archipelago, China: area effects, life-history traits and conservation implications. *Biodiversity and Conservation*, 26, 1375-1392. (butterflies on 42 islands, `load_xu`; areas in km²)
+- Gooriah L, Blowes SA, Sagouis A, Schrader J, Karger DN, Kreft H, Chase JM (2021). Synthesis reveals that island species-area relationships emerge from processes beyond passive sampling. *Global Ecology and Biogeography*, 30, 2119-2131. (the CC0 compilation `load_schrader` and `load_xu` come from)
 
 ### Threshold models
 

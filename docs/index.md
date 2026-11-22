@@ -23,7 +23,7 @@ A conceptual mirror of the R [`sars`](https://cran.r-project.org/package=sars) p
 - **Random placement** -- Coleman's null model for richness from a species-by-site abundance table, with a calibrated simulation test
 - **I/O adapters** -- load from CSV, GeoDataFrame, or pyiNaturalist summaries
 - **General dynamic model** -- richness as a function of island area and a hump in island age (Whittaker et al. 2008), with nested-model comparison
-- **Bundled datasets** -- four published island datasets (Galápagos, two from the Aegean, Kapingamarangi Atoll); see [Datasets](datasets.md)
+- **Bundled datasets** -- seven published island datasets (two from the Galápagos, two from the Aegean, Kapingamarangi Atoll, Raja Ampat and the Zhoushan Archipelago); see [Datasets](datasets.md)
 - **R-validated** -- fits, AICc weights, model averaging, threshold models, random placement and the general dynamic model are checked against R `sars` reference output, with every known difference listed in `tests/test_r_reference.py`
 
 ## Quick start

@@ -16,8 +16,9 @@ if TYPE_CHECKING:
 def _load_dataset(name: str) -> pd.DataFrame:
     """Read a bundled dataset, ``sars/data/<name>.csv``, as an area/species frame.
 
-    The files keep the column names R sars uses (``a``, ``s``) and its row
-    order, so they can be compared with R's copies line for line.
+    The files taken from R sars keep its column names (``a``, ``s``) and row
+    order, so they can be compared with R's copies line for line; the others
+    already name their columns ``area`` and ``species``.
     """
     filename = f"{name}.csv"
     # Only the lookup is guarded: an error from parsing a file that is there
@@ -52,6 +53,36 @@ def load_galap() -> pd.DataFrame:
         DataFrame with columns 'area' and 'species'.
     """
     return _load_dataset("galap")
+
+
+def load_gala() -> pd.DataFrame:
+    """Load Johnson & Raven's Galápagos plant species-area dataset.
+
+    Plant species counts, endemic species counts and island area (km²) for
+    30 islands of the Galápagos, from Isabela (4669 km²) down to islets of
+    0.01 km², as compiled by Johnson and Raven (1973). The values are those
+    in R faraway's ``gala`` dataset (its unfilled original, ``galamiss``,
+    has the same species, endemic and area values), in its row order. The
+    island names are faraway's with the words separated ("Santa Cruz" for
+    "SantaCruz"); its two Gardner islands stay "Gardner1" and "Gardner2".
+
+    A different compilation from `load_galap` (Preston 1962), which has 16
+    islands and leaves out Isabela. Every island has at least two species, so
+    the data can go straight to the fitting functions, which use the 'area'
+    and 'species' columns. To fit endemic richness, use the 'endemics' column
+    as 'species', after dropping Daphne Minor, which has none.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns 'island', 'area', 'species' and 'endemics'.
+
+    References
+    ----------
+    Johnson MP, Raven PH (1973). Species number and endemism: the Galápagos
+    Archipelago revisited. Science 179, 893-895.
+    """
+    return _load_dataset("gala")
 
 
 def load_aegean() -> pd.DataFrame:
@@ -130,6 +161,81 @@ def load_niering() -> pd.DataFrame:
     Islands. Ecological Monographs 33, 131-160.
     """
     return _load_dataset("niering")
+
+
+def load_schrader() -> pd.DataFrame:
+    """Load Schrader et al.'s plants on small tropical islands.
+
+    Plant species counts and island area (km²) for 60 small islands in
+    Raja Ampat, Indonesia, from rocks of 3 m² (2.8e-6 km²) to 1.2 ha
+    (0.0118 km²), surveyed by Schrader et al. (2019) and compiled by Gooriah
+    et al. (2021), whose deposit is released under CC0. Areas are converted
+    from the deposit's hectares; islands are identified by the survey's codes.
+    Richness counts the species recorded on each island's transects (one to
+    six, more on larger islands), not a complete flora.
+
+    The deposit gives areas from 0.01 ha up rounded to the nearest 0.01 ha.
+    Twenty islets, all under 30 m², have no plants recorded. They are kept,
+    since they are the small-island end of the study, but only `lin_pow`
+    (which adds ``con`` before taking logs) fits zero richness; drop them for
+    the other models (see Examples).
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns 'island', 'area' and 'species'.
+
+    Examples
+    --------
+    >>> schrader = sars.load_schrader()
+    >>> planted = schrader[schrader["species"] > 0]
+    >>> sars.sar_multi(planted)
+    MultiSARFit(20 models, best='p1')
+
+    References
+    ----------
+    Schrader J, Moeljono S, Keppel G, Kreft H (2019). Plants on small islands
+    revisited: the effects of spatial scale and habitat quality on the
+    species-area relationship. Ecography 42, 1405-1414.
+
+    Gooriah L, Blowes SA, Sagouis A, Schrader J, Karger DN, Kreft H, Chase JM
+    (2021). Synthesis reveals that island species-area relationships emerge
+    from processes beyond passive sampling. Global Ecology and Biogeography
+    30, 2119-2131.
+    """
+    return _load_dataset("schrader")
+
+
+def load_xu() -> pd.DataFrame:
+    """Load Xu et al.'s butterflies of the Zhoushan Archipelago.
+
+    Butterfly species counts and island area (km²) for 42 islands of the
+    Zhoushan Archipelago, China, from 0.0255 km² to Zhoushan Island
+    (476 km²), surveyed by Xu et al. (2017) and compiled by Gooriah et al.
+    (2021), whose deposit is released under CC0. Areas are converted from the
+    deposit's hectares. Richness counts the species recorded along each
+    island's transects, whose length varied between islands, not a complete
+    list. Every island has at least one species, so the data can go straight
+    to the fitting functions.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns 'island', 'area' and 'species'.
+
+    References
+    ----------
+    Xu A, Han X, Zhang X, Millien V, Wang Y (2017). Nestedness of butterfly
+    assemblages in the Zhoushan Archipelago, China: area effects, life-history
+    traits and conservation implications. Biodiversity and Conservation 26,
+    1375-1392.
+
+    Gooriah L, Blowes SA, Sagouis A, Schrader J, Karger DN, Kreft H, Chase JM
+    (2021). Synthesis reveals that island species-area relationships emerge
+    from processes beyond passive sampling. Global Ecology and Biogeography
+    30, 2119-2131.
+    """
+    return _load_dataset("xu")
 
 
 def from_df(

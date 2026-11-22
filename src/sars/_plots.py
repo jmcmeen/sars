@@ -89,7 +89,8 @@ def plot_multi(
     multi_fit : MultiSARFit
         Result of ``sar_multi()``.
     top_n : int
-        Number of top models (by AICc) to display.
+        Number of top models (by AICc) to display. Fewer are drawn when the
+        fit holds fewer, and the title gives the number drawn.
     ax : matplotlib.axes.Axes, optional
         Axes to plot on. If None, creates a new figure.
     scatter_kw : dict, optional
@@ -116,26 +117,41 @@ def plot_multi(
 
     a_grid = _area_grid(float(area.min()), float(area.max()), 200)
 
-    # Get top N models by AICc from summary
-    top_models = multi_fit.summary.head(top_n)["model"].tolist()
+    # The top N models by AICc, as many as there are: a set of fewer models,
+    # or fewer that converged, draws fewer curves.
     fits_by_name = {f.model: f for f in multi_fit.fits}
+    drawn = list(
+        dict.fromkeys(  # a model asked for twice is drawn once
+            name for name in multi_fit.summary.head(top_n)["model"] if name in fits_by_name
+        )
+    )
 
-    cmap = plt.cm.tab20 if top_n > 10 else plt.cm.tab10
-    colors = cmap(np.linspace(0, 1, top_n))
+    # A qualitative map, one colour per curve drawn, in order. tab20 pairs a dark
+    # and a light shade of each hue, so take the dark shades first, then the light.
+    if len(drawn) > 10:
+        cmap = plt.cm.tab20
+        colour_index = [(2 * i) % 20 + (2 * i) // 20 for i in range(len(drawn))]
+    else:
+        cmap = plt.cm.tab10
+        colour_index = list(range(len(drawn)))
 
     extra_line = line_kw or {}
-    for i, name in enumerate(top_models):
-        fit = fits_by_name.get(name)
-        if fit is None:
-            continue
-        pred = fit.predict(a_grid)
+    for i, name in enumerate(drawn):
+        pred = fits_by_name[name].predict(a_grid)
         w = multi_fit.summary.loc[multi_fit.summary["model"] == name, "weight"].iloc[0]
-        l_defaults = {"color": colors[i], "linewidth": 1.5, "label": f"{name} (w={w:.3f})"}
+        l_defaults = {
+            "color": cmap(colour_index[i]),
+            "linewidth": 1.5,
+            "label": f"{name} (w={w:.3f})",
+        }
         ax.plot(a_grid, pred, **{**l_defaults, **extra_line})
 
     ax.set_xlabel("Area")
     ax.set_ylabel("Species")
-    ax.set_title(f"Top {top_n} SAR models")
+    if not multi_fit.fits:
+        ax.set_title("No fitted SAR models")
+    else:
+        ax.set_title(f"Top {len(drawn)} SAR model{'s' if len(drawn) != 1 else ''}")
     ax.legend(fontsize="small")
     return ax
 

@@ -79,8 +79,46 @@ class TestPlotMulti:
 
     def test_top_n(self, galap_multi):
         ax = plot_multi(galap_multi, top_n=3)
-        # scatter + up to 3 model lines
-        assert len(ax.lines) <= 3
+        assert len(ax.lines) == 3
+        assert ax.get_title() == "Top 3 SAR models"
+        plt.close("all")
+
+    def test_title_and_colours_follow_the_models_drawn(self, galap):
+        """Two models under the default top_n=5 used to be titled "Top 5 SAR
+        models", with colours spread for five curves."""
+        multi = sar_multi(galap, models=["power", "loga"])
+        ax = plot_multi(multi)
+        assert len(ax.lines) == 2
+        assert ax.get_title() == "Top 2 SAR models"
+        colours = [line.get_color() for line in ax.lines]
+        assert colours == [plt.cm.tab10(0), plt.cm.tab10(1)]
+        plt.close("all")
+
+    def test_more_than_ten_curves_get_distinct_hues(self, galap):
+        """tab20 pairs dark and light shades of one hue; neighbouring ranks used
+        to come out as blue and light blue."""
+        ax = plot_multi(sar_multi(galap), top_n=12)
+        colours = [line.get_color() for line in ax.lines]
+        assert colours[:3] == [plt.cm.tab20(0), plt.cm.tab20(2), plt.cm.tab20(4)]
+        assert colours[10:] == [plt.cm.tab20(1), plt.cm.tab20(3)]
+        assert len(set(colours)) == 12
+        plt.close("all")
+
+    def test_a_model_asked_for_twice_is_drawn_once(self, galap):
+        ax = plot_multi(sar_multi(galap, models=["power", "power", "loga"]))
+        assert len(ax.lines) == 2
+        assert ax.get_title() == "Top 2 SAR models"
+        plt.close("all")
+
+    def test_zero_curves_asked_for_is_not_called_unfitted(self, galap):
+        ax = plot_multi(sar_multi(galap, models=["power"]), top_n=0)
+        assert ax.get_title() == "Top 0 SAR models"
+        plt.close("all")
+
+    def test_one_model_and_none(self, galap):
+        one = plot_multi(sar_multi(galap, models=["power"]))
+        assert one.get_title() == "Top 1 SAR model"
+        assert plot_multi(sar_multi(galap, models=[])).get_title() == "No fitted SAR models"
         plt.close("all")
 
     def test_accepts_existing_axes(self, galap_multi):
