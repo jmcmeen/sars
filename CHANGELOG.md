@@ -12,6 +12,14 @@ reconstructed from the commit history and the
 
 ### Added
 
+- `bootstrap_ci` and `threshold_ci` take `n_jobs`, to fit the bootstrap resamples in
+  several processes (`-1` for one per core), with the standard library's
+  `concurrent.futures`, so no new dependency. The default, 1, runs as before, and the
+  result doesn't depend on it: the resamples are drawn from `rng` in the calling
+  process, in order, and the workers' warnings are raised again in it. With 8 workers,
+  1000 fast resamples of the Galápagos data take 26 s instead of 149 s, 48 full ones
+  46 s instead of 288. In a script the call has to be under
+  `if __name__ == "__main__":`, since each worker imports the script (#207)
 - The test suite fits all 34 island datasets compiled by Gooriah et al. (2021), released
   under CC0, with `sar_average`, `sar_threshold` and `lin_pow`, and a new Validation
   page in the docs reports the results: all 31 datasets with at least five islands fit
