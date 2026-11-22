@@ -10,6 +10,15 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- The test suite fits all 34 island datasets compiled by Gooriah et al. (2021), released
+  under CC0, with `sar_average`, `sar_threshold` and `lin_pow`, and a new Validation
+  page in the docs reports the results: all 31 datasets with at least five islands fit
+  without an error. The tables, with a script that rebuilds them from the deposit, are
+  under `tests/data/gooriah2021/`; the test is marked `slow` and runs in CI's notebooks
+  job (#187)
+
 ### Fixed
 
 - `plot_multi` raises `ValueError` for a negative `top_n`, which it used to read as

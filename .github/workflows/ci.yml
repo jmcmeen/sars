@@ -75,7 +75,8 @@ jobs:
       # One math-library thread per test worker: xdist already runs a worker per
       # vCPU, and each BLAS pool sized to the whole runner would oversubscribe it.
       # --durations lists the slowest tests, to see where the time goes.
-      # The notebooks run once, in the notebooks job. Coverage (only printed) runs
+      # The notebooks and the 34-dataset fits (slow) run once, in the notebooks job.
+      # Coverage (only printed) runs
       # on 3.14, which every run tests, with coverage's sys.monitoring core, much
       # faster than its C tracer.
       - name: pytest
@@ -89,10 +90,12 @@ jobs:
             cov=
             export COVERAGE_CORE=sysmon
           fi
-          pytest -m "not notebook" $cov --durations=15
+          pytest -m "not notebook and not slow" $cov --durations=15
 
   notebooks:
-    # The example notebooks, end to end, once: they test the examples, not
+    name: notebooks and datasets
+    # The example notebooks, end to end, and the fits to 34 published datasets,
+    # once: they test the examples and the fitting on varied data, not
     # compatibility with each Python, and are the slowest tests by far.
     runs-on: ubuntu-latest
     steps:
@@ -110,4 +113,4 @@ jobs:
           OMP_NUM_THREADS: "1"
           OPENBLAS_NUM_THREADS: "1"
           MKL_NUM_THREADS: "1"
-        run: pytest -m notebook --no-cov --durations=5
+        run: pytest -m "notebook or slow" --no-cov --durations=5

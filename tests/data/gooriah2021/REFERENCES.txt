@@ -1,0 +1,67 @@
+List of data references
+
+Andrade, R. D., & Marini, M.  . (2002). Bird species richness in natural forest patches in southeast Brazil. Lundiana, 3(2), 141-149.
+
+As, S. (1984). To Fly or Not to Fly? Colonization of Baltic Islands by Winged and Wingless Carabid Beetles. Journal of Biogeography, 11(5), 413. https://doi.org/10.2307/2844805
+
+Barun, A., Simberloff, D., & Budinski, I. (2010). Impact of the small Indian mongoose on native amphibians and reptiles of the Adriatic islands, Croatia: Mongoose impacts on herpetofauna of the Adriatic. Animal Conservation, 13(6), 549–555. https://doi.org/10.1111/j.1469-1795.2010.00374.x
+
+Bell, A. J., Phillips, I. D., Nielsen, S. E., & Spence, J. R. (2017). Species traits modify the species-area relationship in ground-beetle (Coleoptera: Carabidae) assemblages on islands in a boreal lake. PLOS ONE, 12(12), e0190174. https://doi.org/10.1371/journal.pone.0190174
+
+Borges, P., Gaspar, C., Crespo, L. C., Rigal, F., Cardoso, P., Pereira, F., Rego, C., Amorim, I., Melo, C., Aguiar, C., André, G., Mendonça, E., Ribeiro, S., Hortal, J., Santos, A., Barcelos, L., Enghoff, H., Mahnert, V., Pita, M., … Triantis, K. (2016). New records and detailed distribution and abundance of selected arthropod species collected between 1999 and 2011 in Azorean native forests. Biodiversity Data Journal, 4, e10948. https://doi.org/10.3897/BDJ.4.e10948
+
+Choi, S.-W., & An, J.-S. (2011). An island network determines moth diversity on islands in Dadohaehaesang National Park, South Korea: Factors determinining moth diversity on islands in Dadohaehaesang National Park. Insect Conservation and Diversity, 4(4), 247–256. https://doi.org/10.1111/j.1752-4598.2010.00126.x
+
+Da Silva, P. G., Nunes, C. A., Ferreira, L. F., Braga, R. F., Beiroz, W., Perillo, L. N., Solar, R. R. C., & de Siqueira Neves, F. (2019). Patch and landscape effects on forest-dependent dung beetles are masked by matrix-tolerant dung beetles in a mountaintop rainforest archipelago. Science of The Total Environment, 651, 1321–1331. https://doi.org/10.1016/j.scitotenv.2018.09.195
+
+Davidar, P., Yoganand, K., & Ganesh, T. (2001). Distribution of forest birds in the Andaman islands: Importance of key habitats: Distribution of forest birds in the Andaman islands. Journal of Biogeography, 28(5), 663–671. https://doi.org/10.1046/j.1365-2699.2001.00584.x
+
+Devy, M. S., Ganesh, T., & Davidar, P. (1998). Patterns of butterfly distribution in the Andaman islands: Implications for conservation. Acta Oecologica, 19(6), 527–534. https://doi.org/10.1016/S1146-609X(99)80007-1
+
+Dueser, R. D., Brown, W. C., Hogue, G. S., McCaffrey, C., McCuskey, S. A., & Hennessey, G. J. (1979). Mammals on the Virginia Barrier Islands. Journal of Mammalogy, 60(2), 425–429. https://doi.org/10.2307/1379822
+
+Evans, S., Cole, N., Kylin, H., Choong Kwet Yive, N., Tatayah, V., Merven, J., & Bouwman, H. (2016). Protection of marine birds and turtles at St Brandon’s Rock, Indian Ocean, requires conservation of the entire atoll. African Journal of Marine Science, 38(3), 317–327. https://doi.org/10.2989/1814232X.2016.1198720
+
+Hatteland, B. A., Pedersen, T. N., Mortensen, F., & Solhoy, T. (2008). Species-area relations and island distribution of carabid beetles (Coleoptera, Carabidae) on small islands off the coast of western Norway. Norwegian Journal of Entomology, 55(1), 73.
+
+Jonsson, M., Englund, G., & Wardle, D. A. (2011). Direct and indirect effects of area, energy and habitat heterogeneity on breeding bird communities: Direct and indirect drivers of bird community patterns. Journal of Biogeography, 38(6), 1186–1196. 
+https://doi.org/10.1111/j.1365-2699.2010.02470.x
+
+Karger, D. N., Weigelt, P., Amoroso, V. B., Darnaedi, D., Hidayat, A., Kreft, H., & Kessler, M. (2014). Island biogeography from regional to local scales: Evidence for a spatially scaled echo pattern of fern diversity in the Southeast Asian archipelago. Journal of Biogeography, 41(2), 250–260. https://doi.org/10.1111/jbi.12209
+
+Kotze, D. J., Niemelä, J., & Nieminen, M. (2000). Colonization success of carabid beetles on Baltic islands. Journal of Biogeography, 27(4), 807–819. https://doi.org/10.1046/j.1365-2699.2000.00456.x
+
+MacDonald, Z. G., Anderson, I. D., Acorn, J. H., & Nielsen, S. E. (2018). Decoupling habitat fragmentation from habitat loss: Butterfly species mobility obscures fragmentation effects in a naturally fragmented landscape of lake islands. Oecologia, 186(1), 11–27. https://doi.org/10.1007/s00442-017-4005-2
+
+Pereira, G. C. N., Coelho, M. S., Beirão, M. do V., Braga, R. F., & Fernandes, G. W. (2017). Diversity of fruit-feeding butterflies in a mountaintop archipelago of rainforest. PLOS ONE, 12(6), e0180007. https://doi.org/10.1371/journal.pone.0180007
+
+Perillo, L. (2017). Perillo_bee_wasp_natural_forest_island [Text/xml]. KNB Data Repository. https://doi.org/10.5063/F18G8HTR
+
+Pierce, R., RAUST, P., & WRAGG, G. (2003). Report on an avifauna survey of atolls in the Tuamotu and Austral Archipelagos, French Polynesia. Contract report, (638).
+
+Puspitasari, S. (2016). Biogeography and ecology of beetles in a tropical archipelago: A case study from Kepulauan Seribu Marine National Park (Doctoral dissertation, UCL (University College London)). https://discovery.ucl.ac.uk/id/eprint/1489623
+
+Rangasamy V., Chandra K., Raghunathan C., & Venkataraman K. Amphibians and reptiles in Andaman and Nicobar islands: Diversity and Distribution. http://www.upsbdb.org/pdf/Souvenir2014/ch-18.pdf
+
+Rocamora, G., Feare, C. J., Skerrett, A., Athanase, M., & Greig, E. (2003). The breeding avifauna of Cosmoledo Atoll (Seychelles) with special reference to seabirds: Conservation status and international importance. Bird Conservation International, 13(2), 151–174. https://doi.org/10.1017/S0959270903003137
+
+Schilthuizen, M., Liew, T.-S., Liew, T.-H., Berlin, P., King, J. P., & Lakim, M. (2013). Species diversity patterns in insular land snail communities of Borneo. Journal of the Geological Society, 170(3), 539–545. https://doi.org/10.1144/jgs2012-014
+
+Schrader, J., Moeljono, S., Keppel, G., & Kreft, H. (2019). Plants on small islands revisited: The effects of spatial scale and habitat quality on the species–area relationship. Ecography, 42(8), 1405–1414. https://doi.org/10.1111/ecog.04512
+
+Surendran, H., & Vasudevan, K. (2015). The devil is in the detail: Estimating species richness, density, and relative abundance of tropical island herpetofauna. BMC Ecology, 15(1), 18. https://doi.org/10.1186/s12898-015-0049-5
+
+Theuerkauf, J., Chartendrault, V., Desmoulins, F., Barré, N., & Gula, R. (2017). Positive range-abundance relationships in Indo-Pacific bird communities. Journal of Biogeography, 44(9), 2161–2163. https://doi.org/10.1111/jbi.13021
+
+Usher, M. B., & Edwards, M. (1986). The selection of conservation areas in Antarctica: an example using the arthropod fauna of Antarctic islands. Environmental Conservation, 13(2), 115-122.
+
+Waqa-Sakiti, H. V. F., Hodge, S., & Winder, L. (2018). Distribution of long-horn beetles (Cerambycidae: Coleoptera) within the Fijian archipelago. The South Pacific Journal of Natural and Applied Sciences, 36(1), 1. https://doi.org/10.1071/SP18001
+
+Werden, L. (2012). Factors affecting the abundance of blacklegged ticks (Ixodes scapularis) and the prevalence of Borrelia burgdorferi in ticks and small mammals in the Thousand Islands region (Doctoral dissertation). http://hdl.handle.net/10214/3623
+
+Xu, A., Han, X., Zhang, X., Millien, V., & Wang, Y. (2017). Nestedness of butterfly assemblages in the Zhoushan Archipelago, China: Area effects, life-history traits and conservation implications. Biodiversity and Conservation, 26(6), 1375–1392. https://doi.org/10.1007/s10531-017-1305-0
+
+ŽAGAR, A., CAFUTA, V., DRAŠLER, K., JAGAR, T., & KROFEL, M. (2013). A review of eleven short-term reptile surveys in the Western Balkans.
+
+Zalewski, M., & Ulrich, W. (2006). Dispersal as a key element of community structure: The case of ground beetles on lake islands. Diversity and Distributions, 12(6), 767–775. https://doi.org/10.1111/j.1472-4642.2006.00283.x
+

@@ -97,6 +97,7 @@ testpaths = ["tests"]
 addopts = "-n logical --cov=sars --cov-report=term-missing"
 markers = [
     "notebook: runs an example notebook end to end (CI runs these in a job of their own)",
+    "slow: fits many published datasets (CI runs these in the notebooks job)",
 ]
 filterwarnings = [
     "ignore::scipy.optimize.OptimizeWarning",
