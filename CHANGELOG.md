@@ -10,6 +10,8 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-22
+
 ### Added
 
 - `load_gala()`: Johnson and Raven's (1973) Galápagos plants, 30 islands from 0.01 to
@@ -586,7 +588,8 @@ reconstructed from the commit history and the
 - Project skeleton: package layout, CI, publishing workflow, license, and
   citation file.
 
-[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/jmcmeen/sars/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/jmcmeen/sars/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/jmcmeen/sars/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/jmcmeen/sars/compare/v0.8.1...v0.9.0
