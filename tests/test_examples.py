@@ -24,6 +24,9 @@ def kernel_dir(tmp_path_factory):
     return prefix / "share" / "jupyter" / "kernels"
 
 
+# Marked so CI can run them once, in a job of their own, instead of on every Python:
+# they test the examples, not compatibility, and are the slowest tests by far.
+@pytest.mark.notebook
 @pytest.mark.parametrize("path", NOTEBOOKS, ids=[p.stem for p in NOTEBOOKS])
 def test_example_notebook_is_committed_executed_and_runs(path, kernel_dir):
     committed = nbformat.read(path, as_version=4)

@@ -225,22 +225,27 @@ class TestSarAverage:
         with pytest.raises(ValueError, match="Unsupported IC"):
             sars.sar_average(galap, ic="WAIC")
 
+    # A few models, with two and three parameters, test the IC weighting as well as
+    # all 20 (which took a minute or more per test). Mixed parameter counts matter:
+    # models that all had the same count would get the same weights under every IC.
+    IC_MODELS = ["power", "loga", "negexpo", "p1", "asymp"]
+
     def test_ic_aic(self, galap):
-        avg = sars.sar_average(galap, ic="AIC")
+        avg = sars.sar_average(galap, models=self.IC_MODELS, ic="AIC")
         assert avg.ic == "AIC"
         assert len(avg.weights) > 0
         assert sum(avg.weights.values()) == pytest.approx(1.0)
 
     def test_ic_bic(self, galap):
-        avg = sars.sar_average(galap, ic="BIC")
+        avg = sars.sar_average(galap, models=self.IC_MODELS, ic="BIC")
         assert avg.ic == "BIC"
         assert len(avg.weights) > 0
         assert sum(avg.weights.values()) == pytest.approx(1.0)
 
     def test_ic_weights_differ(self, galap):
         """Different ICs should generally produce different weight vectors."""
-        avg_aicc = sars.sar_average(galap, ic="AICc")
-        avg_bic = sars.sar_average(galap, ic="BIC")
+        avg_aicc = sars.sar_average(galap, models=self.IC_MODELS, ic="AICc")
+        avg_bic = sars.sar_average(galap, models=self.IC_MODELS, ic="BIC")
         w_aicc = [avg_aicc.weights.get(m, 0) for m in sorted(avg_aicc.weights)]
         w_bic = [avg_bic.weights.get(m, 0) for m in sorted(avg_bic.weights)]
         assert w_aicc != w_bic

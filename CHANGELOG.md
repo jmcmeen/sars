@@ -20,6 +20,12 @@ reconstructed from the commit history and the
   early stop. On every bundled dataset the fits are unchanged, apart from two that run
   along a ridge to a bound and stop at a point on it within 0.0001 of the old AICc
   (betap on `load_xu`, epm2 on `load_schrader`) (#193)
+- CI checks pull requests faster. They test Python 3.11 and 3.14, with every supported
+  version tested on pushes to `main` and manual runs; the example notebooks run once,
+  in a job of their own, instead of on every Python; a failure on the pre-release 3.15
+  no longer fails the run; coverage runs on one Python; and three `sar_average` tests
+  fit five models instead of all 20 to check the IC weighting. A threshold test now
+  expects the warning it triggers (#194, #195, #196, #197)
 
 ## [0.11.1] - 2026-11-22
 

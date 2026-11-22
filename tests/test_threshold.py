@@ -294,7 +294,8 @@ class TestMoreThresholdModels:
         data = pd.DataFrame({"area": np.exp(x), "species": y})
         one = sars.sar_threshold(data, models=["DiscOne"]).all_fits["DiscOne"]
         assert one["breakpoints"][0] in (4.0, 8.0)  # at one of the jumps
-        two = sars.sar_threshold(data, models=["DiscTwo", "DiscOne", "Linear"])
+        with pytest.warns(UserWarning, match="AICc is undefined for DiscTwo with 12"):
+            two = sars.sar_threshold(data, models=["DiscTwo", "DiscOne", "Linear"])
         assert two.best_model == "DiscTwo"
         assert two.best_breakpoints == pytest.approx((4.0, 8.0))
         assert two.all_fits["DiscTwo"]["rss"] == pytest.approx(0.0, abs=1e-18)
