@@ -10,6 +10,17 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Changed
+
+- Fitting is several times faster: `sar_multi` on the Galápagos data takes about a
+  seventh of the time, and weibull4, which took three quarters of it, about a tenth.
+  The search from the grid of starting values uses looser tolerances, and the tight
+  final solve starts from the best three distinct grid results instead of one; starts
+  that only match the best fit to within the search's own scatter no longer delay its
+  early stop. On every bundled dataset the fits are unchanged, apart from two that run
+  along a ridge to a bound and stop at a point on it within 0.0001 of the old AICc
+  (betap on `load_xu`, epm2 on `load_schrader`) (#193)
+
 ## [0.11.1] - 2026-11-22
 
 ### Added
