@@ -269,6 +269,25 @@ if __name__ == "__main__":
     ci = sars.bootstrap_ci(galap, n_boot=1000, n_jobs=-1)
 ```
 
+## Saving and loading results
+
+Any result `sars` returns (a single fit, a multi-model fit, an average, a threshold fit,
+a bootstrap interval, the result of `sar_many`) can be saved as JSON and loaded back,
+data, parameters and settings included:
+
+```python
+avg = sars.sar_average(galap)
+sars.save(avg, "galap_average.json")
+
+avg = sars.load("galap_average.json")  # an AveragedSAR again
+avg.predict([10.0, 100.0])
+```
+
+`sars.to_json(result)` and `sars.from_json(text)` do the same with a string. The file is
+standard JSON (an infinite AICc is written as a string and read back as a number), and
+it records the version of `sars` that wrote it. Loading rebuilds only `sars`'s own result
+types, so a file from elsewhere can't run code, unlike a pickle.
+
 ## Many datasets at once
 
 `sar_many` fits the same models to several datasets and puts the results in one table,

@@ -72,6 +72,7 @@ from sars._plots import (
     plot_threshold,
 )
 from sars._predict import sar_pred
+from sars._serialize import from_json, load, save, to_json
 from sars._threshold import ThresholdCI, ThresholdFit, sar_threshold, threshold_ci
 
 __all__ = [
@@ -96,8 +97,10 @@ __all__ = [
     "from_csv",
     "from_df",
     "from_geodataframe",
+    "from_json",
     "from_pyinaturalist",
     "lin_pow",
+    "load",
     "load_aegean",
     "load_aegean2",
     "load_gala",
@@ -111,7 +114,9 @@ __all__ = [
     "sar_multi",
     "sar_pred",
     "sar_threshold",
+    "save",
     "threshold_ci",
+    "to_json",
     "plot_average",
     "plot_coleman",
     "plot_fit",

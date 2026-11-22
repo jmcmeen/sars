@@ -10,6 +10,15 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- `sars.save()` and `sars.load()`, and `sars.to_json()` and `sars.from_json()`, save any
+  result (`SARFit`, `MultiSARFit`, `AveragedSAR`, `BootstrappedCI`, `LinPowFit`,
+  `ThresholdFit`, `ThresholdCI`, `ManySARFit`) as standard JSON and load it back, with
+  its data, parameters and settings, the `sars` version that wrote it and a format
+  version. Non-finite numbers are kept, and loading rebuilds only `sars`'s own result
+  types (#215)
+
 ## [0.11.3] - 2026-11-22
 
 ### Added
