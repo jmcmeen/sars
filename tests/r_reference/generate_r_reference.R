@@ -461,5 +461,33 @@ write.csv(do.call(rbind, cs_rows), out("countryside_fits.csv"), row.names = FALS
 write.csv(cs_tot, out("countryside_total.csv"), row.names = FALSE)
 write.csv(do.call(rbind, cs_rss), out("countryside_rss.csv"), row.names = FALSE)
 
+# 16. Richness standardised for sampling effort, by iNEXT's estimateD (q = 0,
+#    no bootstrap) on a simulated species-by-site table (effort_abundance.csv,
+#    written by the tests' authors: ten sites of growing size and effort, and
+#    two small ones without doubletons or singletons), by coverage and by size,
+#    at iNEXT's default level and at fixed ones; and vegan's rarefy at a size
+#    every site reaches. Needs iNEXT and vegan; skipped without them.
+if (requireNamespace("iNEXT", quietly = TRUE) && requireNamespace("vegan", quietly = TRUE)) {
+  ab <- read.csv(out("effort_abundance.csv"), row.names = 1, check.names = FALSE)
+  eff_rows <- list()
+  for (base in c("coverage", "size")) {
+    levels <- if (base == "coverage") list(NULL, 0.6, 0.9, 0.99) else list(NULL, 20, 500, 5000)
+    for (lv in levels) {
+      est <- suppressWarnings(iNEXT::estimateD(ab, q = 0, datatype = "abundance", base = base,
+                                               level = lv, nboot = 0))
+      eff_rows[[length(eff_rows) + 1]] <- data.frame(
+        base = base, level = if (is.null(lv)) NA else lv, site = est$Assemblage,
+        m = est$m, method = est$Method, SC = est$SC, qD = est$qD)
+    }
+  }
+  write.csv(do.call(rbind, eff_rows), out("effort_inext.csv"), row.names = FALSE)
+  rare <- vegan::rarefy(t(ab), sample = 10)
+  write.csv(data.frame(site = names(rare), rarefied10 = unname(rare)),
+            out("effort_vegan.csv"), row.names = FALSE)
+  writeLines(c(paste("iNEXT", as.character(packageVersion("iNEXT"))),
+               paste("vegan", as.character(packageVersion("vegan"))), R.version.string),
+             out("effort_versions.txt"))
+}
+
 cat("Reference tables written.\n\nPower law:\n")
 print(sar_power(galap))

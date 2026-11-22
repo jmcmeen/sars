@@ -14,6 +14,7 @@ except PackageNotFoundError:
 from sars._checks import ResidualChecks
 from sars._coleman import ColemanFit, ColemanTest, coleman
 from sars._crossval import LOOCV, loo_cv
+from sars._effort import standardised_richness
 from sars._gdm import GDMFit, GDMMultiFit, sar_gdm
 from sars._habitat import CountrysideFit, HabitatFit, sar_countryside, sar_habitat
 from sars._inference import (
@@ -40,6 +41,7 @@ from sars._io import (
     load_niering,
     load_schrader,
     load_xu,
+    load_xu_abundance,
 )
 from sars._linpow import LinPowFit, lin_pow
 from sars._loss import HabitatLoss, habitat_loss
@@ -120,6 +122,7 @@ __all__ = [
     "load_niering",
     "load_schrader",
     "load_xu",
+    "load_xu_abundance",
     "loo_cv",
     "sar_average",
     "sar_countryside",
@@ -159,4 +162,5 @@ __all__ = [
     "sar_ratio",
     "sar_weibull3",
     "sar_weibull4",
+    "standardised_richness",
 ]

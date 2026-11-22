@@ -42,6 +42,10 @@ reconstructed from the commit history and the
   its known upward bias. The CLI runs it as `sars loss` (#224)
 - `bootstrap_ci(keep_samples=True)` keeps every resample's prediction in
   `BootstrappedCI.samples` (#224)
+- `sars.standardised_richness()`: richness standardised for sampling effort, rarefied or
+  extrapolated to the same sample coverage or number of individuals from a species-by-site
+  table, matching R's iNEXT, ready to fit. `load_xu_abundance()` has the butterfly counts
+  behind `load_xu` (#232)
 - `sars.sar_habitat()`, R sars's habitat models (choros, jigsaw, Kallimanis and the
   classical curve) in power, logarithmic and log-log forms, and `sars.sar_countryside()`,
   the countryside model for multi-habitat landscapes, with habitat affinities and

@@ -1,8 +1,8 @@
 # Datasets
 
-Seven published island datasets ship with the package, and two more in the formats
-of the habitat models (below). Each loader returns a
-DataFrame with `area` and `species` columns; `load_gala`, `load_schrader` and
+Seven published island datasets ship with the package, two more in the formats of the
+habitat models, and the species counts behind one of them (below). Each of the seven
+returns a DataFrame with `area` and `species` columns; `load_gala`, `load_schrader` and
 `load_xu` add `island` (the island's name or survey code), and `load_gala`
 `endemics`.
 
@@ -29,6 +29,10 @@ Two more come in the formats the habitat models take, from R `sars` 2.1.1:
 | ------ | ----- | ----- | ------- | ------ |
 | `load_habitat()` | 12 islands, Skyros, Greece | Land snails | `area` (km²), `habitats`, `species` | Triantis et al. (2005) |
 | `load_countryside()` | 425 nested plots, Portugal | Understory plants | three habitat areas (m²), four habitat-affinity groups' richness | Proença & Pereira (2013) |
+
+`load_xu_abundance()` has the counts behind `load_xu`: individuals of 68 butterfly
+species on each of its 42 islands, species by island, in `load_xu`'s order, for
+`standardised_richness`. It comes from the same CC0 compilation of Gooriah et al. (2021).
 
 `load_countryside`'s plots are nested (1 m² plots within 64 m², 4,096 m² and 26.2 ha
 squares), so its rows aren't independent.
@@ -123,7 +127,7 @@ sars.sar_threshold(sars.load_gala())
 - Gooriah L, Blowes SA, Sagouis A, Schrader J, Karger DN, Kreft H, Chase JM
   (2021). Synthesis reveals that island species-area relationships emerge from
   processes beyond passive sampling. *Global Ecology and Biogeography*, 30,
-  2119-2131. Data: Zenodo record 7311286, CC0. (`load_schrader`, `load_xu`)
+  2119-2131. Data: Zenodo record 7311286, CC0. (`load_schrader`, `load_xu`, `load_xu_abundance`)
 - Johnson MP, Raven PH (1973). Species number and endemism: the Galápagos
   Archipelago revisited. *Science*, 179, 893-895. (`load_gala`)
 - Matthews TJ, Rigal F, Kougioumoutzis K, Trigas P, Triantis KA (2020).
@@ -142,6 +146,6 @@ sars.sar_threshold(sars.load_gala())
 - Xu A, Han X, Zhang X, Millien V, Wang Y (2017). Nestedness of butterfly
   assemblages in the Zhoushan Archipelago, China: area effects, life-history
   traits and conservation implications. *Biodiversity and Conservation*, 26,
-  1375-1392. (`load_xu`)
+  1375-1392. (`load_xu`, `load_xu_abundance`)
 
 If you publish results from one of these datasets, cite its source.

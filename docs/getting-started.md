@@ -492,6 +492,41 @@ and, given `ci`, their intervals shaded:
 sars.plot_threshold(th, ci=ci)
 sars.plot_threshold(th, model="DiscOne")   # separate lines either side of the jump
 ```
+## Sampling effort
+
+The richness recorded on an island is a sample, and when larger islands are sampled
+harder, part of the species-area relationship is the effort's (Gooriah et al. 2021).
+Given each site's species counts, `standardised_richness` puts the sites on an equal
+footing first. It rarefies or extrapolates every sample to the same sample coverage,
+the share of the community's individuals that belong to species already found, as R's
+iNEXT does:
+
+```python
+xu = sars.load_xu()                  # 42 islands: area and observed richness
+counts = sars.load_xu_abundance()    # the same islands' butterfly counts, species by island
+data = sars.standardised_richness(counts, area=xu["area"])
+data[["site", "area", "species", "observed", "individuals", "coverage", "m"]].head(3)
+#        site     area  species  observed  individuals  coverage       m
+# 0  Zhoushan  476.165   17.051        41          732     0.992  48.853
+# 1   Liuheng   93.658   19.564        39          294     0.949  54.477
+# 2   Daishan  104.967   12.429        32         1102     0.995  35.742
+
+sars.lin_pow(xu).z, sars.lin_pow(data).z
+# (0.351, 0.263)
+```
+
+From 2 to 1,102 butterflies were counted on these islands, more on the larger ones
+(r = 0.84 on log scales). At an equal coverage of 85.5%, the log-log slope falls from
+0.35 to 0.26, so about a quarter of the apparent effect of area on the observed
+richness came from sampling. `m` is the number of individuals each site was rarefied (or
+extrapolated) to; `coverage` is its sample's own coverage, and `coverage_at_m` the
+coverage it was standardised to. `data` goes to any fitting function like other data.
+
+`base="size"` standardises to the same number of individuals instead. `level` sets the
+coverage, or the number of individuals. By default it is, as in iNEXT, the largest
+value every site reaches by extrapolating to twice its sample, and a warning flags any
+site extrapolated further. The estimates match iNEXT's `estimateD` for richness (q = 0).
+
 ## Habitat models
 
 Richness can depend on how many habitats an island has as well as on its size.

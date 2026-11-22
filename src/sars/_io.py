@@ -238,6 +238,38 @@ def load_xu() -> pd.DataFrame:
     return _load_dataset("xu")
 
 
+def load_xu_abundance() -> pd.DataFrame:
+    """Load the butterfly counts behind `load_xu`, species by island.
+
+    The number of individuals of each of 68 butterfly species counted on each
+    of the 42 islands of the Zhoushan Archipelago, China, by Xu et al. (2017):
+    one row per species (the index, ``species``), one column per island, in
+    `load_xu`'s order. Counts came from transects, and the number of
+    individuals sampled grows with island area (from 2 to 1,102), so the
+    observed richness reflects effort as well as area; `standardised_richness`
+    takes this table. From the compilation of Gooriah et al. (2021), released
+    under CC0.
+
+    Returns
+    -------
+    pd.DataFrame
+        Species-by-island counts.
+
+    References
+    ----------
+    Xu A, Han X, Zhang X, Millien V, Wang Y (2017). Nestedness of butterfly
+    assemblages in the Zhoushan Archipelago, China: area effects, life-history
+    traits and conservation implications. Biodiversity and Conservation 26,
+    1375-1392. Gooriah L, Blowes SA, Sagouis A, Schrader J, Karger DN, Kreft H,
+    Chase JM (2021). Synthesis reveals that island species-area relationships
+    emerge from processes beyond passive sampling. Global Ecology and
+    Biogeography 30, 2119-2131.
+    """
+    ref = importlib.resources.files("sars.data").joinpath("xu_abundance.csv")
+    with importlib.resources.as_file(ref) as path:
+        return pd.read_csv(path, index_col="species")
+
+
 def load_habitat() -> pd.DataFrame:
     """Load the Skyros land snail dataset, with habitat counts, for `sar_habitat`.
 
