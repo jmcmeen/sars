@@ -10,6 +10,8 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+## [0.11.3] - 2026-11-22
+
 ### Added
 
 - `sar_many()` fits the same models to many datasets and summarises them in one table,
@@ -656,7 +658,8 @@ reconstructed from the commit history and the
 - Project skeleton: package layout, CI, publishing workflow, license, and
   citation file.
 
-[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.2...HEAD
+[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.3...HEAD
+[0.11.3]: https://github.com/jmcmeen/sars/compare/v0.11.2...v0.11.3
 [0.11.2]: https://github.com/jmcmeen/sars/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/jmcmeen/sars/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/jmcmeen/sars/compare/v0.10.0...v0.11.0
