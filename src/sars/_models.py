@@ -486,7 +486,26 @@ def _area_grid(lo: float, hi: float, n: int) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 
-def _compute_ic(k: int, n: int, rss: float) -> tuple[float, float, float]:
+def rss_floor(y: np.ndarray) -> float:
+    """The smallest RSS the information criteria use for a fit to ``y``.
+
+    The likelihood is unbounded as RSS goes to zero, and whether an exact fit's
+    RSS rounds to 0 or to 1e-28 depends on the platform. So an RSS is scored no
+    lower than the rounding error of the data, ``eps * sum(y**2)`` (a relative
+    residual of the square root of machine epsilon), and never lower than the
+    smallest positive float, for data that are all zero. Exact and near-exact
+    fits then get the same finite criteria on every platform; between them,
+    the one with fewer parameters ranks first.
+    """
+    y = np.asarray(y, dtype=float)
+    if not np.all(np.isfinite(y)):
+        raise ValueError("The data must be finite to set the RSS floor.")
+    return max(float(np.finfo(float).eps * np.sum(y**2)), float(np.finfo(float).tiny))
+
+
+def _compute_ic(
+    k: int, n: int, rss: float, y: np.ndarray | None = None
+) -> tuple[float, float, float]:
     """Compute AIC, AICc, and BIC from residual sum of squares.
 
     Uses the normal log-likelihood convention consistent with R sars:
@@ -500,14 +519,20 @@ def _compute_ic(k: int, n: int, rss: float) -> tuple[float, float, float]:
         Number of observations.
     rss : float
         Residual sum of squares.
+    y : np.ndarray, optional
+        The data fitted. With it, ``rss`` is raised to
+        ``rss_floor(y)`` (the data's rounding error) first, as every fit in the
+        package does.
 
     Returns
     -------
     tuple[float, float, float]
-        (AIC, AICc, BIC). A perfect fit (``rss`` 0) has an unbounded
-        likelihood, so all three are -inf (AICc only when ``n > k + 1``;
-        otherwise it is +inf, undefined).
+        (AIC, AICc, BIC). Without ``y``, a perfect fit (``rss`` 0) has an
+        unbounded likelihood, so all three are -inf (AICc only when
+        ``n > k + 1``; otherwise it is +inf, undefined).
     """
+    if y is not None:
+        rss = max(rss, rss_floor(y))
     if rss == 0:
         log_lik = np.inf  # no residual variance: the likelihood is unbounded
     else:
@@ -1000,7 +1025,7 @@ def _fit_nls(
     r_squared = 1.0 - rss / ss_tot if ss_tot > 0 else np.nan
 
     k = len(spec.param_names) + 1  # +1 for sigma
-    aic, aicc, bic = _compute_ic(k, n, rss)
+    aic, aicc, bic = _compute_ic(k, n, rss, species)
 
     return SARFit(
         model=name,

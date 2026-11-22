@@ -42,7 +42,7 @@ import numpy as np
 import pandas as pd
 from scipy import special
 
-from sars._models import _compute_ic, _validate_data
+from sars._models import _compute_ic, _validate_data, rss_floor
 from sars._parallel import Workers, chunks, n_workers
 
 # ---------------------------------------------------------------------------
@@ -225,7 +225,7 @@ def _result(
     ss_tot = float(np.sum((y - np.mean(y)) ** 2))
     r2 = 1.0 - rss / ss_tot if ss_tot > 0 else 0.0
     k = _K[model]
-    aic, aicc, bic = _compute_ic(k, n, rss)
+    aic, aicc, bic = _compute_ic(k, n, rss, y)
     return {
         "model": model,
         "breakpoint": breakpoints[0] if breakpoints else None,
@@ -949,9 +949,10 @@ def sar_threshold(
     UserWarning
         If the dataset has fewer than 7 observations, or AICc is undefined for
         some of the models fitted (they rank last), as R sars's ``summary``
-        warns; or if a model fits the data exactly (residual sum of squares
-        0), whose AICc is -inf for want of residual variance: it ranks first,
-        and the ranking then reflects rounding, not evidence.
+        warns; or if a model fits the data exactly (to rounding error): its
+        AICc is computed at the data's rounding error, so it is finite and the
+        same on every platform, but its rank against other exact fits reflects
+        their parameter counts, not evidence.
 
     References
     ----------
@@ -1028,16 +1029,27 @@ def sar_threshold(
         )
     summary = pd.DataFrame(rows).sort_values("AICc").reset_index(drop=True)
 
-    # +inf: too few observations for the model's parameters. -inf: a perfect
-    # fit (RSS 0), whose likelihood is unbounded; it ranks first, as a fit
-    # whose RSS rounds to a tiny positive number would anyway.
+    # +inf: too few observations for the model's parameters. An exact fit's
+    # AICc is scored at the data's rounding error (rss_floor), so it is finite
+    # and the same on every platform, and ranks first.
     undefined = summary.loc[summary["AICc"] == np.inf, "model"].tolist()
-    perfect = summary.loc[summary["AICc"] == -np.inf, "model"].tolist()
+    floor = rss_floor(y)
+    perfect = [
+        name
+        for name in summary["model"]
+        if all_fits[name]["rss"] <= floor and np.isfinite(all_fits[name]["aicc"])
+    ]
     if perfect:
+        several = len(perfect) > 1
         warnings.warn(
-            f"{', '.join(perfect)} fit the data exactly (RSS 0): with no residual "
-            f"variance, AICc is -inf, so they rank first. Between such fits, and "
-            f"against fits with a tiny RSS, the ranking reflects rounding, not evidence.",
+            f"{', '.join(perfect)} {'fit' if several else 'fits'} the data exactly (to "
+            f"rounding error), so AICc is computed at the data's rounding error"
+            + (
+                "; between these fits the one with fewer parameters ranks higher, which "
+                "reflects parameter counts, not evidence."
+                if several
+                else "; its rank reflects that floor and its parameter count."
+            ),
             UserWarning,
             stacklevel=2,
         )

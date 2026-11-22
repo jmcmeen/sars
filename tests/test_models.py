@@ -486,6 +486,33 @@ def test_a_perfect_fit_has_ics_of_minus_infinity():
     assert sars.aicc(2, 10, 0.0) == -np.inf and sars.aicc(2, 3, 0.0) == np.inf
 
 
+def test_with_the_data_an_exact_fit_is_scored_at_its_rounding_error():
+    """Given the data, RSS 0 and RSS 1e-28 give the same finite criteria, so
+    exact fits rank, weigh and average the same on every platform."""
+    from sars._models import _compute_ic, rss_floor
+
+    y = np.array([3.0, 5.0, 8.0, 13.0, 21.0, 34.0])
+    exact, tiny = _compute_ic(2, 6, 0.0, y), _compute_ic(2, 6, 1e-28, y)
+    assert exact == tiny and all(np.isfinite(exact))
+    assert sars.aicc(2, 6, 0.0, y) == exact[1]
+    assert rss_floor(np.zeros(5)) > 0  # all-zero data still get a finite score
+    assert np.isfinite(_compute_ic(2, 5, 0.0, np.zeros(5))[0])
+    # A real fit's RSS is far above the floor and unchanged.
+    assert _compute_ic(2, 6, 4.0, y) == _compute_ic(2, 6, 4.0)
+
+
+def test_exact_fits_share_the_weight_by_parameters():
+    """Two exact fits of different sizes: finite AICc, the smaller first and
+    taking most of the weight, instead of -inf and weight 0."""
+    from sars._models import _compute_ic
+
+    y = np.array([3.0, 5.0, 8.0, 13.0, 21.0, 34.0, 55.0, 89.0])
+    small, large = _compute_ic(2, 8, 0.0, y)[1], _compute_ic(3, 8, 0.0, y)[1]
+    weights = sars.akaike_weights(np.array([small, large]))
+    assert small < large and weights[0] > weights[1] > 0
+    assert weights.sum() == pytest.approx(1.0)
+
+
 def test_at_bounds_names_parameters_on_a_bound(galap_fits):
     """weibull4's z runs to its bound on the Galápagos data; the power fit's
     parameters are estimates."""
@@ -842,3 +869,10 @@ def test_area_grid_mixes_even_and_geometric_spacing():
     # No geometric grid reaches zero: an even one stands in.
     np.testing.assert_allclose(_area_grid(0.0, 10.0, 10), np.linspace(0.0, 10.0, 10))
     assert _area_grid(5.0, 5.0, 10).tolist() == [5.0]
+
+
+def test_the_floor_needs_finite_data_of_length_n():
+    with pytest.raises(ValueError, match="finite"):
+        sars.aicc(2, 6, 0.0, np.array([1.0, 2.0, np.nan, 4.0, 5.0, 6.0]))
+    with pytest.raises(ValueError, match="y has 5 values, but n is 6"):
+        sars.aicc(2, 6, 0.0, np.arange(5.0))

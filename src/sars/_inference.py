@@ -16,6 +16,7 @@ from sars._models import (
     _fit_nls,
     _model_spec,
     _validate_data,
+    rss_floor,
 )
 from sars._parallel import map_in_order, n_workers
 
@@ -109,7 +110,7 @@ def _get_asymptote(fit: SARFit) -> float | None:
 # ---------------------------------------------------------------------------
 
 
-def aicc(k: int, n: int, rss: float) -> float:
+def aicc(k: int, n: int, rss: float, y: np.ndarray | None = None) -> float:
     """Compute AICc from residual sum of squares.
 
     Parameters
@@ -120,13 +121,21 @@ def aicc(k: int, n: int, rss: float) -> float:
         Number of observations.
     rss : float
         Residual sum of squares.
+    y : array-like, optional
+        The data fitted (``n`` finite values). With it, ``rss`` is scored no lower than the data's
+        rounding error, ``eps * sum(y**2)``, as the package's fits are, so an
+        exact fit has a finite AICc on every platform.
 
     Returns
     -------
     float
-        AICc value: +inf when ``n <= k + 1`` (undefined), -inf for a perfect
-        fit (``rss`` 0, an unbounded likelihood) otherwise.
+        AICc value: +inf when ``n <= k + 1`` (undefined); without ``y``, -inf
+        for a perfect fit (``rss`` 0, an unbounded likelihood).
     """
+    if y is not None:
+        if len(y) != n:
+            raise ValueError(f"y has {len(y)} values, but n is {n}.")
+        rss = max(rss, rss_floor(y))
     if rss == 0:
         return np.inf if n - k - 1 <= 0 else -np.inf
     log_lik = -n / 2.0 * np.log(2.0 * np.pi * rss / n) - n / 2.0
