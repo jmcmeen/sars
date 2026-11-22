@@ -17,6 +17,11 @@ reconstructed from the commit history and the
   model's z at 5 on a near-vertical curve, say), for code that compares many
   fits.
 
+### Changed
+
+- CI runs the example notebooks and the 34-dataset check as separate jobs,
+  side by side, so a failure says which broke.
+
 ### Fixed
 
 - `param_table` lines parameter values up with the model's parameters, not
