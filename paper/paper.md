@@ -199,7 +199,10 @@ used in any direct communication with editors or reviewers.
 
 # Acknowledgements
 
-The author acknowledges the foundational contribution of Thomas J. Matthews,
+The author thanks Lance D. Jessee and Jeremy B. Stout, who brought the author
+into their studies of southern Appalachian herpetofauna [@Jessee2022;
+@Stout2025], from which `sars` grew, for the field data reanalysed with it and
+for ecological guidance. The author also acknowledges the foundational contribution of Thomas J. Matthews,
 Kostas A. Triantis, Robert J. Whittaker, and François Guilhaumon, whose R
 `sars` package [@Matthews2019] established the multi-model SAR inference
 framework that this package brings to the Python ecosystem. The Python
