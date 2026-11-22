@@ -52,6 +52,12 @@ reconstructed from the commit history and the
   offered: it compares the residuals with a standard normal, so its answer depends on the
   units of richness (#152)
 
+### Fixed
+
+- `n_jobs` from a script the worker processes can't open, one read from standard input
+  (`python - < script.py`) or a pipe (`python <(...)`), runs in the calling process with a
+  warning, instead of failing with an obscure error from the worker pool (#225)
+
 ## [0.11.3] - 2026-11-22
 
 ### Added

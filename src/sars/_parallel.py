@@ -57,12 +57,26 @@ class Workers:
     module level.
     """
 
-    def __init__(self, n_jobs: int, shared: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self, n_jobs: int, shared: dict[str, Any] | None = None, stacklevel: int = 3
+    ) -> None:
+        # stacklevel: where a warning from __enter__ points, counted from
+        # __enter__ (3: the caller of the function that opened the pool).
+        self.stacklevel = stacklevel
         self.workers = n_workers(n_jobs)
         self.shared = shared or {}
         self._pool: ProcessPoolExecutor | None = None
 
     def __enter__(self) -> Workers:
+        if self.workers > 1 and _main_without_file():
+            warnings.warn(
+                f"n_jobs={self.workers} needs the main script to be a file, which each "
+                "worker process imports; this one isn't a file the workers can open (read "
+                "from standard input or a pipe). Running in this process instead (as "
+                "n_jobs=1).",
+                stacklevel=self.stacklevel,
+            )
+            self.workers = 1
         if self.workers > 1:
             self._pool = ProcessPoolExecutor(
                 max_workers=self.workers,
@@ -106,7 +120,7 @@ def map_in_order(
     fn: Callable[..., Any], items: Sequence[Any], n_jobs: int, shared: dict[str, Any] | None = None
 ) -> list[Any]:
     """``[fn(item, **shared) for item in items]``, in ``n_jobs`` processes."""
-    with Workers(n_jobs, shared) as workers:
+    with Workers(n_jobs, shared, stacklevel=4) as workers:
         return workers.map(fn, items)
 
 
@@ -131,6 +145,32 @@ def _call_in_worker(
         warnings.simplefilter("always")
         result = fn(item, **_SHARED)
     return result, [(str(w.message), w.category, w.filename, w.lineno) for w in caught]
+
+
+def _main_without_file() -> bool:
+    """Whether worker processes would fail to import the main script.
+
+    Follows multiprocessing's own choice (``spawn.get_preparation_data``): a
+    worker re-runs the main script by path only when ``__main__`` wasn't run
+    as a module (``python -m``, a zipapp) and the program isn't frozen. That
+    path, made absolute against the directory the process started in, then
+    has to be a regular file the worker can open: "<stdin>" (``python -``)
+    isn't one, nor is a pipe such as "/dev/fd/63" (``python <(...)``). An
+    interactive session or a notebook has no ``__file__``, and is fine.
+    """
+    import sys
+    from multiprocessing import process
+
+    main = sys.modules.get("__main__")
+    if getattr(sys, "frozen", False) or getattr(getattr(main, "__spec__", None), "name", None):
+        return False
+    path = getattr(main, "__file__", None)
+    if not isinstance(path, str):
+        return False
+    original_dir = getattr(process, "ORIGINAL_DIR", None)  # not in the type stubs
+    if not os.path.isabs(path) and original_dir is not None:
+        path = os.path.join(original_dir, path)
+    return not os.path.isfile(os.path.normpath(path))
 
 
 def _context() -> multiprocessing.context.BaseContext:

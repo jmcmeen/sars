@@ -133,3 +133,66 @@ def test_a_bad_n_jobs_fails_before_any_fitting(galap):
     fit = sars.sar_threshold(galap, models=["ContOne", "Linear"])
     with pytest.raises(ValueError, match="n_jobs"):
         sars.threshold_ci(fit, model="ContOne", n_boot=5, n_jobs=-3)
+
+
+def _stdin_main(monkeypatch, path="<stdin>"):
+    import sys
+
+    main = sys.modules["__main__"]
+    monkeypatch.setattr(main, "__file__", path, raising=False)
+    monkeypatch.setattr(main, "__spec__", None, raising=False)
+
+
+@pytest.mark.parametrize("path", ["<stdin>", "/dev/null"], ids=["stdin", "not-a-regular-file"])
+def test_a_script_workers_cannot_open_runs_in_this_process(monkeypatch, path):
+    """Workers import the main script by path; '<stdin>' has none, and a
+    pipe like /dev/fd/63 isn't a regular file. The work runs here instead,
+    with a warning at the caller."""
+    _stdin_main(monkeypatch, path)
+    data = sars.load_galap()
+    with pytest.warns(UserWarning, match="isn't a file the workers can open") as record:
+        ci = sars.bootstrap_ci(
+            data, models=["power"], n_boot=10, rng=np.random.default_rng(0), n_jobs=2
+        )
+    assert record[0].filename == __file__
+    serial = sars.bootstrap_ci(data, models=["power"], n_boot=10, rng=np.random.default_rng(0))
+    for name in ("mean", "median", "lower", "upper"):
+        np.testing.assert_array_equal(getattr(ci, name), getattr(serial, name))
+
+
+def test_threshold_ci_points_the_warning_at_its_caller(monkeypatch):
+    fit = sars.sar_threshold(sars.load_aegean(), models=["ContOne", "Linear"])
+    _stdin_main(monkeypatch)
+    with pytest.warns(UserWarning, match="isn't a file the workers can open") as record:
+        sars.threshold_ci(fit, model="ContOne", n_boot=4, n_jobs=2, rng=np.random.default_rng(0))
+    assert [w.filename for w in record if "workers can open" in str(w.message)] == [__file__]
+
+
+@pytest.mark.parametrize(
+    ("setup", "expected"),
+    [
+        ("module", False),  # python -m, a zipapp: workers import it by name
+        ("frozen", False),  # a frozen app: workers re-run the executable
+        ("no-file", False),  # an interactive session or a notebook
+        ("this-file", False),  # an ordinary script
+        ("stdin", True),
+    ],
+)
+def test_which_main_modules_workers_cannot_import(monkeypatch, setup, expected):
+    import sys
+    import types
+
+    from sars._parallel import _main_without_file
+
+    main = sys.modules["__main__"]
+    monkeypatch.setattr(main, "__spec__", None, raising=False)
+    monkeypatch.setattr(main, "__file__", "<stdin>", raising=False)
+    if setup == "module":
+        monkeypatch.setattr(main, "__spec__", types.SimpleNamespace(name="app"), raising=False)
+    elif setup == "frozen":
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+    elif setup == "no-file":
+        monkeypatch.delattr(main, "__file__", raising=False)
+    elif setup == "this-file":
+        monkeypatch.setattr(main, "__file__", __file__, raising=False)
+    assert _main_without_file() is expected
