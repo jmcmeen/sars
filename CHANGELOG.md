@@ -22,6 +22,18 @@ reconstructed from the commit history and the
   `average`, `threshold`, `predict` and `datasets`. It reads a CSV file, standard input
   or a bundled dataset, saves results with `--save`, and with `--json` prints a JSON
   envelope (`sars`, `command`, `ok`, `result` or `error`, `warnings`) (#217)
+- The Lilliefors normality test in the residual checks: `normality="lillie"` (or
+  `"lilliefors"`) in `SARFit.residual_checks`, `sar_multi`, `sar_average`,
+  `bootstrap_ci` and the CLI. Its statistic and its p value below 0.1 match R's
+  `nortest::lillie.test`; above 0.1 the p value comes from a simulated null (and is at
+  least 0.1), within about 0.01 of the true value, where R's polynomial fit is off by up
+  to 0.03 (#152)
+
+### Changed
+
+- Asking for R sars's `normality="kolmo"` now raises an error that explains why it isn't
+  offered: it compares the residuals with a standard normal, so its answer depends on the
+  units of richness (#152)
 
 ## [0.11.3] - 2026-11-22
 

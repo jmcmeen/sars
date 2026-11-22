@@ -326,7 +326,7 @@ def sar_multi(
         Model names to fit. Use "all" for all 20 models.
     normality : str or None
         Leave out models whose residuals fail this normality test:
-        ``"shapiro"`` or ``"kolmogorov"`` (see ``SARFit.residual_checks``).
+        ``"shapiro"``, ``"lillie"`` or ``"kolmogorov"`` (see ``SARFit.residual_checks``).
         None (default) for no test.
     homoscedasticity : str or None
         Leave out models whose squared residuals are correlated with the
@@ -539,7 +539,7 @@ def sar_average(
         ``"BIC"`` can be used instead.
     normality, homoscedasticity : str or None
         Residual checks that leave failing models out, as in ``sar_multi``:
-        a normality test (``"shapiro"`` or ``"kolmogorov"``) and a
+        a normality test (``"shapiro"``, ``"lillie"`` or ``"kolmogorov"``) and a
         homoscedasticity test (``"cor.fitted"`` or ``"cor.area"``). None
         (default) for no test.
     cor_method : str
@@ -794,7 +794,7 @@ def bootstrap_ci(
         or ``"BIC"``.
     normality, homoscedasticity : str or None
         Residual checks that leave failing models out, as in ``sar_multi``:
-        a normality test (``"shapiro"`` or ``"kolmogorov"``) and a
+        a normality test (``"shapiro"``, ``"lillie"`` or ``"kolmogorov"``) and a
         homoscedasticity test (``"cor.fitted"`` or ``"cor.area"``). None
         (default) for no test.
     cor_method : str

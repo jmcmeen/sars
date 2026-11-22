@@ -15,15 +15,17 @@ import numpy as np
 # The names each argument accepts. "kolmogorov" is not R sars's "kolmo", which
 # compares the residuals with a standard normal, so its result depends on the
 # units of species richness; here the normal has the residuals' own mean and
-# standard deviation.
-NORMALITY_TESTS = ("shapiro", "kolmogorov")
+# standard deviation. "lillie" is R's name for the Lilliefors test.
+NORMALITY_TESTS = ("shapiro", "kolmogorov", "lillie")
+_NORMALITY_ALIASES = {"lilliefors": "lillie"}
 HOMOSCEDASTICITY_TESTS = ("cor.fitted", "cor.area")
 COR_METHODS = ("spearman", "pearson", "kendall")
 
-_NO_LILLIEFORS = (
-    "The Lilliefors test (R sars's normaTest='lillie') is not available: scipy has "
-    "no implementation, and no published formula gives its p value over the whole "
-    "range. Use 'shapiro' or 'kolmogorov'."
+_NO_KOLMO = (
+    "R sars's normaTest='kolmo' compares the residuals with a standard normal, so its "
+    "answer depends on the units of species richness; it isn't offered. Use 'lillie' "
+    "(the Lilliefors test, which allows for the mean and standard deviation being "
+    "estimated) or 'kolmogorov'."
 )
 
 
@@ -43,8 +45,10 @@ class CheckOptions:
     alpha_homoscedasticity: float = 0.05
 
     def __post_init__(self) -> None:
-        if self.normality in ("lillie", "lilliefors"):
-            raise ValueError(_NO_LILLIEFORS)
+        if self.normality == "kolmo":
+            raise ValueError(_NO_KOLMO)
+        if isinstance(self.normality, str) and self.normality in _NORMALITY_ALIASES:
+            object.__setattr__(self, "normality", _NORMALITY_ALIASES[self.normality])
         if self.normality is not None and self.normality not in NORMALITY_TESTS:
             raise ValueError(
                 f"Unknown normality test: {self.normality!r}. "
@@ -80,8 +84,9 @@ class ResidualChecks:
     """Residual checks on one fitted model.
 
     A test that wasn't asked for, or can't be computed (fewer than three
-    observations, residuals that are all equal, or fitted values that aren't
-    all finite), has NaN for its statistic and p value.
+    observations, or five for the Lilliefors test; residuals that are all
+    equal; or fitted values that aren't all finite), has NaN for its statistic
+    and p value.
 
     Attributes
     ----------
@@ -90,9 +95,10 @@ class ResidualChecks:
     normality : str or None
         The normality test run on the residuals: "shapiro" (Shapiro-Wilk),
         "kolmogorov" (Kolmogorov-Smirnov against a normal distribution with
-        the residuals' mean and standard deviation), or None.
+        the residuals' mean and standard deviation), "lillie" (Lilliefors),
+        or None.
     normality_statistic : float
-        The test statistic: W for "shapiro", D for "kolmogorov".
+        The test statistic: W for "shapiro", D for "kolmogorov" and "lillie".
     normality_pvalue : float
         Its p value. A small value is evidence against normal residuals.
     homoscedasticity : str or None
@@ -192,6 +198,8 @@ def _normality(residuals: np.ndarray, test: str) -> tuple[float, float]:
         return np.nan, np.nan
     if test == "shapiro":
         res = stats.shapiro(residuals)
+    elif test == "lillie":
+        return _lilliefors(residuals)
     else:
         # The mean and standard deviation come from the residuals themselves,
         # which the Kolmogorov-Smirnov distribution doesn't allow for: the p
@@ -201,6 +209,102 @@ def _normality(residuals: np.ndarray, test: str) -> tuple[float, float]:
         exact = n < _KS_EXACT_BELOW_N and len(np.unique(residuals)) == n
         res = stats.kstest(standardised, "norm", method="exact" if exact else "asymp")
     return float(res.statistic), float(res.pvalue)
+
+
+# The Lilliefors test's null distribution of D depends only on n: the residuals
+# are standardised by their own mean and standard deviation. It is simulated
+# once per n, with a fixed seed so a p value is reproducible.
+_LILLIEFORS_DRAWS = 20_000
+_LILLIEFORS_SEED = 20_261_122
+_LILLIEFORS_MIN_N = 5  # as R's nortest::lillie.test
+# Above this many residuals the null isn't simulated (20,000 samples of n would
+# take seconds); D is rescaled to this n by (n / 1000)^0.49, the scaling
+# Dallal and Wilkinson use above 100. Within about 0.01 up to n = 5000.
+_LILLIEFORS_MAX_SIMULATED_N = 1000
+
+
+def _lilliefors_statistic(x: np.ndarray) -> float:
+    """D: the largest gap between the empirical distribution of x and a
+    normal with x's mean and (n - 1) standard deviation."""
+    from scipy import stats
+
+    x = np.sort(np.asarray(x, dtype=float))
+    n = len(x)
+    p = stats.norm.cdf((x - x.mean()) / x.std(ddof=1))
+    i = np.arange(1, n + 1)
+    return float(max(np.max(i / n - p), np.max(p - (i - 1) / n)))
+
+
+def _dallal_wilkinson(d: float, n: int) -> float:
+    """Dallal and Wilkinson's (1986) approximation to the Lilliefors p value,
+    accurate below 0.1. Above n = 100, D is rescaled to n = 100."""
+    if n > 100:
+        d, n = d * (n / 100) ** 0.49, 100
+    return float(
+        np.exp(
+            -7.01256 * d**2 * (n + 2.78019)
+            + 2.99587 * d * np.sqrt(n + 2.78019)
+            - 0.122119
+            + 0.974598 / np.sqrt(n)
+            + 1.67997 / n
+        )
+    )
+
+
+@cache
+def _lilliefors_null(n: int) -> np.ndarray:
+    """Simulated values of D for n normal observations, sorted."""
+    from scipy import stats
+
+    rng = np.random.default_rng(_LILLIEFORS_SEED)
+    i = np.arange(1, n + 1)
+    chunk = max(1, min(_LILLIEFORS_DRAWS, 2_000_000 // n))  # bounded memory
+    out = []
+    remaining = _LILLIEFORS_DRAWS
+    while remaining:
+        size = min(chunk, remaining)
+        x = np.sort(rng.standard_normal((size, n)), axis=1)
+        p = stats.norm.cdf(
+            (x - x.mean(axis=1, keepdims=True)) / x.std(axis=1, ddof=1, keepdims=True)
+        )
+        out.append(np.maximum((i / n - p).max(axis=1), (p - (i - 1) / n).max(axis=1)))
+        remaining -= size
+    return np.sort(np.concatenate(out))
+
+
+def _lilliefors(x: np.ndarray) -> tuple[float, float]:
+    """D and its p value: Dallal-Wilkinson where that is below 0.1 (as R's
+    nortest), else the share of the simulated null at least as large, and at
+    least 0.1."""
+    n = len(x)
+    if n < _LILLIEFORS_MIN_N:
+        warnings.warn(
+            f"The Lilliefors test needs at least {_LILLIEFORS_MIN_N} residuals, not {n}; "
+            "it wasn't run, so it leaves no model out.",
+            UserWarning,
+            stacklevel=2,
+        )
+        return np.nan, np.nan
+    d = _lilliefors_statistic(x)
+    p = _dallal_wilkinson(d, n)
+    if p <= 0.1:
+        return d, p
+    if n > _LILLIEFORS_MAX_SIMULATED_N:
+        scaled = d * (n / _LILLIEFORS_MAX_SIMULATED_N) ** 0.49
+        simulated = _lilliefors_p_from_null(scaled, _lilliefors_null(_LILLIEFORS_MAX_SIMULATED_N))
+    else:
+        simulated = _lilliefors_p_from_null(d, _lilliefors_null(n))
+    # Where Dallal-Wilkinson is above 0.1, so is the p value: the simulated
+    # null can dip just below it at small n (as R's own fit does), which would
+    # make p rise with D across the switch.
+    return d, max(simulated, 0.1)
+
+
+def _lilliefors_p_from_null(d: float, null: np.ndarray) -> float:
+    """The share of the sorted simulated values at least as large as d,
+    counting d itself among them, so it is never 0."""
+    at_least = len(null) - int(np.searchsorted(null, d, side="left"))
+    return (at_least + 1) / (len(null) + 1)
 
 
 @cache

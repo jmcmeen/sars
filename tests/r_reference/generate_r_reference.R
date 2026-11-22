@@ -384,5 +384,34 @@ for (nm in c("galap", "aegean", "aegean2", "niering")) {
 }
 write.csv(do.call(rbind, f_rows), out("threshold_ci_F.csv"), row.names = FALSE)
 
+# 14. Lilliefors tests (nortest::lillie.test, which R sars's normaTest =
+#    "lillie" calls) on fixed samples: x = sin(i) + (i mod 7) / 3, near
+#    normal, and y = exp(sin(1.7 i)), skewed, i = 1..n. Its p value is Dallal
+#    and Wilkinson's approximation below 0.1, nortest's own fit above. Then
+#    the test on each R sars fit's residuals for the Galapagos data.
+lillie_rows <- list()
+for (n in c(5, 6, 8, 12, 20, 26, 50, 100, 101, 200)) {
+  i <- seq_len(n)
+  for (shape in c("sin", "exp")) {
+    x <- if (shape == "sin") sin(i) + (i %% 7) / 3 else exp(sin(1.7 * i))
+    lt <- nortest::lillie.test(x)
+    lillie_rows[[length(lillie_rows) + 1]] <- data.frame(
+      n = n, shape = shape, d = unname(lt$statistic), p = lt$p.value)
+  }
+}
+write.csv(do.call(rbind, lillie_rows), out("lillie_tests.csv"), row.names = FALSE)
+
+lillie_fits <- list()
+for (m in models) {
+  fn <- get(paste0("sar_", m))
+  set.seed(SEED)
+  fit <- tryCatch(suppressWarnings(fn(data = galap, normaTest = "lillie")),
+                  error = function(e) NULL)
+  if (is.null(fit) || length(fit$normaTest) < 2) next
+  lillie_fits[[length(lillie_fits) + 1]] <- data.frame(
+    model = m, d = unname(fit$normaTest[[2]]$statistic), p = fit$normaTest[[2]]$p.value)
+}
+write.csv(do.call(rbind, lillie_fits), out("lillie_galap.csv"), row.names = FALSE)
+
 cat("Reference tables written.\n\nPower law:\n")
 print(sar_power(galap))

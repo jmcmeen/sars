@@ -374,8 +374,8 @@ def test_check_options_know_whether_anything_was_asked_for():
 @pytest.mark.parametrize(
     ("kwargs", "match"),
     [
-        ({"normality": "lillie"}, "Lilliefors"),
-        ({"normality": "kolmo"}, "Unknown normality test"),
+        ({"normality": "kolmo"}, "depends on the units"),
+        ({"normality": "lilie"}, "Unknown normality test"),
         ({"homoscedasticity": "fitted"}, "Unknown homoscedasticity test"),
         ({"cor_method": "rank"}, "Unknown correlation method"),
     ],
@@ -509,7 +509,7 @@ def test_sar_multi_returns_an_empty_result_when_every_model_fails(galap):
 @pytest.mark.parametrize(
     ("kwargs", "match"),
     [
-        ({"normality": "lillie"}, "Lilliefors"),
+        ({"normality": "kolmo"}, "depends on the units"),
         ({"homoscedasticity": "cor"}, "Unknown homoscedasticity test"),
         ({"cor_method": "rank"}, "Unknown correlation method"),
         ({"alpha_normality": 0.0}, "alpha_normality must be a number between 0 and 1"),
@@ -609,3 +609,128 @@ def test_bootstrap_raises_when_every_model_fails(galap):
         pytest.raises(ValueError, match="Every fitted model failed a residual check"),
     ):
         sars.bootstrap_ci(galap, models=[FAILS_NEGATIVE], n_boot=2, neg_check=True)
+
+
+# nortest::lillie.test on x = sin(i) + (i mod 7) / 3 and y = exp(sin(1.7 i)),
+# and on each R sars fit's residuals for the Galapagos data (normaTest = "lillie").
+LILLIE_TESTS = pd.read_csv(REF / "lillie_tests.csv")
+LILLIE_GALAP = pd.read_csv(REF / "lillie_galap.csv").set_index("model")
+# Above 0.1, R's p value is nortest's own polynomial fit, and ours comes from
+# 20,000 simulated samples. Against 400,000 simulated samples, R's is off by up
+# to 0.033 on these rows (n = 5) and ours by up to 0.008.
+LILLIE_ABOVE_TOL = 0.04
+
+
+@pytest.mark.parametrize(
+    "row", [r for _, r in LILLIE_TESTS.iterrows()], ids=lambda r: f"n{r['n']}-{r['shape']}"
+)
+def test_lilliefors_matches_r(row):
+    i = np.arange(1, row["n"] + 1)
+    x = np.sin(i) + (i % 7) / 3 if row["shape"] == "sin" else np.exp(np.sin(1.7 * i))
+    d, p = _checks._normality(x, "lillie")
+    assert d == pytest.approx(row["d"], abs=1e-12)
+    if row["p"] <= 0.1:  # both Dallal and Wilkinson's approximation
+        assert p == pytest.approx(row["p"], rel=1e-9)
+    else:
+        assert p > 0.1
+        assert p == pytest.approx(row["p"], abs=LILLIE_ABOVE_TOL)
+
+
+def test_lilliefors_reference_covers_both_sides_of_0_1():
+    assert (LILLIE_TESTS["p"] <= 0.1).sum() >= 3
+    assert (LILLIE_TESTS["p"] > 0.1).sum() >= 3
+    assert (LILLIE_TESTS["n"] > 100).any()  # D rescaled to n = 100
+
+
+@pytest.mark.parametrize("model", [m for m in LILLIE_GALAP.index if m in _matching("galap")])
+def test_lilliefors_on_fits_matches_r_sars(galap_fits, model):
+    ref = LILLIE_GALAP.loc[model]
+    checks = galap_fits[model].residual_checks(normality="lillie", homoscedasticity=None)
+    assert checks.normality == "lillie"
+    assert checks.normality_statistic == pytest.approx(ref["d"], rel=VALUE_RTOL)
+    if ref["p"] <= 0.1:
+        assert checks.normality_pvalue == pytest.approx(ref["p"], rel=10 * VALUE_RTOL)
+    else:
+        assert checks.normality_pvalue == pytest.approx(ref["p"], abs=LILLIE_ABOVE_TOL)
+
+
+def test_lilliefors_p_above_0_1_is_accurate():
+    """Against an independent simulation of the null for n = 5 (100,000
+    samples, another seed). R's polynomial is off by 0.025 here at D = 0.177."""
+    rng = np.random.default_rng(7)
+    x = np.sort(rng.standard_normal((100_000, 5)), axis=1)
+    from scipy import stats
+
+    p = stats.norm.cdf((x - x.mean(axis=1, keepdims=True)) / x.std(axis=1, ddof=1, keepdims=True))
+    i = np.arange(1, 6)
+    d = np.maximum((i / 5 - p).max(axis=1), (p - (i - 1) / 5).max(axis=1))
+    null = _checks._lilliefors_null(5)
+    for stat in (0.17689, 0.28674):
+        ours = _checks._lilliefors_p_from_null(stat, null)
+        assert ours == pytest.approx((d >= stat).mean(), abs=0.01)
+
+
+def test_lilliefors_is_reproducible_and_monotone():
+    x = np.sin(np.arange(1, 21)) + 0.5
+    assert _checks._lilliefors(x) == _checks._lilliefors(x.copy())
+    null = _checks._lilliefors_null(20)
+    ps = [_checks._lilliefors_p_from_null(d, null) for d in (0.05, 0.1, 0.12, 0.15)]
+    assert ps == sorted(ps, reverse=True)
+
+
+def test_lilliefors_needs_five_residuals():
+    with pytest.warns(UserWarning, match="at least 5"):
+        assert np.isnan(_checks._normality(np.array([1.0, 2.0, 4.0, 3.5]), "lillie")).all()
+    assert not np.isnan(_checks._normality(np.array([1.0, 2.0, 4.0, 3.5, 7.0]), "lillie")).any()
+
+
+def test_lilliefors_alias_and_use_in_averaging(galap_fits):
+    checks = galap_fits["power"].residual_checks(normality="lilliefors")
+    assert checks.normality == "lillie"
+    with pytest.warns(UserWarning, match="lillie p"):
+        avg = sars.sar_average(sars.load_galap(), normality="lillie")
+    # R sars leaves out the models whose Lilliefors p is below 0.05 (of those
+    # whose fits match R's).
+    failing = {m for m in LILLIE_GALAP.index[LILLIE_GALAP["p"] < 0.05] if m in _matching("galap")}
+    assert failing <= set(avg.multi.excluded) | set(avg.multi.not_fitted)
+
+
+@pytest.mark.parametrize("n", [5, 8, 12, 20, 100, 1500])
+def test_lilliefors_p_never_rises_with_d_across_the_switch(n):
+    """At 0.1 the method changes; p must not jump up as D grows."""
+    ds = np.linspace(0.01, 0.6, 400) * (20 / n) ** 0.5
+    ps = []
+    for d in ds:
+        dw = _checks._dallal_wilkinson(d, n)
+        if dw <= 0.1:
+            ps.append(dw)
+        else:
+            m = min(n, _checks._LILLIEFORS_MAX_SIMULATED_N)
+            scaled = d * (n / m) ** 0.49 if n > m else d
+            ps.append(
+                max(_checks._lilliefors_p_from_null(scaled, _checks._lilliefors_null(m)), 0.1)
+            )
+    assert all(a >= b for a, b in zip(ps, ps[1:], strict=False))
+
+
+def test_lilliefors_on_many_residuals_is_quick_and_close():
+    """Above 1,000 residuals D is rescaled rather than simulated afresh."""
+    import time
+
+    x = np.sin(np.arange(1, 3001) * 0.7) + np.cos(np.arange(1, 3001) * 1.3)
+    _checks._lilliefors_null(_checks._LILLIEFORS_MAX_SIMULATED_N)  # cached once
+    start = time.perf_counter()
+    d, p = _checks._normality(x, "lillie")
+    assert time.perf_counter() - start < 1.0
+    assert 0 <= p <= 1 and not np.isnan(d)
+
+
+def test_lilliefors_with_fewer_than_five_residuals_warns():
+    with pytest.warns(UserWarning, match="at least 5 residuals, not 4"):
+        d, p = _checks._normality(np.array([1.0, 2.0, 4.0, 3.5]), "lillie")
+    assert np.isnan(d) and np.isnan(p)
+
+
+def test_an_unhashable_normality_name_is_a_value_error(galap_fits):
+    with pytest.raises(ValueError, match="Unknown normality test"):
+        galap_fits["power"].residual_checks(normality=["lillie"])

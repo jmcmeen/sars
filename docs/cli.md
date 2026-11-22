@@ -34,7 +34,7 @@ $ sars datasets xu > xu.csv
 | `sars datasets [NAME]` | Lists the bundled datasets, or writes one as CSV. |
 
 `fit` and `average` also take the residual checks of [`sar_multi`](api/inference.md):
-`--normality shapiro|kolmogorov`, `--homoscedasticity cor.fitted|cor.area` and
+`--normality shapiro|lillie|kolmogorov`, `--homoscedasticity cor.fitted|cor.area` and
 `--neg-check`. `sars COMMAND --help` lists every option.
 
 ## Saving and predicting

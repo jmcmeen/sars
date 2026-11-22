@@ -386,7 +386,7 @@ def _add_data_args(parser: argparse.ArgumentParser) -> None:
 def _add_check_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--normality",
-        choices=["shapiro", "kolmogorov"],
+        choices=["shapiro", "lillie", "lilliefors", "kolmogorov", "kolmo"],
         help="leave out models whose residuals fail this normality test",
     )
     parser.add_argument(

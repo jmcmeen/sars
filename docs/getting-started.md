@@ -189,7 +189,8 @@ checks.homoscedasticity_pvalue   # 0.037 (squared residuals vs fitted values, Sp
 checks.negative_fitted           # False
 ```
 
-`normality` is `"shapiro"` (the default), `"kolmogorov"` or `None`. `homoscedasticity`
+`normality` is `"shapiro"` (the default), `"lillie"` (Lilliefors), `"kolmogorov"` or
+`None`. `homoscedasticity`
 correlates the squared residuals with the fitted values (`"cor.fitted"`, the default) or
 with area (`"cor.area"`), using `cor_method` `"spearman"`, `"pearson"` or `"kendall"`.
 
@@ -216,20 +217,29 @@ raise `ValueError`. `bootstrap_ci` applies the checks once, to the fits on the o
 data: every resample averages the models that passed, so the interval belongs to the same
 average `sar_average` reports.
 
-Statistics and p values match R (`shapiro.test`, `ks.test`, `cor.test`), including where
+Statistics and p values match R (`shapiro.test`, `ks.test`, `cor.test`, and
+`nortest::lillie.test` below p = 0.1, see below), including where
 R switches from an exact p value to an approximate one (the Kolmogorov-Smirnov test at
 100 residuals, or when values are tied). On the Galápagos data the same models are left
 out as by R's `sar_average`. A model whose fitted values aren't all finite can't be
 tested, so it is left out whenever any check is asked for. Two differences from
 R `sars`:
 
-- `"kolmogorov"` compares the residuals with a normal distribution that has their own mean
-  and standard deviation. R's `normaTest = "kolmo"` compares them with a standard normal,
-  so its answer depends on the units of richness. Because the mean and standard deviation
-  are estimated, the test is conservative: it rejects less often than its alpha.
-- R's `normaTest = "lillie"` (the Lilliefors test, which corrects for that) is not
-  available. scipy doesn't have it, and no published formula gives its p value over the
-  whole range.
+- R's `normaTest = "kolmo"` compares the residuals with a standard normal, so its answer
+  depends on the units of richness, and it isn't offered. `"kolmogorov"` compares them
+  with a normal that has their own mean and standard deviation. Because those are
+  estimated, that test is conservative: it rejects less often than its alpha. `"lillie"`,
+  the Lilliefors test, uses the same statistic with a p value that allows for this.
+- The Lilliefors p value matches R's below 0.1, where both use Dallal and Wilkinson's
+  (1986) approximation. Above 0.1, R uses a polynomial fit of its own, and `sars` instead
+  counts how often 20,000 simulated normal samples of the same size give a statistic at
+  least as large. The result is within about 0.01 of the true value, where R's can be off
+  by 0.03 (for 5 residuals with D = 0.177, R gives 0.873, `sars` 0.900, and a
+  400,000-sample simulation 0.898). Where Dallal and Wilkinson's value is above 0.1,
+  `sars` never reports less than 0.1, so the p value only falls as D grows; R's dips to
+  0.091 just past its switch for 5 residuals. At any alpha up to 0.09, including the
+  usual 0.05, both leave out the same models. The test needs at least five residuals:
+  with fewer it isn't run (R refuses), and `sars` warns.
 
 ## Bootstrap confidence intervals
 
