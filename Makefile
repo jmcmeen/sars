@@ -6,6 +6,7 @@
 UV ?= uv
 SRC := src
 TESTS := tests
+EXAMPLES := docs/examples
 
 .PHONY: help install dev sync lock upgrade shell \
         test test-fast cov \
@@ -49,14 +50,14 @@ cov: ## Run tests with coverage report
 ## --- Linting & formatting (ruff) ---
 
 lint: ## Lint with ruff
-	$(UV) run --extra dev ruff check $(SRC) $(TESTS)
+	$(UV) run --extra dev ruff check $(SRC) $(TESTS) $(EXAMPLES)
 
 fmt: ## Auto-format and apply lint fixes
-	$(UV) run --extra dev ruff format $(SRC) $(TESTS)
-	$(UV) run --extra dev ruff check --fix $(SRC) $(TESTS)
+	$(UV) run --extra dev ruff format $(SRC) $(TESTS) $(EXAMPLES)
+	$(UV) run --extra dev ruff check --fix $(SRC) $(TESTS) $(EXAMPLES)
 
 fmt-check: ## Check formatting without modifying files
-	$(UV) run --extra dev ruff format --check $(SRC) $(TESTS)
+	$(UV) run --extra dev ruff format --check $(SRC) $(TESTS) $(EXAMPLES)
 
 ## --- Type checking (mypy) ---
 

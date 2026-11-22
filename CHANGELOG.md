@@ -68,6 +68,10 @@ reconstructed from the commit history and the
   alone put almost no points among the small islands when areas span orders of magnitude:
   5 of 100 points below 50 km² on the Galápagos data, where most of its islands are,
   against 32 now (#141)
+- `make lint`, `make fmt-check` and CI lint and format-check the example notebooks in
+  `docs/examples` as well as `src` and `tests`. Their code cells are reformatted to match,
+  and the geodataframe example drops an unused import and pairs counties with their label
+  points with `zip(..., strict=True)` (#171)
 
 ### Deprecated
 

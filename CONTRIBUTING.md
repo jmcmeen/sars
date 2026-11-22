@@ -45,8 +45,9 @@ Without `make`:
 ```bash
 uv sync --extra dev
 uv run --extra dev pytest
-uv run --extra dev ruff check src tests
-uv run --extra dev ruff format src tests
+uv run --extra dev ruff check src tests docs/examples
+uv run --extra dev ruff format src tests docs/examples
+uv run --extra dev ruff check --fix src tests docs/examples
 uv run --extra dev mypy
 ```
 

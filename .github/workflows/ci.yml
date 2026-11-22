@@ -31,10 +31,10 @@ jobs:
           echo "RUFF_VERSION=$version" >> "$GITHUB_ENV"
 
       - name: Lint
-        run: uvx "ruff@$RUFF_VERSION" check src tests
+        run: uvx "ruff@$RUFF_VERSION" check src tests docs/examples
 
       - name: Format check
-        run: uvx "ruff@$RUFF_VERSION" format --check src tests
+        run: uvx "ruff@$RUFF_VERSION" format --check src tests docs/examples
 
   typecheck:
     name: typecheck
