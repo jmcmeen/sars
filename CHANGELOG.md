@@ -10,6 +10,13 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- `SARFit.at_bounds`: the parameters that stopped on a bound of the fit's
+  search, whose values are the bound's rather than estimates (the power
+  model's z at 5 on a near-vertical curve, say), for code that compares many
+  fits.
+
 ## [0.11.4] - 2026-11-22
 
 ### Added
