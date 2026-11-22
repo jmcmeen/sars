@@ -46,7 +46,7 @@ dev = [
 ]
 docs = [
     "mkdocs-jupyter>=0.25",
-    "mkdocs-material",
+    "mkdocs-material>=9.5",
     "mkdocstrings[python]",
 ]
 geo = ["geopandas>=0.12", "shapely>=2.0"]

@@ -72,6 +72,9 @@ reconstructed from the commit history and the
   `docs/examples` as well as `src` and `tests`. Their code cells are reformatted to match,
   and the geodataframe example drops an unused import and pairs counties with their label
   points with `zip(..., strict=True)` (#171)
+- The documentation site uses Material for MkDocs' standard theme, with light and dark
+  schemes that follow the reader's system setting and a toggle in the header, in place of
+  a custom dark-only stylesheet with its own fonts (#175)
 
 ### Deprecated
 
