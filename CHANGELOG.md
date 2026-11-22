@@ -10,6 +10,8 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+## [0.11.4] - 2026-11-22
+
 ### Added
 
 - `sars.save()` and `sars.load()`, and `sars.to_json()` and `sars.from_json()`, save any
@@ -727,7 +729,8 @@ reconstructed from the commit history and the
 - Project skeleton: package layout, CI, publishing workflow, license, and
   citation file.
 
-[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.3...HEAD
+[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.4...HEAD
+[0.11.4]: https://github.com/jmcmeen/sars/compare/v0.11.3...v0.11.4
 [0.11.3]: https://github.com/jmcmeen/sars/compare/v0.11.2...v0.11.3
 [0.11.2]: https://github.com/jmcmeen/sars/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/jmcmeen/sars/compare/v0.11.0...v0.11.1
