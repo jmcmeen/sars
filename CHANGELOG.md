@@ -10,6 +10,15 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Fixed
+
+- `plot_multi` titles the plot with the number of models it draws ("Top 2 SAR models"),
+  not `top_n`, and gives each curve its own colour from the start of the colour map. A
+  fit with fewer models than `top_n` used to be titled "Top 5 SAR models", with colours
+  spread for five curves. Above ten curves it takes tab20's dark shades before its light
+  ones, so neighbouring ranks differ in hue, and a model asked for twice is drawn once
+  (#180)
+
 ## [0.11.0] - 2026-11-22
 
 ### Added
