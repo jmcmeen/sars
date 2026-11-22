@@ -6,17 +6,16 @@
 pip install sars
 ```
 
+sars needs Python 3.11 or later.
+
 ### Optional dependencies
 
 ```bash
-# Interactive Plotly plots
-pip install sars[interactive]
-
 # GeoDataFrame support (geopandas + shapely)
-pip install sars[geo]
+pip install "sars[geo]"
 
 # Everything
-pip install sars[all]
+pip install "sars[all]"
 ```
 
 ## Your first SAR fit
@@ -101,14 +100,17 @@ The standard errors, t values and p values are the ones R `sars` reports (a fit'
 size, where this package uses the t quantile, so the intervals here are slightly wider
 for small samples (± 2.14 standard errors for the 16 Galápagos islands).
 
-Some fits can't support a standard error. When the data don't identify a parameter (the
-curve stays the same as it changes, or as it and another parameter change together along
-a flat ridge), its standard error is `NaN` and `param_table()` warns, naming the model and
-the parameters. The same goes for a parameter the curve can't be differentiated
-reliably in, and any other whose standard error depends on it, which is where a ridge
-leads: `sar_weibull4` on the Galápagos data, where `c` falls to 1e-15 as `z` grows. A fit
-with as many parameters as islands has `NaN` too, without a warning. A large but finite standard error is the
-ordinary case of a parameter the data only weakly determine.
+Some fits can't support a standard error. When the data don't identify a parameter at all
+(the curve stays the same as it changes, or as it and another parameter change together),
+its standard error is `NaN` and `param_table()` warns, naming the model and the
+parameters. The same goes for a parameter the curve can't be differentiated reliably in,
+and any other whose standard error depends on it, and for a parameter that stopped on one
+of the bounds the fit searches within: there the optimum is the bound's, not the data's.
+`sar_weibull4` on the Galápagos data runs along a nearly flat ridge, `c` falling toward 0
+as `z` grows, until `z` reaches its upper bound of 10, so `z` has no standard error and
+`c`'s dwarfs its estimate. A fit with as many parameters as islands has `NaN` too, without
+a warning. A large but finite standard error is the ordinary case of a parameter the data
+only weakly determine.
 
 The table is computed from the fit's `data`, which is the DataFrame you passed in, so
 `param_table()` raises `ValueError` if that DataFrame has been changed since the fit.
@@ -130,6 +132,16 @@ print(multi.summary[["model", "R2", "AICc", "delta_AICc", "weight"]])
 The summary table is sorted by AICc. The `weight` column gives Akaike weights
 that sum to 1. `shape` is each model's general shape and `observed_shape` the shape its
 fitted curve took over the observed areas (see [Models](models.md)).
+
+A model that doesn't converge, or whose fit fails, is left out of the summary, the
+weights and any average. `sar_multi` and `sar_average` warn, naming it, and list it with
+the reason in `not_fitted`:
+
+```python
+multi.not_fitted
+# {} when every model converged, as on these data; otherwise e.g.
+# {'betap': 'did not converge'}
+```
 
 ## Model averaging
 
@@ -236,6 +248,16 @@ but maximally robust):
 ci = sars.bootstrap_ci(galap, n_boot=100, method="full")
 ```
 
+The default grid of areas is half evenly and half geometrically spaced, so the small
+islands are covered when the areas span orders of magnitude; pass `area_grid` to choose
+your own. A resample is dropped when no model converges on it, a fit raises, or its
+averaged prediction isn't finite somewhere on the grid: `ci.n_boot` counts the resamples
+that made the interval, `ci.dropped` counts the others by reason, and a warning says how
+many were dropped. Another warning marks where the upper bound runs away, past ten times
+the largest observed richness: there more than the tail's share of resamples extrapolate,
+typically near areas few observations lie close to, and the interval is best read as
+unbounded.
+
 ## Threshold models
 
 Detect breakpoints in the species-area relationship (e.g., the small island
@@ -266,9 +288,10 @@ print(th.all_fits["ContTwo"]["breakpoints"])
 
 ### Confidence intervals for a breakpoint
 
-`threshold_ci` gives a model's breakpoints bootstrap confidence intervals (Toms &
-Lesperance 2003). It resamples the model's residuals onto its fitted values, reruns the
-breakpoint search on each resample, and takes percentiles of the breakpoints found:
+`threshold_ci` gives a model's breakpoints confidence intervals by either of the methods
+Toms & Lesperance (2003) describe. The default bootstrap resamples the model's residuals
+onto its fitted values, reruns the breakpoint search on each resample, and takes
+percentiles of the breakpoints found:
 
 ```python
 import numpy as np
@@ -281,21 +304,36 @@ print(ci.lower_area, ci.upper_area)
 
 Without `model` it takes the best model that has a breakpoint; Linear has none. A
 two-threshold model gets an interval for each breakpoint. The default 1000 resamples are
-scored together for the models searched over a grid, so they cost about as much as a few
-fits of the model for ContOne and ZslopeOne (a fraction of a second) and roughly ten fits
-for ContTwo and ZslopeTwo (a few seconds on the 16 Galápagos islands). DiscOne and DiscTwo
-are searched one resample at a time: a second or a few on tens of islands, some tens of
-seconds for DiscTwo on a hundred. `ci.samples` holds every resample's breakpoints.
+scored together against the candidate breakpoints, which depend only on the areas, so they
+cost about as much as a few fits of the model: a fraction of a second for the
+one-threshold models, and a few seconds at most for ContTwo and ZslopeTwo. `ci.samples`
+holds every resample's breakpoints.
+
+For ContOne and ZslopeOne, `method="F"` inverts an F test instead: the interval holds
+every candidate breakpoint whose fit, with the breakpoint fixed there, the F test at level
+`1 - conf` doesn't reject against the best fit. It needs no resampling:
+
+```python
+ci_f = sars.threshold_ci(th, model="ContOne", method="F")
+```
 
 Read the intervals with the data in mind. With few islands they are wide: a bound at the
 third-smallest or third-largest area (the edge of the search) means the data don't place
 the breakpoint on that side. A discontinuous model's breakpoint is always an observed
 area, so its bounds are too, and when one jump dominates every resample can land on the
 same island, giving an interval of no width. That says the resamples agree, not that the
-threshold is known exactly. Percentile intervals for a breakpoint also run a little narrow:
-in simulations of 40 islands with one true breakpoint, 95% intervals covered it about 85 to
-90% of the time. R `sars`'s `threshold_ci` offers the bootstrap for ContOne and
-ZslopeOne only; its draws differ, so its intervals agree with these only roughly.
+threshold is known exactly. In simulations of 40 islands with one true breakpoint, 95%
+intervals covered it 91 to 95% of the time with either method, and less when an interval
+is only a grid step or two wide (use a smaller `interval` then). Toms & Lesperance
+recommend the bootstrap for small samples and the F test for larger ones.
+
+R `sars`'s `threshold_ci` offers both methods for ContOne and ZslopeOne only. Its
+bootstrap draws differ, so its bootstrap intervals agree with these only roughly. Its F
+intervals compare the statistic with F(conf; 1, p), p the number of regression
+coefficients, where the test's residual degrees of freedom, n − p, belong, and it searches
+every candidate from the smallest area to the largest, ignoring the three-island window.
+On many islands that makes its intervals much wider: on the 173 Aegean plant islands,
+ContOne's 95% interval in ln area is 1.45 to 3.02 in R and 1.78 to 2.70 here.
 
 `plot_threshold` draws a model on the scale it was fitted on, with its breakpoints marked
 and, given `ci`, their intervals shaded:
@@ -348,8 +386,24 @@ data: rerun the simulation above with other seeds to see it happen. Look at the 
 which sites fall outside (the small ones, the large ones, all on one side) before reading
 much into `rejected`.
 
+For a test with a known error rate, `fit.placement_test()` simulates random placement
+itself: it scatters each species' individuals over the sites in proportion to their areas
+(999 times by default), and compares the data's distance from the expected curve (the
+squared deviations of the sites, in standard deviations, summed) with the simulations':
+
+```python
+test = fit.placement_test(rng=np.random.default_rng(1))
+print(test)
+# ColemanTest(statistic=2.21, p_value=0.973, n_sim=999, rule_rejection_rate=50%)
+```
+
+A small `p_value` is evidence against random placement. `rule_rejection_rate` is how often
+the one-third rule rejected the simulated communities, all of them placed at random: for
+these species totals and site areas the rule would reject random placement half the time.
+
 The model needs counts of individuals. Presence-absence data won't do, and species absent
 from every site are ignored.
+
 ## The general dynamic model
 
 On oceanic islands richness depends on island age as well as area: it rises while a
@@ -439,10 +493,10 @@ data = sars.from_csv("my_islands.csv", area_col="island_area", species_col="rich
 data = sars.from_geodataframe(gdf, species_col="n_species")
 ```
 
-`from_geodataframe` needs the `geo` extra (`pip install sars[geo]`). It measures each
+`from_geodataframe` needs the `geo` extra (`pip install "sars[geo]"`). It measures each
 polygon in the GeoDataFrame's own coordinate system, so reproject longitude/latitude
 data to an equal-area projection first, for example `gdf.to_crs("EPSG:6933")`; it raises
-an error for coordinates in degrees, whose "areas" mean nothing. `crs_units` chooses
+an error for coordinates in degrees, whose "areas" mean nothing. `area_units` chooses
 km² (the default), hectares or m². The
 [areas from polygons](examples/geodataframe.ipynb) example works through it with real
 county outlines.

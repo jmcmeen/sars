@@ -10,6 +10,119 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- The Galápagos example shows the newer features: a fit's parameter table, the observed
+  shape of each fitted curve, residual checks before averaging, `sar_pred`, and a
+  threshold with bootstrap and inverted F intervals and its plot, on the Aegean plants,
+  where a threshold shows (#148)
+- `ColemanFit.placement_test(n_sim=999, rng=None)`, a calibrated test of Coleman's random
+  placement model: it simulates random placement of the observed species totals and gives
+  a p value for the sites' distance from the expected curve (their squared deviations in
+  standard deviations, summed), with `rule_rejection_rate`, how often the one-third rule
+  rejected the simulated random placements. On communities placed at random over eight
+  sites the test rejects at about its level, where the rule rejects about half (#143)
+- `threshold_ci(method="F")`, intervals for ContOne's and ZslopeOne's breakpoint from an
+  inverted F test (Toms & Lesperance 2003): every candidate breakpoint whose fit the F test
+  at level `1 - conf` doesn't reject against the best fit. It needs no resampling.
+  `ThresholdCI.method` says which method made an interval. R `sars`'s F intervals compare
+  the statistic with F(conf; 1, p), p its number of regression coefficients, instead of
+  F(conf; 1, n - p), so for more than a few islands they are much wider; with R's degrees
+  of freedom and R's grid this package reproduces them to a grid step (#144)
+
+### Changed
+
+- **Behavior change:** `sar_multi` and `sar_average` warn when a model doesn't converge
+  or its fit raises, naming each, and list them with the reason in the new
+  `MultiSARFit.not_fitted`. They used to drop them without a word, so the only way to
+  find a missing model was to compare names with the full list. `bootstrap_ci` warns
+  once, never per resample: for the fit to the original data, or, with
+  `method="full"`, for a model that couldn't be fitted in any resample (#179)
+- **Behavior change:** sars requires Python 3.11 or later. Python 3.10 reached end of
+  life in October 2026; on 3.10, pip keeps installing 0.10. The minimum versions of
+  numpy, scipy, pandas and matplotlib rise to their first releases with Python 3.11
+  wheels (numpy 1.23.2, scipy 1.9.2, pandas 1.5, matplotlib 3.6) (#169)
+- **Behavior change:** the `interactive` extra is gone. It installed plotly, which no part
+  of sars uses: every plot is matplotlib. `sars[all]` now installs the `geo` extra only
+  (#170)
+- **Behavior change:** `from_geodataframe` keeps the GeoDataFrame's index when the areas
+  come from `area_col`, as it already did for areas computed from the geometries (and as
+  `from_df` keeps its input's). It used to return a fresh `RangeIndex` on that path only,
+  so the rows couldn't be joined back to the polygons by index. Its `area` column, passed
+  to `coleman`, is now matched to the abundance table's columns by label, as areas
+  computed from geometries already were. An unknown unit now raises with `area_col` too,
+  where it was ignored (#146)
+- **Behavior change:** a `SARFit` whose `model` isn't one of the package's (built or
+  edited by hand) raises `ValueError` ("Unknown model: ...", listing the models) instead
+  of `NotImplementedError` from `predict`, `param_table` and everything that predicts from
+  it (`observed_shape`, `residual_checks`, the plots, `sar_pred`): nothing is
+  unimplemented, the name is wrong. `sar_multi`'s error for an unknown name lists the
+  models too, and a fit missing one of its model's parameters says which, instead of a
+  bare `KeyError` (#163)
+- The test suite fits the models its reference tests share once per run, not once in each
+  pytest-xdist worker: every worker used to refit all 20 models on both reference datasets
+  at the same time. A full run on 18 cores takes about a quarter less time (#147)
+- `threshold_ci` scores DiscOne's and DiscTwo's resamples together, as it does the other
+  models': 1000 resamples of DiscTwo on 100 islands take a twentieth of a second, where
+  they took about 25 seconds. Their search, in `sar_threshold` too, now treats two
+  candidates whose RSS differs by under 1e-10 of the total sum of squares as tied and takes
+  the first, as the grid searches do, so rounding no longer decides between fits that are
+  equal (#144)
+- **Behavior change:** `bootstrap_ci`'s default `area_grid` is half evenly and half
+  geometrically spaced across the data's areas (about 100 points), and `plot_fit`,
+  `plot_multi` and `plot_average` draw their curves on the same kind of grid. An even grid
+  alone put almost no points among the small islands when areas span orders of magnitude:
+  5 of 100 points below 50 km² on the Galápagos data, where most of its islands are,
+  against 32 now (#141)
+- `make lint`, `make fmt-check` and CI lint and format-check the example notebooks in
+  `docs/examples` as well as `src` and `tests`. Their code cells are reformatted to match,
+  and the geodataframe example drops an unused import and pairs counties with their label
+  points with `zip(..., strict=True)` (#171)
+- The documentation site uses Material for MkDocs' standard theme, with light and dark
+  schemes that follow the reader's system setting and a toggle in the header, in place of
+  a custom dark-only stylesheet with its own fonts (#175)
+
+### Deprecated
+
+- `from_geodataframe`'s `crs_units` is renamed `area_units`, which says what it sets: the
+  unit of the areas returned, not a property of the CRS. `crs_units` still works, with a
+  `FutureWarning` (#146)
+
+### Fixed
+
+- negexpo, weibull3, weibull4, chapman and betap lost precision where `1 - exp(-x)` is
+  computed for small `x`: weibull4's Galápagos fit predicted 7.99 species at the smallest
+  island where its formula gives 7.52. They now use `expm1` (betap's `1 - (1 + u)^-f` as
+  `-expm1(-f log1p(u))`). The rounding had propped up false optima on flat ridges. weibull4
+  on the Galápagos data now runs along its ridge to `z`'s upper bound of 10, with a lower
+  AICc than R's (193.44 against 193.57, a value set by the bound), and `c`'s standard error,
+  finite now, dwarfs its estimate; on the seven-island sample it now matches R's AICc. The
+  other fits move only in their last digits (#140)
+- `SARFit.param_table` gives no standard error (`NaN`, with a warning naming them) for
+  parameters that stopped on a bound of the fit's search, where the approximation behind
+  it doesn't hold and the estimate is the bound's, not the data's: weibull4's `z` on the
+  Galápagos data, and on the seven-island sample p1's `d` and heleg's `f` at 0 among
+  others. Until now they were reported as if the optimum were interior (#145)
+- `bootstrap_ci` no longer drops resamples without saying so: `BootstrappedCI.dropped`
+  counts them by reason (no model converged, a fit raised, or the averaged prediction
+  wasn't finite), and a warning reports how many. numpy's warnings from a resample's fits and
+  prediction no longer leak out, since the resample is dropped and counted. A new warning
+  marks the areas where the upper bound runs away, past ten times the largest observed
+  richness, so the interval there reads as unbounded (#141)
+- `sar_average` raises `ValueError` when no model converges, or none is given, instead of
+  returning an average that predicts zero species everywhere. `AveragedSAR` refuses to be
+  built without a model, or with weights that give none to the models fitted. With
+  `method="full"`, `bootstrap_ci` no longer puts a resample where no model converged into
+  the interval as a prediction of zero (which pulled the lower bound down): it is dropped
+  and counted, as with the default method; and it raises at once when `models` is empty
+  (#142)
+- The notebook tests shut each notebook's kernel down and close its zmq sockets when the
+  notebook finishes. They used to leave them for garbage collection, which reported them as
+  `ResourceWarning`s on whichever test ran next in the same worker (#161)
+- Two tests no longer drop rows with `inplace=True`, which pandas 3.1 deprecates and
+  pandas 4 removes. They change a fit's DataFrame by adding a row in place with `.loc`
+  instead, which still works under pandas 4 (#166)
+
 ## [0.10.0] - 2026-11-21
 
 ### Added

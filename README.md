@@ -3,7 +3,7 @@
 Species-area relationship curve fitting in Python. A conceptual mirror of the R [`sars`](https://cran.r-project.org/package=sars) package (Matthews et al. 2019), native to the Python scientific stack.
 
 [![PyPI](https://img.shields.io/pypi/v/sars)](https://pypi.org/project/sars/)
-[![Python](https://img.shields.io/pypi/pyversions/sars)](https://pypi.org/project/sars/)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://pypi.org/project/sars/)
 [![CI](https://github.com/jmcmeen/sars/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jmcmeen/sars/actions/workflows/ci.yml)
 [![Docs](https://github.com/jmcmeen/sars/actions/workflows/docs.yml/badge.svg?branch=main)](https://jmcmeen.github.io/sars/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -13,6 +13,13 @@ Species-area relationship curve fitting in Python. A conceptual mirror of the R 
 
 ```bash
 pip install sars
+```
+
+sars needs Python 3.11 or later. `from_geodataframe`, which computes site areas from
+polygons, needs the `geo` extra (geopandas and shapely):
+
+```bash
+pip install "sars[geo]"
 ```
 
 ## Features
@@ -25,8 +32,8 @@ pip install sars
 - **Prediction** — a table of predicted richness at any areas, from any fit
 - **Residual checks** — normality, homoscedasticity and negative-prediction checks on each fit, optionally leaving out the models that fail before averaging
 - **Bootstrap confidence intervals** — percentile-based CIs for averaged predictions
-- **Threshold models** — piecewise regression for detecting breakpoints (small island effect), with bootstrap confidence intervals for the breakpoints
-- **Random placement** — Coleman's null model for richness from a species-by-site abundance table
+- **Threshold models** — piecewise regression for detecting breakpoints (small island effect), with confidence intervals for the breakpoints by bootstrap or by inverted F test
+- **Random placement** — Coleman's null model for richness from a species-by-site abundance table, with a calibrated simulation test
 - **General dynamic model** — richness as a function of island area and a hump in island age (Whittaker et al. 2008), with nested-model comparison
 - **Bundled datasets** — four published island datasets: `load_galap`, `load_aegean`, `load_aegean2`, `load_niering`
 - **R-validated** — fits, AICc weights, model averaging, threshold models, random placement and the general dynamic model are checked against R `sars` reference output, with every known difference listed in `tests/test_r_reference.py`
@@ -133,8 +140,14 @@ This package is a Python implementation inspired by the R [`sars`](https://githu
 
 ### Threshold models
 
+- Lerman PM (1980). Fitting segmented regression models by grid search. *Journal of the Royal Statistical Society C*, 29, 77-84. (`threshold_ci`, `method="F"`)
 - Matthews TJ, Rigal F (2021). Thresholds and the species-area relationship. *Frontiers of Biogeography*, 13, e49404.
 - Toms JD, Lesperance ML (2003). Piecewise regression: a tool for identifying ecological thresholds. *Ecology*, 84, 2034-2041. (`threshold_ci`)
+
+### Random placement
+
+- Coleman BD (1981). On random placement and species-area relations. *Mathematical Biosciences*, 54, 191-215. (`coleman`)
+- Coleman BD, Mares MA, Willig MR, Hsieh Y-H (1982). Randomness, area, and species richness. *Ecology*, 63, 1121-1133. (`coleman`)
 
 ### General dynamic model
 

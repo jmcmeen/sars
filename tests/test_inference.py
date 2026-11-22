@@ -91,7 +91,11 @@ class TestUndefinedWeights:
         assert np.all(pred > 0)
 
     def test_bootstrap_ci_reports_nan_not_zero(self, tiny):
-        ci = sars.bootstrap_ci(tiny, models=TINY_MODELS, n_boot=5, rng=np.random.default_rng(0))
+        with pytest.warns(UserWarning, match="5 of 5 bootstrap resamples were dropped"):
+            ci = sars.bootstrap_ci(tiny, models=TINY_MODELS, n_boot=5, rng=np.random.default_rng(0))
+        assert ci.dropped == {
+            "ValueError: Model weights are undefined: no model has a finite AICc. For": 5
+        }
         assert np.all(np.isnan(ci.mean))
         assert np.all(np.isnan(ci.median))
         assert np.all(np.isnan(ci.lower))
@@ -247,6 +251,135 @@ class TestSarAverage:
 # ---------------------------------------------------------------------------
 
 
+class TestAverageOfNoModels:
+    def test_sar_average_raises_when_no_model_converges(self, galap, monkeypatch):
+        """It used to return an average with no weights, predicting zero
+        species everywhere."""
+        from sars import _inference
+
+        failed = _inference._fit_nls("power", galap)
+        failed.converged = False
+        monkeypatch.setattr(_inference, "_fit_nls", lambda name, data, **kw: failed)
+        with (
+            pytest.warns(UserWarning, match="2 of 2 models could not be fitted"),
+            pytest.raises(ValueError, match="nothing to average: no model converged"),
+        ):
+            sars.sar_average(galap, models=["power", "loga"])
+
+    def test_sar_average_of_no_models_raises(self, galap):
+        with pytest.raises(ValueError, match="nothing to average"):
+            sars.sar_average(galap, models=[])
+        with pytest.raises(ValueError, match="No models given"):
+            sars.bootstrap_ci(galap, models=[], method="full", n_boot=3)
+
+    def test_weights_on_none_of_the_fitted_models_are_refused(self, galap):
+        multi = sars.sar_multi(galap, models=["power"])
+        with pytest.raises(ValueError, match="no weight to any of the fitted models"):
+            sars.AveragedSAR(multi=multi, ic="AICc", weights={"loga": 1.0})
+
+    def test_a_full_bootstrap_counts_resamples_where_no_model_converged(self, galap, monkeypatch):
+        from sars import _inference
+
+        real = _inference._sar_multi
+        calls = {"n": 0}
+
+        def multi(data, models, checks, stacklevel, warn=True):
+            calls["n"] += 1
+            if calls["n"] % 2 == 0:
+                return _inference.MultiSARFit(
+                    fits=[], data=data, summary=_inference._build_summary([])
+                )
+            return real(data, models, checks, stacklevel, warn=warn)
+
+        monkeypatch.setattr(_inference, "_sar_multi", multi)
+        with pytest.warns(UserWarning, match="dropped"):
+            ci = sars.bootstrap_ci(
+                galap, models=["power"], method="full", n_boot=6, rng=np.random.default_rng(0)
+            )
+        assert ci.dropped == {"no model converged": 3}
+        assert ci.n_boot == 3
+
+
+class TestModelsThatCannotBeFitted:
+    """Models that don't converge, or raise while fitting, used to vanish from
+    sar_multi's result without a word."""
+
+    @pytest.fixture()
+    def failing(self, galap, monkeypatch):
+        """loga never converges and koba raises; the rest fit normally."""
+        import dataclasses
+
+        from sars import _inference
+
+        real = _inference._fit_nls
+
+        def fit(name, data, **kw):
+            if name == "koba":
+                raise ValueError("too few points\nfor this model")
+            result = real(name, data, **kw)
+            return dataclasses.replace(result, converged=False) if name == "loga" else result
+
+        monkeypatch.setattr(_inference, "_fit_nls", fit)
+        return ["power", "loga", "koba"]
+
+    def test_sar_multi_lists_and_warns_about_them(self, galap, failing):
+        with pytest.warns(UserWarning, match="2 of 3 models could not be fitted") as record:
+            multi = sars.sar_multi(galap, models=failing)
+        assert [f.model for f in multi.fits] == ["power"]
+        assert multi.not_fitted == {
+            "loga": "did not converge",
+            "koba": "fitting failed: too few points",
+        }
+        assert multi.excluded == {}
+        assert record[0].filename == __file__  # points at the caller
+
+    def test_sar_average_warns_and_keeps_the_list(self, galap, failing):
+        with pytest.warns(
+            UserWarning, match="could not be fitted and were left out: loga: did not converge"
+        ):
+            avg = sars.sar_average(galap, models=failing)
+        assert list(avg.multi.not_fitted) == ["loga", "koba"]
+        assert list(avg.weights) == ["power"]
+
+    def test_no_warning_when_every_model_fits(self, galap):
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            multi = sars.sar_multi(galap, models=["power", "loga"])
+        assert multi.not_fitted == {}
+
+    @pytest.mark.parametrize(
+        ("method", "reason"),
+        [("fast", "did not converge"), ("full", "not fitted in any of 4 resamples")],
+    )
+    def test_bootstrap_warns_once(self, galap, failing, method, reason):
+        """Once, never per resample: the fast method reports the fit to the
+        original data, the full method the models no resample could fit."""
+        import warnings
+
+        with warnings.catch_warnings(record=True) as record:
+            warnings.simplefilter("always")
+            sars.bootstrap_ci(
+                galap, models=failing, method=method, n_boot=4, rng=np.random.default_rng(0)
+            )
+        unfitted = [w for w in record if "could not be fitted" in str(w.message)]
+        assert len(unfitted) == 1
+        assert f"loga: {reason}" in str(unfitted[0].message)
+        assert unfitted[0].filename == __file__
+
+    def test_a_long_error_is_cut_short_and_duplicates_count_once(self, galap, monkeypatch):
+        from sars import _inference
+
+        def fit(name, data, **kw):
+            raise ValueError("x" * 200 + "\nsecond line")
+
+        monkeypatch.setattr(_inference, "_fit_nls", fit)
+        with pytest.warns(UserWarning, match="1 of 1 models could not be fitted"):
+            multi = sars.sar_multi(galap, models=["power", "power"])
+        assert multi.not_fitted == {"power": "fitting failed: " + "x" * 60}
+
+
 class TestBootstrapCI:
     def test_median_resists_runaway_resamples_and_the_mean_warns(self, galap, monkeypatch):
         """bootstrap_ci calls AveragedSAR.predict once per resample."""
@@ -276,10 +409,142 @@ class TestBootstrapCI:
         )
         assert isinstance(ci, sars.BootstrappedCI)
         assert ci.n_boot > 0
-        assert len(ci.area_grid) == 100
-        assert len(ci.mean) == 100
-        assert len(ci.lower) == 100
-        assert len(ci.upper) == 100
+        assert 90 <= len(ci.area_grid) <= 100
+        for values in (ci.mean, ci.lower, ci.upper, ci.median):
+            assert len(values) == len(ci.area_grid)
+        assert ci.dropped == {}
+
+    def test_default_grid_covers_the_small_areas(self, galap):
+        """The Galápagos areas run from 0.52 to 1,008 km²: an even grid of 100
+        puts five points below 50 km², where most islands are."""
+        ci = sars.bootstrap_ci(galap, models=["power"], n_boot=3, rng=np.random.default_rng(0))
+        area = galap["area"].to_numpy()
+        assert ci.area_grid[0] == area.min() and ci.area_grid[-1] == area.max()
+        assert np.all(np.diff(ci.area_grid) > 0)
+        assert np.sum(ci.area_grid < 50) >= 30
+
+    def test_dropped_resamples_are_counted_and_reported(self, galap, monkeypatch):
+        """Each way a resample can fail is counted, and one warning says how many
+        were dropped and why."""
+        from sars import _inference
+
+        real_fast = _inference._sar_multi_fast
+        real_predict = sars.AveragedSAR.predict
+        calls = {"fit": 0, "predict": 0}
+
+        def fast(data, warm_starts):
+            calls["fit"] += 1
+            if calls["fit"] % 5 == 1:
+                return _inference.MultiSARFit(
+                    fits=[], data=data, summary=_inference._build_summary([])
+                )
+            if calls["fit"] % 5 == 2:
+                raise RuntimeError("boom")
+            return real_fast(data, warm_starts)
+
+        def predict(self, area):
+            calls["predict"] += 1
+            pred = real_predict(self, area)
+            return pred * np.inf if calls["predict"] % 3 == 0 else pred
+
+        monkeypatch.setattr(_inference, "_sar_multi_fast", fast)
+        monkeypatch.setattr(sars.AveragedSAR, "predict", predict)
+        with pytest.warns(UserWarning, match=r"of 20 bootstrap resamples were dropped"):
+            ci = sars.bootstrap_ci(galap, models=["power"], n_boot=20, rng=np.random.default_rng(0))
+        assert ci.dropped["no model converged"] == 4
+        assert ci.dropped["RuntimeError: boom"] == 4
+        assert ci.dropped["prediction not finite"] == 4
+        assert ci.n_boot + sum(ci.dropped.values()) == 20
+
+    def test_every_resample_dropped_is_reported(self, galap, monkeypatch):
+        from sars import _inference
+
+        def fast(data, warm_starts):
+            raise RuntimeError("no luck\nwith details on a second line")
+
+        monkeypatch.setattr(_inference, "_sar_multi_fast", fast)
+        with pytest.warns(
+            UserWarning, match="5 of 5 bootstrap resamples were dropped .*no interval"
+        ):
+            ci = sars.bootstrap_ci(galap, models=["power"], n_boot=5, rng=np.random.default_rng(0))
+        assert ci.n_boot == 0 and np.isnan(ci.upper).all()
+        assert ci.dropped == {"RuntimeError: no luck": 5}  # one key per kind of failure
+
+    def test_a_list_grid_works_where_the_bound_runs_away(self, galap, monkeypatch):
+        real = sars.AveragedSAR.predict
+        calls = {"n": 0}
+
+        def predict(self, area):
+            calls["n"] += 1
+            pred = real(self, area)
+            return pred * 1e6 if calls["n"] % 5 == 0 else pred
+
+        monkeypatch.setattr(sars.AveragedSAR, "predict", predict)
+        with pytest.warns(UserWarning, match="upper bound exceeds"):
+            ci = sars.bootstrap_ci(
+                galap,
+                models=["power"],
+                n_boot=20,
+                area_grid=[1.0, 10.0, 100.0],
+                rng=np.random.default_rng(0),
+            )
+        assert isinstance(ci.area_grid, np.ndarray)
+
+    def test_bad_data_gets_the_packages_own_message(self):
+        data = pd.DataFrame({"area": [0.0, 1, 2, 3, 4], "species": [1, 2, 3, 4, 5]})
+        with pytest.raises(ValueError, match="'area' must contain only positive values"):
+            sars.bootstrap_ci(data, models=["power"], n_boot=2)
+
+    def test_nothing_to_resample_is_reported(self, galap, monkeypatch):
+        from sars import _inference
+
+        monkeypatch.setattr(
+            _inference,
+            "_sar_multi",
+            lambda data, models, checks, stacklevel: _inference.MultiSARFit(
+                fits=[], data=data, summary=_inference._build_summary([])
+            ),
+        )
+        with pytest.warns(UserWarning, match="No model converged on the original data"):
+            ci = sars.bootstrap_ci(galap, models=["power", "loga"], n_boot=3)
+        assert ci.n_models_attempted == 2 and np.isnan(ci.upper).all()
+
+    def test_a_prediction_that_overflows_is_dropped_without_numpys_warning(
+        self, galap, monkeypatch
+    ):
+        import warnings
+
+        real = sars.AveragedSAR.predict
+        calls = {"n": 0}
+
+        def predict(self, area):
+            calls["n"] += 1
+            pred = real(self, area)
+            return pred * np.exp(1000.0) if calls["n"] == 2 else pred  # overflows
+
+        monkeypatch.setattr(sars.AveragedSAR, "predict", predict)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            warnings.simplefilter("ignore", UserWarning)
+            ci = sars.bootstrap_ci(galap, models=["power"], n_boot=10, rng=np.random.default_rng(0))
+        assert ci.dropped == {"prediction not finite": 1}
+
+    def test_an_upper_bound_that_runs_away_is_reported(self, galap, monkeypatch):
+        """One resample in ten runs away at the smallest areas: more than the
+        2.5% the upper bound sits above, so the bound runs away there."""
+        real = sars.AveragedSAR.predict
+        calls = {"n": 0}
+
+        def predict(self, area):
+            calls["n"] += 1
+            pred = real(self, area)
+            area = np.asarray(area)
+            return np.where(area < 1.0, pred * 1e6, pred) if calls["n"] % 10 == 0 else pred
+
+        monkeypatch.setattr(sars.AveragedSAR, "predict", predict)
+        with pytest.warns(UserWarning, match=r"upper bound exceeds 10 times the largest observed"):
+            ci = sars.bootstrap_ci(galap, models=["power"], n_boot=60, rng=np.random.default_rng(0))
+        assert np.all(ci.upper[ci.area_grid >= 1.0] < 10 * galap["species"].max())
 
     def test_a_narrow_interval_alone_does_not_warn(self, galap):
         import warnings

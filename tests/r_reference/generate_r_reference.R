@@ -364,5 +364,25 @@ for (n in c(20, 99, 100, 150)) for (tied in c(FALSE, TRUE)) {
 }
 write.csv(do.call(rbind, ks_rows), out("ks_tests.csv"), row.names = FALSE)
 
+# 13. Breakpoint intervals from the inverted F test (threshold_ci, method =
+#    "F") for the one-threshold continuous models on the bundled datasets, on
+#    ln(area) in steps of 0.01. R searches every grid point from the smallest
+#    area to the largest, and compares the F statistic with F(cl; 1, p), p the
+#    number of regression coefficients; see test_r_reference.py.
+f_rows <- list()
+for (nm in c("galap", "aegean", "aegean2", "niering")) {
+  d <- get(nm)
+  f <- sar_threshold(data = d, mod = c("ContOne", "ZslopeOne"), interval = 0.01,
+                     nisl = 3, non_th_models = FALSE, logAxes = "area", logT = log)
+  for (cl in c(0.95, 0.9)) {
+    ci <- threshold_ci(f, cl = cl, method = "F", interval = NULL)
+    for (mod in c("ContOne", "ZslopeOne")) {
+      f_rows[[length(f_rows) + 1]] <- data.frame(dataset = nm, cl = cl, model = mod,
+                                                 lower = ci[[mod]][1], upper = ci[[mod]][2])
+    }
+  }
+}
+write.csv(do.call(rbind, f_rows), out("threshold_ci_F.csv"), row.names = FALSE)
+
 cat("Reference tables written.\n\nPower law:\n")
 print(sar_power(galap))

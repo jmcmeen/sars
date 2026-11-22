@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 import sars
-from sars import ColemanFit, coleman
+from sars import ColemanFit, ColemanTest, coleman
 
 
 def _simulate(seed: int, n_species: int = 30) -> tuple[np.ndarray, np.ndarray]:
@@ -187,6 +187,71 @@ class TestVerdict:
         )
 
 
+class TestPlacementTest:
+    def test_calibrated_on_random_placement(self):
+        """On communities placed at random, the test rejects about as often as its
+        level says, where the one-third rule rejects about half of them."""
+        rng = np.random.default_rng(5)
+        p_values, rule = [], []
+        for seed in range(300):
+            fit = coleman(*_simulate(seed))
+            p_values.append(fit.placement_test(n_sim=199, rng=rng).p_value)
+            rule.append(fit.rejected)
+        p_values = np.array(p_values)
+        assert 0.01 <= np.mean(p_values <= 0.05) <= 0.10
+        assert 0.12 <= np.mean(p_values <= 0.20) <= 0.28
+        assert np.mean(rule) > 0.3
+
+    def test_species_kept_to_one_site_are_rejected(self):
+        result = coleman(*_confined()).placement_test(n_sim=99, rng=np.random.default_rng(0))
+        assert result.p_value == 0.01  # the smallest possible: 1 / (99 + 1)
+
+    def test_statistic_and_rule_rate(self):
+        fit = coleman(*_simulate(1))
+        result = fit.placement_test(n_sim=500, rng=np.random.default_rng(2))
+        sites = fit.sites
+        z = (sites["observed"] - sites["expected"]) / sites["sd"]
+        assert result.statistic == pytest.approx(float((z**2).sum()))
+        assert 0.0 <= result.rule_rejection_rate <= 1.0
+        assert result.n_sim == 500
+        assert 1 / 501 <= result.p_value <= 1.0
+
+    def test_reproducible_with_a_seed(self):
+        fit = coleman(*_simulate(3))
+        first = fit.placement_test(n_sim=99, rng=np.random.default_rng(7))
+        second = fit.placement_test(n_sim=99, rng=np.random.default_rng(7))
+        assert first == second
+        assert fit.placement_test(n_sim=99, rng=7) == first  # a seed works too
+
+    def test_simulations_that_tie_with_the_data_count(self):
+        """Species so abundant that every site holds all of them, in the data and
+        in every simulation: each simulation ties, so p is 1."""
+        counts = np.full((5, 4), 500)
+        result = coleman(counts, np.array([1.0, 2.0, 3.0, 4.0])).placement_test(
+            n_sim=50, rng=np.random.default_rng(0)
+        )
+        assert result.statistic == 0.0
+        assert result.p_value == 1.0
+
+    def test_a_site_that_random_placement_cant_produce(self):
+        """A site whose richness is fixed under random placement (sd 0) makes the
+        distance infinite when it doesn't match, and adds nothing when it does."""
+        from sars._coleman import _distance
+
+        expected, sd = np.array([3.0, 5.0]), np.array([1.0, 0.0])
+        assert _distance(np.array([4.0, 5.0]), expected, sd) == 1.0
+        assert _distance(np.array([4.0, 4.0]), expected, sd) == np.inf
+
+    @pytest.mark.parametrize("n_sim", [0, -5, 2.5, True, "99"])
+    def test_bad_n_sim(self, n_sim):
+        with pytest.raises(ValueError, match="n_sim must be a positive whole number"):
+            coleman(*_simulate(1)).placement_test(n_sim=n_sim)
+
+    def test_repr(self):
+        result = coleman(*_confined()).placement_test(n_sim=9, rng=np.random.default_rng(0))
+        assert repr(result).startswith("ColemanTest(statistic=")
+
+
 class TestInputs:
     def test_dataframe_labels_become_the_site_index(self):
         counts, area = _simulate(3)
@@ -359,5 +424,6 @@ class TestInputs:
             coleman([[2, 3], [1, 4]], area)
 
     def test_exported(self):
+        assert sars.ColemanTest is ColemanTest
         assert sars.coleman is coleman
-        assert {"coleman", "ColemanFit", "plot_coleman"} <= set(sars.__all__)
+        assert {"coleman", "ColemanFit", "ColemanTest", "plot_coleman"} <= set(sars.__all__)

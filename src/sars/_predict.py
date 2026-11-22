@@ -19,6 +19,7 @@ def _label(fit: object) -> str:
             raise ValueError(f"The '{fit.model}' fit did not converge, so it has no predictions")
         return fit.model
     if isinstance(fit, AveragedSAR):
+        # It can't be built without a model, but it can be emptied afterwards.
         if not fit.multi.fits:
             raise ValueError("The averaged fit holds no models, so there is nothing to average")
         return "average"

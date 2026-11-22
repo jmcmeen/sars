@@ -43,4 +43,14 @@ def test_example_notebook_is_committed_executed_and_runs(path, kernel_dir):
         timeout=900,
         resources={"metadata": {"path": str(EXAMPLES)}},
     )
-    client.execute()  # raises CellExecutionError on the first failing cell
+    # NotebookClient leaves a kernel manager it was handed running when the run ends, and
+    # the kernel, the client's channels and the manager's zmq context then linger until
+    # garbage collection (as ResourceWarnings blamed on a later test). Have it shut the
+    # kernel down and close them as soon as the notebook finishes or fails.
+    try:
+        client.execute(cleanup_kc=True)  # raises CellExecutionError on the first failing cell
+    finally:
+        # The client's cleanup only covers a kernel that came up; this one covers a kernel
+        # that started but whose client never connected.
+        if km.has_kernel:
+            km.shutdown_kernel(now=True)  # also destroys the manager's zmq context

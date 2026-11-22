@@ -64,12 +64,32 @@ class SARFit:
     data: pd.DataFrame
 
     def predict(self, area: float | np.ndarray) -> np.ndarray:
-        """Predict species richness for given area value(s)."""
+        """Predict species richness for given area value(s).
+
+        Raises
+        ------
+        ValueError
+            If ``model`` isn't one of the package's models, or ``params`` lacks
+            one of its parameters (a fit built or edited by hand). So does
+            anything that predicts from the fit: ``observed_shape``,
+            ``residual_checks``, ``param_table``, the plots and ``sar_pred``.
+        """
         area = np.asarray(area, dtype=float)
-        spec = _MODEL_REGISTRY.get(self.model)
-        if spec is None:
-            raise NotImplementedError(f"predict not yet implemented for '{self.model}'")
+        spec = self._spec()
         return spec.func(area, *[self.params[k] for k in spec.param_names])
+
+    def _spec(self) -> _ModelSpec:
+        """The specification of this fit's model, checking that the fit names
+        a known model and has its parameters (it may have been built or edited
+        by hand)."""
+        spec = _model_spec(self.model)
+        missing = [k for k in spec.param_names if k not in self.params]
+        if missing:
+            raise ValueError(
+                f"This '{self.model}' fit lacks the parameter(s) {missing}: the model's "
+                f"parameters are {spec.param_names}."
+            )
+        return spec
 
     def observed_shape(self) -> str:
         """The shape the fitted curve takes over the observed range of areas.
@@ -205,16 +225,17 @@ class SARFit:
             other parameters do (a flat ridge in the fit). Their standard
             errors, and the columns computed from them, are NaN. Likewise for
             a parameter the curve can't be differentiated reliably in at the
-            fitted values, and any other whose standard error depends on it.
-            That is where a ridge leads: ``sar_weibull4`` on the Galápagos
-            data trades ``c`` down to 1e-15 against a growing ``z``, where the
-            curve is no longer computed precisely enough.
+            fitted values, and any other whose standard error depends on it,
+            and for a parameter that stopped on one of the bounds the fit
+            searches within, where the approximation doesn't hold (the other
+            parameters' standard errors are given as if it were free).
 
         Raises
         ------
         ValueError
-            If ``conf`` is not between 0 and 1, or if ``data`` has changed
-            since the fit (the table is computed from it).
+            If ``conf`` is not between 0 and 1, if ``data`` has changed since
+            the fit (the table is computed from it), or if ``model`` isn't one
+            of the package's models or ``params`` lacks one of its parameters.
 
         Notes
         -----
@@ -246,17 +267,27 @@ class SARFit:
         """
         if not 0.0 < conf < 1.0:
             raise ValueError(f"conf must be between 0 and 1, got {conf}")
+        spec = self._spec()
         names = list(self.params)
         estimate = np.array([self.params[k] for k in names], dtype=float)
         std_error = np.full(len(names), np.nan)
         dof = self.n - len(names)
         if self.converged and dof > 0:
-            spec = _MODEL_REGISTRY.get(self.model)
-            if spec is None:
-                raise NotImplementedError(f"param_table not yet implemented for '{self.model}'")
             area, species = self._fitted_data(spec)
             std_error, rough = _param_std_errors(spec.func, area, species, estimate)
             missing = [n for n, se in zip(names, std_error, strict=True) if np.isnan(se)]
+            on_bound = _on_bound(self.model, estimate, area, species)
+            if on_bound.any():
+                std_error[on_bound] = np.nan
+                warnings.warn(
+                    f"Model '{self.model}': "
+                    f"{', '.join(n for n, b in zip(names, on_bound, strict=True) if b)} "
+                    f"stopped on a bound of the fit's search, where a standard error "
+                    f"doesn't apply (NaN in param_table); the fit's optimum there is the "
+                    f"bound's, not the data's",
+                    UserWarning,
+                    stacklevel=2,
+                )
             if rough.any():
                 which = ", ".join(n for n, bad in zip(names, rough, strict=True) if bad)
                 warnings.warn(
@@ -361,9 +392,7 @@ def _curve_shape(predict: Callable[[np.ndarray], np.ndarray], lo: float, hi: flo
         return "none"
     # Island areas are right-skewed, and a curve bends most among the small
     # ones: an even grid alone would step over that, so add a geometric one.
-    x = np.unique(
-        np.concatenate([np.linspace(lo, hi, _SHAPE_GRID), np.geomspace(lo, hi, _SHAPE_GRID)])
-    )
+    x = _area_grid(lo, hi, 2 * _SHAPE_GRID)
     with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
         y = np.asarray(predict(x), dtype=float)
     if not np.all(np.isfinite(y)):
@@ -394,6 +423,20 @@ def _curve_shape(predict: Callable[[np.ndarray], np.ndarray], lo: float, hi: flo
         else:
             last = mid - 1
     return "sigmoid" if _gap_below_hull(x[first:], y[first:]) <= tol else "none"
+
+
+def _area_grid(lo: float, hi: float, n: int) -> np.ndarray:
+    """About ``n`` areas from ``lo`` to ``hi`` for drawing or predicting a curve:
+    half evenly spaced, half geometrically. Island areas are right-skewed, often
+    over several orders of magnitude, and an even grid alone puts almost no
+    points among the small ones, where curves bend most; a geometric grid alone
+    is sparse among the large ones on arithmetic axes."""
+    if not hi > lo:
+        return np.array([lo], dtype=float)
+    half = max(n // 2, 2)
+    if lo <= 0:  # no geometric grid reaches zero
+        return np.linspace(lo, hi, 2 * half)
+    return np.unique(np.concatenate([np.linspace(lo, hi, half), np.geomspace(lo, hi, half)]))
 
 
 # ---------------------------------------------------------------------------
@@ -458,7 +501,7 @@ class _ModelSpec:
     start_grid: list[list[float]]
     # Parameters the solver searches on the natural-log scale, for ones whose
     # optimum can sit many orders of magnitude from the start values (weibull4's
-    # c reaches 1e-15). Their bounds and start values are still given, and their
+    # c falls below 1e-20 on the Galápagos data). Their bounds and start values are still given, and their
     # fitted values reported, on the natural scale; a lower bound of 0 becomes
     # exp(_LOG_FLOOR).
     log_params: tuple[str, ...] = ()
@@ -482,6 +525,15 @@ def _to_natural_scale(values: Sequence[float] | np.ndarray, log_idx: list[int]) 
 
 
 _MODEL_REGISTRY: dict[str, _ModelSpec] = {}
+
+
+def _model_spec(name: str) -> _ModelSpec:
+    """A model's specification, or the error every function gives for a name
+    that isn't one of the package's models."""
+    spec = _MODEL_REGISTRY.get(name)
+    if spec is None:
+        raise ValueError(f"Unknown model: {name!r}. Choose from {sorted(_MODEL_REGISTRY)}.")
+    return spec
 
 
 def _register(spec: _ModelSpec) -> _ModelSpec:
@@ -1093,11 +1145,15 @@ _register(
     )
 )
 
+# negexpo, weibull3, weibull4, chapman and betap compute 1 - exp(-x) as
+# -expm1(-x) (betap's 1 - (1 + u)^-f as -expm1(-f log1p(u))): for small x the
+# plain difference loses most of its digits, and weibull4's Galápagos fit has
+# x near 1e-14 at the smallest islands.
 # 11. negexpo: S = d * (1 - exp(-z * A))
 _register(
     _ModelSpec(
         name="negexpo",
-        func=lambda a, d, z: d * (1.0 - np.exp(-z * a)),
+        func=lambda a, d, z: d * -np.expm1(-z * a),
         param_names=["d", "z"],
         bounds_lower=[1e-10, 1e-10],
         bounds_upper=[1e6, 100.0],
@@ -1179,7 +1235,7 @@ _register(
 
 # 16. weibull3: S = d * (1 - exp(-c * A^z))
 def _weibull3_func(a, d, c, z):
-    return d * (1.0 - np.exp(-c * a**z))
+    return d * -np.expm1(-c * a**z)
 
 
 _register(
@@ -1202,7 +1258,7 @@ _register(
 
 # 17. weibull4: S = d * (1 - exp(-c * A^z))^f
 def _weibull4_func(a, d, c, z, f):
-    inner = 1.0 - np.exp(-c * a**z)
+    inner = -np.expm1(-c * a**z)
     return d * np.sign(inner) * np.abs(inner) ** f
 
 
@@ -1226,7 +1282,7 @@ _register(
 
 # 18. chapman: S = d * (1 - exp(-z * A))^c
 def _chapman_func(a, d, z, c):
-    inner = 1.0 - np.exp(-z * a)
+    inner = -np.expm1(-z * a)
     return d * np.sign(inner) * np.abs(inner) ** c
 
 
@@ -1248,7 +1304,7 @@ _register(
 
 # 19. betap: S = d * (1 - (1 + (A/c)^z)^(-f))
 def _betap_func(a, d, c, z, f):
-    return d * (1.0 - (1.0 + (a / c) ** z) ** (-f))
+    return d * -np.expm1(-f * np.log1p((a / c) ** z))
 
 
 _register(
@@ -1774,6 +1830,28 @@ def _std_errors_from_jacobian(jac: np.ndarray, sigma2: float, accuracy: float) -
         variance = known + parts.sum(axis=1)
     std_error[live] = np.where(lost, np.nan, np.sqrt(sigma2 * variance) / norms[live])
     return std_error
+
+
+def _on_bound(name: str, values: np.ndarray, area: np.ndarray, species: np.ndarray) -> np.ndarray:
+    """Which of a fit's parameters sit on a bound of its search. The bounds are
+    on the rescaled parameters (see ``_RESCALE``), so the fitted values are
+    rescaled as ``_fit_nls`` rescales them; a log-scale parameter is compared on
+    the log scale, where its lower bound of 0 is ``exp(_LOG_FLOOR)``."""
+    spec = _MODEL_REGISTRY[name]
+    if name not in _RESCALE:  # a model registered by hand, as tests do
+        return np.zeros(len(values), dtype=bool)
+    a_scale = 1.0 if name in _AREA_UNSCALED else float(np.exp(np.mean(np.log(area))))
+    s_scale = float(np.max(species))
+    with np.errstate(all="ignore"):
+        scaled = np.array(_RESCALE[name][1](values, a_scale, s_scale), dtype=float)
+    log_idx = [spec.param_names.index(p) for p in spec.log_params]
+    found = np.zeros(len(values), dtype=bool)
+    for i, (v, lo, hi) in enumerate(zip(scaled, spec.bounds_lower, spec.bounds_upper, strict=True)):
+        if i in log_idx:
+            (v,) = _to_search_scale([v], [0]) if v > 0 else (-np.inf,)
+            lo, hi = _to_search_scale([lo, hi], [0, 1])
+        found[i] = any(np.isfinite(b) and abs(v - b) <= 1e-6 * max(1.0, abs(b)) for b in (lo, hi))
+    return found
 
 
 def _param_std_errors(

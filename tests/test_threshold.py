@@ -1,5 +1,7 @@
 """Tests for threshold / piecewise SAR models."""
 
+import dataclasses
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -335,6 +337,32 @@ class TestMoreThresholdModels:
         )
         assert th._search_disc_one(x, y)["breakpoints"] == best_one["breakpoints"]
 
+    def test_discontinuous_searches_of_many_responses_match_trying_every_candidate(self):
+        """The discontinuous searches score many responses at once, from running
+        sums: each response must get the breakpoints fitting every candidate
+        separately would."""
+        from sars import _threshold as th
+
+        rng = np.random.default_rng(8)
+        x = np.sort(rng.uniform(0, 5, 13))
+        ys = 20 + 3 * x + rng.normal(0, 2, (6, 13))
+        values = np.unique(x)
+        ones = th._disc_one_breakpoints(x, ys)
+        twos = th._disc_two_breakpoints(x, ys)
+        for row, y in enumerate(ys):
+            best_one = min(
+                (th._fit_disc_one(x, y, t) for t in values
+                 if np.sum(x <= t) >= 3 and np.sum(x > t) >= 3),
+                key=lambda r: r["rss"],
+            )  # fmt: skip
+            best_two = min(
+                (th._fit_disc_two(x, y, a, b) for a in values for b in values
+                 if a < b and np.sum(x <= a) >= 3 and np.sum(x > b) >= 3),
+                key=lambda r: r["rss"],
+            )  # fmt: skip
+            assert ones[row] == best_one["breakpoints"][0]
+            assert tuple(twos[row]) == pytest.approx(best_two["breakpoints"])
+
     def test_summary_reports_the_second_breakpoint(self, galap):
         fit = sars.sar_threshold(galap, models=ALL_MODELS)
         table = fit.summary.set_index("model")
@@ -463,6 +491,77 @@ class TestThresholdCI:
         # The data pin the breakpoint down: the interval is far narrower than
         # the window the search covers (ln(area) from 0.4 to 7.6).
         assert ci.upper[0] - ci.lower[0] < 2.0
+
+    @pytest.mark.parametrize("model", ["ContOne", "ZslopeOne"])
+    def test_f_interval_covers_a_known_breakpoint(self, model):
+        fit = sars.sar_threshold(_one_knee(noise=3.0), models=[model], interval=COARSE)
+        ci = sars.threshold_ci(fit, method="F")
+        assert ci.method == "F" and ci.n_boot == 0 and ci.samples.shape == (0, 1)
+        assert ci.lower[0] < 3.0 < ci.upper[0]
+        assert ci.lower[0] <= ci.estimates[0] <= ci.upper[0]
+        assert ci.upper[0] - ci.lower[0] < 2.0
+        assert repr(ci).endswith("method='F')")
+
+    def test_f_bounds_are_where_the_test_stops_accepting(self):
+        """Inside the bounds the F statistic is at most the critical value; just
+        outside, above it."""
+        from scipy import stats
+
+        from sars import _threshold as th
+
+        data = _one_knee(noise=3.0)
+        fit = sars.sar_threshold(data, models=["ContOne"], interval=COARSE)
+        ci = sars.threshold_ci(fit, method="F", conf=0.9)
+        x = np.log(data["area"].to_numpy())
+        y = data["species"].to_numpy()
+        grid = th._search_grid(x, COARSE)
+        rss = th._profile_rss(x, y, True, grid)
+        n, p = len(y), 4
+        stat = (rss - rss.min()) / (rss.min() / (n - p))
+        crit = stats.f.ppf(0.9, 1, n - p)
+        inside = (grid >= ci.lower[0] - 1e-12) & (grid <= ci.upper[0] + 1e-12)
+        assert stat[inside].min() == 0.0
+        lo, hi = np.flatnonzero(inside)[[0, -1]]
+        assert stat[lo] <= crit and stat[hi] <= crit
+        assert lo == 0 or stat[lo - 1] > crit
+        assert hi == len(grid) - 1 or stat[hi + 1] > crit
+        # Each fixed-breakpoint RSS is the fit's own.
+        for k in (0, lo, hi, len(grid) - 1):
+            assert rss[k] == pytest.approx(th._fit_cont_one(x, y, grid[k])["rss"], rel=1e-9)
+
+    def test_f_interval_of_an_exact_fit_is_the_breakpoint(self):
+        """Data on a hinge exactly: rounding can leave the best RSS a hair below
+        zero, which must not turn the interval into the whole window."""
+        from sars import _threshold as th
+
+        area = np.exp(np.linspace(0, 8, 30))
+        x = np.log(area)
+        knee = th._search_grid(x, 0.01)[150]
+        for slope in (5.0, 5.1, 7.3):
+            y = 100 + 2 * x + slope * np.maximum(x - knee, 0)
+            fit = sars.sar_threshold(pd.DataFrame({"area": area, "species": y}), models=["ContOne"])
+            ci = sars.threshold_ci(fit, method="F")
+            assert ci.lower[0] == pytest.approx(knee) and ci.upper[0] == pytest.approx(knee)
+
+    def test_f_interval_coverage(self):
+        """Over noisy data with one true breakpoint, 95% intervals cover it about
+        95% of the time."""
+        covered = []
+        for seed in range(150):
+            data = _one_knee(noise=4.0, seed=seed)
+            fit = sars.sar_threshold(data, models=["ContOne"], interval=COARSE)
+            ci = sars.threshold_ci(fit, method="F")
+            covered.append(ci.lower[0] <= 3.0 <= ci.upper[0])
+        assert 0.88 <= np.mean(covered) <= 0.99
+
+    @pytest.mark.parametrize("model", ["DiscOne", "ContTwo", "ZslopeTwo", "DiscTwo"])
+    def test_f_interval_is_for_continuous_one_threshold_models(self, galap_all, model):
+        with pytest.raises(ValueError, match="inverted F test gives intervals for ContOne"):
+            sars.threshold_ci(galap_all, model=model, method="F")
+
+    def test_unknown_method_raises(self, galap_all):
+        with pytest.raises(ValueError, match="method must be 'boot' or 'F'"):
+            sars.threshold_ci(galap_all, model="ContOne", method="bca")
 
     def test_interval_narrows_with_less_noise(self):
         widths = []
@@ -658,10 +757,21 @@ class TestThresholdCI:
         with pytest.raises(ValueError, match="has changed since"):
             sars.threshold_ci(fit, model, n_boot=5)
 
-    def test_rows_dropped_since_the_fit_raises(self, galap):
+    def test_rows_added_since_the_fit_raises(self, galap):
+        """A row added in place with .loc, the way a frame still changes length in
+        place once pandas 4 drops inplace from drop()."""
         data = galap.copy()
         fit = sars.sar_threshold(data, interval=COARSE)
-        data.drop(index=data.index[-1], inplace=True)
+        new_row = [data["area"].max() * 2, data["species"].max()]
+        data.loc[data.index.max() + 1, ["area", "species"]] = new_row
+        with pytest.raises(ValueError, match="has changed since"):
+            sars.threshold_ci(fit, n_boot=5)
+
+    def test_rows_dropped_since_the_fit_raises(self, galap):
+        """A frame can no longer shrink in place under pandas 4, so the fit is handed
+        a shorter one."""
+        fit = sars.sar_threshold(galap.copy(), interval=COARSE)
+        fit = dataclasses.replace(fit, data=fit.data.iloc[:-1])
         with pytest.raises(ValueError, match="has changed since"):
             sars.threshold_ci(fit, n_boot=5)
 

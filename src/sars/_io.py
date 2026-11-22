@@ -261,12 +261,14 @@ def from_geodataframe(
     gdf: GeoDataFrame,
     species_col: str = "species",
     area_col: str | None = None,
-    crs_units: str = "km2",
+    area_units: str | None = None,
+    *,
+    crs_units: str | None = None,
 ) -> pd.DataFrame:
     """Convert a GeoDataFrame of polygons to SAR format.
 
     Computes area from polygon geometries if no area column is specified.
-    Requires geopandas and shapely (install with ``pip install sars[geo]``).
+    Requires geopandas and shapely (install with ``pip install "sars[geo]"``).
 
     Areas are measured in the GeoDataFrame's own coordinate reference system
     (CRS), so it must be a projected one: reproject longitude/latitude data
@@ -283,15 +285,19 @@ def from_geodataframe(
     area_col : str, optional
         Column name for pre-computed area values. If None, area is
         computed from geometries.
-    crs_units : str
-        Unit of the computed areas: "km2" (default), "ha" or "m2". The CRS's
+    area_units : str, optional
+        Unit of the computed areas: "km2" (the default), "ha" or "m2". The CRS's
         own length unit is read from the CRS, so a CRS in feet gives the same
         areas as one in metres. Ignored when ``area_col`` is given.
+    crs_units : str, optional
+        Deprecated alias of ``area_units``, which names what it sets: the unit
+        of the areas returned, not a property of the CRS.
 
     Returns
     -------
     pd.DataFrame
-        DataFrame with columns 'area' and 'species'.
+        DataFrame with columns 'area' and 'species', with the GeoDataFrame's
+        index whether the areas are computed or taken from ``area_col``.
 
     Raises
     ------
@@ -299,8 +305,11 @@ def from_geodataframe(
         If geopandas is not installed.
     KeyError
         If the specified columns are not found.
+    TypeError
+        If both ``area_units`` and ``crs_units`` are given.
     ValueError
-        If ``crs_units`` is not one of the units above or, when area is
+        If ``area_units`` is not one of the units above (even with
+        ``area_col``, where it is otherwise ignored) or, when area is
         computed from the geometries, if any geometry is missing, empty or
         has no area (a point, a line, a degenerate polygon), if the CRS is
         not a projected one (geographic CRSs, in degrees, included), or if
@@ -309,6 +318,8 @@ def from_geodataframe(
 
     Warns
     -----
+    FutureWarning
+        If ``crs_units`` is used.
     UserWarning
         If area is computed from geometries that have no CRS and whose
         coordinates don't look like degrees. They are then taken to be metres.
@@ -317,8 +328,27 @@ def from_geodataframe(
         import geopandas as gpd  # noqa: F401
     except ImportError as e:
         raise ImportError(
-            "geopandas is required for from_geodataframe(). Install with: pip install sars[geo]"
+            "geopandas is required for from_geodataframe(). Install with: pip install 'sars[geo]'"
         ) from e
+
+    if crs_units is not None:
+        if area_units is not None:
+            raise TypeError("Pass area_units or its deprecated alias crs_units, not both.")
+        warnings.warn(
+            "crs_units is deprecated and will be removed in a future release; use "
+            "area_units, which names the unit of the areas returned.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        area_units = crs_units
+    if area_units is None:
+        area_units = "km2"
+    unit_divisors = {"km2": 1e6, "m2": 1.0, "ha": 1e4}
+    if area_units not in unit_divisors:
+        # Checked on both paths, so a misspelt unit isn't passed over when it is ignored.
+        raise ValueError(
+            f"Unknown area_units {area_units!r}. Choose from {list(unit_divisors.keys())}"
+        )
 
     if species_col not in gdf.columns:
         raise KeyError(f"Column {species_col!r} not found. Available columns: {list(gdf.columns)}")
@@ -326,13 +356,8 @@ def from_geodataframe(
     if area_col is not None:
         if area_col not in gdf.columns:
             raise KeyError(f"Column {area_col!r} not found. Available columns: {list(gdf.columns)}")
-        areas = gdf[area_col].values
+        areas = gdf[area_col].to_numpy()
     else:
-        unit_divisors = {"km2": 1e6, "m2": 1.0, "ha": 1e4}
-        if crs_units not in unit_divisors:
-            raise ValueError(
-                f"Unknown crs_units {crs_units!r}. Choose from {list(unit_divisors.keys())}"
-            )
         geometry = gdf.geometry
         if geometry.isna().any() or geometry.is_empty.any():
             raise ValueError(
@@ -388,11 +413,11 @@ def from_geodataframe(
                 "can only be computed from valid polygons: fix or drop these rows, or pass "
                 "area_col to use areas from a column."
             )
-        areas = raw_area * metres_per_unit**2 / unit_divisors[crs_units]
+        areas = (raw_area * metres_per_unit**2 / unit_divisors[area_units]).to_numpy()
 
+    # Both paths keep the GeoDataFrame's index, as from_df keeps its input's, so
+    # the rows can be joined back to the polygons.
     return pd.DataFrame(
-        {
-            "area": areas,
-            "species": gdf[species_col].values,
-        }
+        {"area": areas, "species": gdf[species_col].to_numpy()},
+        index=gdf.index,
     )

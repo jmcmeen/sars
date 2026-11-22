@@ -579,8 +579,11 @@ def test_full_bootstrap_keeps_a_model_that_only_failed_to_converge(galap, monkey
     monkeypatch.setattr(inference, "_fit_nls", fit)
     models = [FAILS_NEGATIVE, "negexpo", PASSES]
     kwargs = {"models": models, "n_boot": 2, "method": "full"}
-    with pytest.warns(UserWarning, match="1 of 2"):
+    with pytest.warns(UserWarning) as record:
         ci = sars.bootstrap_ci(galap, rng=np.random.default_rng(0), neg_check=True, **kwargs)
+    messages = [str(w.message) for w in record]
+    assert any(m.startswith("1 of 3 models could not be fitted") for m in messages)
+    assert any(m.startswith("1 of 2 fitted models failed") for m in messages)
     assert ci.n_models_attempted == 2
     assert resampled == ["negexpo", PASSES] * 2
     # Without the check, the same model is tried too.

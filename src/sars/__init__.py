@@ -12,7 +12,7 @@ except PackageNotFoundError:
     __version__ = "0.0.0.dev0"
 
 from sars._checks import ResidualChecks
-from sars._coleman import ColemanFit, coleman
+from sars._coleman import ColemanFit, ColemanTest, coleman
 from sars._gdm import GDMFit, GDMMultiFit, sar_gdm
 from sars._inference import (
     AveragedSAR,
@@ -76,6 +76,7 @@ __all__ = [
     "BootstrappedCI",
     "LinPowFit",
     "ColemanFit",
+    "ColemanTest",
     "GDMFit",
     "GDMMultiFit",
     "MultiSARFit",

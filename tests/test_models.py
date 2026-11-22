@@ -1,3 +1,4 @@
+import dataclasses
 import warnings
 
 import numpy as np
@@ -159,8 +160,8 @@ def test_model_predict(model_name, galap, galap_fits):
 
 
 def test_a_log_scale_parameter_reaches_tiny_values(galap_fits):
-    """R's weibull4 optimum on galap has c around 4e-15; a linear search stops
-    short of it."""
+    """weibull4's optimum on galap has c below 1e-20 (R's, propped up by rounding,
+    is around 4e-15); a linear search stops short of it."""
     assert 0 < galap_fits["weibull4"].params["c"] < 1e-10
 
 
@@ -213,11 +214,6 @@ def test_a_fit_is_the_same_in_any_units(galap, galap_fits, model):
     in_km2 = galap_fits[model]
     in_m2 = _fit_nls(model, galap.assign(area=galap["area"] * 1e6, species=galap["species"] * 10))
     assert in_m2.converged
-    if model == "weibull4":
-        # Its likelihood is flat along a ridge: the solver stops at a slightly
-        # different point on it, as good a fit to 1e-4 in R², a curve up to 2% apart.
-        assert in_m2.r_squared == pytest.approx(in_km2.r_squared, abs=1e-4)
-        return
     assert in_m2.r_squared == pytest.approx(in_km2.r_squared, abs=1e-6)
     areas = galap["area"].to_numpy()
     np.testing.assert_allclose(in_m2.predict(areas * 1e6), 10 * in_km2.predict(areas), rtol=1e-4)
@@ -466,16 +462,44 @@ def test_param_table_rejects_a_level_outside_0_to_1(conf, galap_fits):
         galap_fits["power"].param_table(conf=conf)
 
 
-def test_param_table_is_nan_where_the_data_dont_identify_the_parameters(galap_fits):
-    """weibull4 trades c toward 0 against a growing z on the Galápagos data: a
-    flat ridge, along which neither has a standard error."""
+def test_param_table_has_no_standard_error_for_a_parameter_on_a_bound(galap_fits):
+    """weibull4 trades c toward 0 against a growing z on the Galápagos data, a
+    flat ridge that runs to z's upper bound of 10. There the optimum is the
+    bound's, and a standard error doesn't apply; c's dwarfs its estimate."""
     fit = galap_fits["weibull4"]
-    with pytest.warns(UserWarning, match="'weibull4'.*differentiated reliably.*c, z"):
+    with pytest.warns(UserWarning, match="'weibull4': z stopped on a bound"):
         table = fit.param_table()
-    assert table[TABLE_COLUMNS[1:]].isna().all(axis=None)
     assert table["estimate"].to_dict() == fit.params
-    # No astronomically large numbers stand in for "unknown".
-    assert not np.isinf(table.to_numpy()).any()
+    assert table.loc["z", TABLE_COLUMNS[1:]].isna().all()
+    assert table.drop(index="z").notna().all(axis=None)
+    assert table.loc["c", "std_error"] > 10 * table.loc["c", "estimate"]
+
+
+def test_param_table_warns_where_the_curve_cant_be_differentiated(monkeypatch):
+    """A curve that is rough in one parameter: the warning names it, and it and
+    the parameters whose standard errors depend on it have none."""
+    from sars import _models
+
+    def func(a, c, m, q):
+        return c + m * a + _rough(q) * a**2
+
+    spec = _models._ModelSpec(
+        name="rough",
+        func=func,
+        param_names=["c", "m", "q"],
+        bounds_lower=[-1e6] * 3,
+        bounds_upper=[1e6] * 3,
+        start_grid=[[1.0]] * 3,
+    )
+    monkeypatch.setitem(_models._MODEL_REGISTRY, "rough", spec)
+    data = pd.DataFrame({"area": _X, "species": _Y})
+    fit = _hand_built_fit("rough", data)
+    fit.params = {"c": 3.0, "m": 2.0, "q": 0.0}
+    with pytest.warns(
+        UserWarning, match="'rough': the curve can't be differentiated reliably with respect to q"
+    ):
+        table = fit.param_table()
+    assert np.isnan(table.loc["q", "std_error"])
 
 
 def test_param_table_names_the_parameters_the_data_dont_identify(monkeypatch):
@@ -526,25 +550,38 @@ def _hand_built_fit(model: str, data: pd.DataFrame, converged: bool = True) -> s
 
 def test_param_table_of_an_unknown_model_says_so_like_predict():
     data = pd.DataFrame({"area": _X, "species": _Y})
-    with pytest.raises(NotImplementedError, match="param_table not yet implemented for 'nope'"):
-        _hand_built_fit("nope", data).param_table()
-    # A failed fit has nothing to compute, whatever its model.
-    table = _quiet_table(_hand_built_fit("nope", data, converged=False))
+    for converged in (True, False):  # whether or not there is a table to compute
+        with pytest.raises(ValueError, match="Unknown model: 'nope'"):
+            _hand_built_fit("nope", data, converged=converged).param_table()
+    # A failed fit of a known model has nothing to compute: all NaN.
+    failed = _hand_built_fit("linear", data, converged=False)
+    table = _quiet_table(failed)
     assert list(table.index) == ["c", "m"]
     assert table[TABLE_COLUMNS[1:]].isna().all(axis=None)
 
 
-@pytest.mark.parametrize("change", ["a value", "the rows"])
+def test_a_fit_missing_a_parameter_says_which():
+    fit = _hand_built_fit("power", pd.DataFrame({"area": _X, "species": _Y}))
+    with pytest.raises(ValueError, match=r"lacks the parameter\(s\) \['z'\].*\['c', 'z'\]"):
+        fit.predict(10.0)
+
+
+@pytest.mark.parametrize("change", ["a value", "a row added", "a row dropped"])
 def test_param_table_refuses_data_changed_since_the_fit(change):
     """The fit keeps the caller's DataFrame, not a copy; a table computed from
-    other data than the parameters were fitted to would be silently wrong."""
+    other data than the parameters were fitted to would be silently wrong. A row
+    is added in place with .loc, the way a frame still changes length in place
+    once pandas 4 drops inplace from drop(); a frame can no longer shrink in
+    place, so the fit is handed a shorter one."""
     data = pd.DataFrame({"area": _X, "species": _Y})
     fit = sars.sar_linear(data)
     _quiet_table(fit)
     if change == "a value":
         data.loc[0, "species"] += 5.0
+    elif change == "a row added":
+        data.loc[data.index.max() + 1, ["area", "species"]] = [_X.max() * 2, _Y.max()]
     else:
-        data.drop(index=0, inplace=True)
+        fit = dataclasses.replace(fit, data=data.iloc[1:])
     with pytest.raises(ValueError, match="data of this 'linear' fit have changed"):
         fit.param_table()
 
@@ -747,3 +784,15 @@ def test_a_parameter_near_a_ridge_but_not_on_it_keeps_its_standard_error():
     assert se[2] == pytest.approx(expected, rel=1e-4)
     # ... which is not what it would be were c1 and c2 one parameter.
     assert abs(expected / (_line_std_errors()[1] * np.sqrt(10 / 9)) - 1) > 1e-3
+
+
+def test_area_grid_mixes_even_and_geometric_spacing():
+    from sars._models import _area_grid
+
+    grid = _area_grid(0.01, 1000.0, 100)
+    assert grid[0] == 0.01 and grid[-1] == 1000.0
+    assert np.all(np.diff(grid) > 0)
+    assert np.sum(grid < 1.0) >= 15 and np.sum(grid > 500.0) >= 20
+    # No geometric grid reaches zero: an even one stands in.
+    np.testing.assert_allclose(_area_grid(0.0, 10.0, 10), np.linspace(0.0, 10.0, 10))
+    assert _area_grid(5.0, 5.0, 10).tolist() == [5.0]
