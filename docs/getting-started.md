@@ -279,6 +279,49 @@ if __name__ == "__main__":
     ci = sars.bootstrap_ci(galap, n_boot=1000, n_jobs=-1)
 ```
 
+## Habitat loss
+
+The main conservation use of a species–area curve is to ask how many species an area
+loses when part of its habitat goes. `habitat_loss` compares the model-averaged curve
+at the area before and after, with a bootstrap interval for the loss:
+
+```python
+import numpy as np
+
+gala = sars.load_gala()
+rising = ["power", "loga", "koba", "negexpo", "monod", "ratio"]
+loss = sars.habitat_loss(
+    gala, area=900, fraction_lost=[0.25, 0.5, 0.9], models=rising, rng=np.random.default_rng(42)
+)
+loss.table[["remaining", "richness_after", "species_lost", "lost_lower", "lost_upper",
+            "proportion_lost"]]
+#    remaining  richness_after  species_lost  lost_lower  lost_upper  proportion_lost
+# 0      675.0          262.99         16.34        2.21       93.73             0.06
+# 1      450.0          238.36         40.96        5.83      187.59             0.15
+# 2       90.0          131.23        148.09       48.57      339.84             0.53
+```
+
+An island of 900 km² holds about 279 plant species on this curve, and one of half that
+size about 238. Losing half the habitat therefore costs about 41 species, or 15%. Give
+`remaining=` instead of `fraction_lost=` for the area left. Each resample's own averaged
+curve gives its own loss, so the interval is for the loss itself. It is wide: 30 islands
+pin down the curve's shape only loosely.
+
+Read the numbers with three things in mind:
+
+- **It is the eventual loss.** The estimate is how many species an area of the remaining
+  size holds once it settles. Species can hang on for a long time before they die out
+  (an "extinction debt").
+- **It is likely an overestimate.** A curve fitted across islands of different sizes
+  describes how many species an area holds. Losing part of an area costs fewer than
+  that (He and Hubbell 2011). The calculation also treats what remains as one block
+  rather than fragments.
+- **The interval has the bootstrap's limits.** Areas at the edge of the data are
+  extrapolated in the resamples that leave the largest island out, and a warning flags
+  predictions there that run away. Averaging all 20 models brings in curves that fall with area in
+  places, so a few resamples show negative losses (also warned). That is why the example
+  averages six models whose curves only rise.
+
 ## Cross-validation
 
 AICc ranks models by how well they fit, with a penalty for parameters. With few islands,

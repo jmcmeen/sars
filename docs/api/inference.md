@@ -32,6 +32,14 @@
 
 ::: sars.LOOCV
 
+## habitat_loss
+
+::: sars.habitat_loss
+
+## HabitatLoss
+
+::: sars.HabitatLoss
+
 ## sar_pred
 
 ::: sars.sar_pred

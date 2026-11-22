@@ -627,6 +627,10 @@ class BootstrappedCI:
         converged, the averaged prediction wasn't finite at some area, or the
         error a fit raised. ``n_boot`` plus their total is the number of
         resamples drawn.
+    samples : np.ndarray
+        Each kept resample's averaged prediction at each area, shape
+        ``(n_boot, len(area_grid))``, when asked for with ``keep_samples``;
+        otherwise empty.
     """
 
     area_grid: np.ndarray
@@ -639,6 +643,7 @@ class BootstrappedCI:
     n_models_attempted: int = 0
     median: np.ndarray = field(default_factory=lambda: np.empty(0), repr=False)
     dropped: dict[str, int] = field(default_factory=dict, repr=False)
+    samples: np.ndarray = field(default_factory=lambda: np.empty((0, 0)), repr=False)
 
     def __repr__(self) -> str:
         parts = [
@@ -752,6 +757,7 @@ def bootstrap_ci(
     alpha_normality: float = 0.05,
     alpha_homoscedasticity: float = 0.05,
     n_jobs: int = 1,
+    keep_samples: bool = False,
 ) -> BootstrappedCI:
     """Compute bootstrap confidence intervals for model-averaged predictions.
 
@@ -810,6 +816,10 @@ def bootstrap_ci(
         from ``rng`` here, in order, whatever runs them, and warnings come back
         here. In a script, run the call under ``if __name__ == "__main__":``:
         each worker process imports the script.
+    keep_samples : bool
+        Keep every resample's prediction in ``samples``, for intervals of
+        quantities derived from the curve (``habitat_loss`` uses it). False by
+        default: it holds ``n_boot`` predictions at every area.
 
     Returns
     -------
@@ -1026,4 +1036,5 @@ def bootstrap_ci(
         convergence_counts=convergence_counts,
         n_models_attempted=n_attempted,
         dropped=dict(dropped),
+        samples=preds_arr if keep_samples else np.empty((0, 0)),
     )

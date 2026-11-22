@@ -253,3 +253,35 @@ def test_cv(capsys):
     code, envelope = run_json(capsys, "cv", "gala", "-m", "power", "--ic", "AIC")
     rows = {row["model"]: row for row in envelope["result"]["summary"]["models"]}
     assert rows["power"]["worst"] == "Isabela" and "AIC" in rows["power"]
+
+
+def test_loss(capsys):
+    argv = [
+        "loss",
+        "gala",
+        "--area",
+        "900",
+        "--fraction-lost",
+        "0.5",
+        "-m",
+        "power",
+        "--n-boot",
+        "30",
+        "--seed",
+        "1",
+    ]
+    code, envelope = run_json(capsys, *argv)
+    row = envelope["result"]["summary"]["scenarios"][0]
+    expected = sars.habitat_loss(
+        sars.load_gala(), area=900, fraction_lost=0.5, models=["power"], n_boot=0
+    )
+    assert code == 0 and row["species_lost"] == pytest.approx(
+        expected.table["species_lost"].iloc[0]
+    )
+    assert row["lost_lower"] < row["species_lost"] < row["lost_upper"]
+    code, out, _ = run(capsys, *argv)
+    assert out.startswith("Species lost, model average by AICc")
+    code, out, err = run(
+        capsys, "loss", "gala", "--area", "900", "--remaining", "450", "--fraction-lost", "0.5"
+    )
+    assert code == 2 and "not allowed with" in err

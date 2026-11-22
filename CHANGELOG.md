@@ -35,6 +35,13 @@ reconstructed from the commit history and the
   for flexible models), and folds can run in parallel (`n_jobs`). The
   CLI runs it as `sars cv`, and its result saves as JSON (#222)
 - The CLI's JSON tables keep whole numbers as integers (#222)
+- `sars.habitat_loss()`: species expected to be lost when an area loses habitat (given as
+  the area remaining or the fraction lost), from the model-averaged curve, with bootstrap
+  intervals built from each resample's own loss. It warns when an area is extrapolated
+  and when averaged curves fall with area. The docs explain what the estimate means and
+  its known upward bias. The CLI runs it as `sars loss` (#224)
+- `bootstrap_ci(keep_samples=True)` keeps every resample's prediction in
+  `BootstrappedCI.samples` (#224)
 - A Galápagos example for `from_geodataframe`: 28 island outlines from OpenStreetMap,
   joined by name to `load_gala()`'s plant counts, fitted over 0.02 to 4,700 km² and
   compared with the published areas (#153)

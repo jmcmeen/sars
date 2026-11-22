@@ -21,6 +21,7 @@ def _result_types() -> dict[str, type]:
     from sars._crossval import LOOCV
     from sars._inference import AveragedSAR, BootstrappedCI, MultiSARFit
     from sars._linpow import LinPowFit
+    from sars._loss import HabitatLoss
     from sars._many import ManySARFit
     from sars._models import SARFit
     from sars._threshold import ThresholdCI, ThresholdFit
@@ -35,6 +36,7 @@ def _result_types() -> dict[str, type]:
         ThresholdCI,
         ManySARFit,
         LOOCV,
+        HabitatLoss,
     ]
     return {cls.__name__: cls for cls in classes}
 
@@ -44,7 +46,7 @@ def to_json(obj: Any, indent: int | None = None) -> str:
 
     Works for every result the package returns (`SARFit`, `MultiSARFit`,
     `AveragedSAR`, `BootstrappedCI`, `LinPowFit`, `ThresholdFit`,
-    `ThresholdCI`, `ManySARFit`, `LOOCV`), with its data, parameters and
+    `ThresholdCI`, `ManySARFit`, `LOOCV`, `HabitatLoss`), with its data, parameters and
     settings. The
     text is standard JSON: NaN and infinite numbers (an AICc that is
     undefined, say) are written as strings and read back as numbers. It

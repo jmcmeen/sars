@@ -39,6 +39,7 @@ from sars._io import (
     load_xu,
 )
 from sars._linpow import LinPowFit, lin_pow
+from sars._loss import HabitatLoss, habitat_loss
 from sars._many import ManySARFit, sar_many
 from sars._models import (
     SARFit,
@@ -85,6 +86,7 @@ __all__ = [
     "ColemanTest",
     "GDMFit",
     "GDMMultiFit",
+    "HabitatLoss",
     "LOOCV",
     "ManySARFit",
     "MultiSARFit",
@@ -101,6 +103,7 @@ __all__ = [
     "from_geodataframe",
     "from_json",
     "from_pyinaturalist",
+    "habitat_loss",
     "lin_pow",
     "load",
     "load_aegean",

@@ -27,9 +27,10 @@ pip install "sars[geo]"
 - **20 SAR models** — power, logarithmic, asymptotic, sigmoid, and more
 - **Log-log power model** — the classic straight-line fit of log S on log A, with standard errors and p values
 - **Multi-model inference** — fit all models at once, ranked by AICc with Akaike weights
+- **Habitat loss** — species expected to be lost with habitat, with model-averaged bootstrap intervals
 - **Cross-validation** — rank models by how well they predict a left-out island, beside AICc
 - **Save and reload results** — any fit or result as standard JSON, data and settings included
-- **Command line** — `sars fit|average|threshold|cv|predict|datasets`, with JSON output for scripts
+- **Command line** — `sars fit|average|threshold|cv|loss|predict|datasets`, with JSON output for scripts
 - **Many datasets at once** — the same models fitted to many datasets, summarised in one table, in parallel if you like
 - **Parameter uncertainty** — standard errors, t tests and confidence intervals for each fitted parameter
 - **Model averaging** — weighted-average predictions across candidate models

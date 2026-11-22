@@ -189,6 +189,13 @@ def _summary(obj: Any) -> dict[str, Any]:
             "segments": [{k: _number(v) for k, v in s.items()} for s in obj.best_segments],
             "models": _records(obj.summary),
         }
+    if kind == "HabitatLoss":
+        return {
+            "type": kind,
+            "conf": obj.conf,
+            "ic": obj.average.ic,
+            "scenarios": _records(obj.table),
+        }
     if kind == "LOOCV":
         return {
             "type": kind,
@@ -213,6 +220,16 @@ def _print_summary(summary: dict[str, Any], out: Any) -> None:
     import pandas as pd
 
     kind = summary["type"]
+    if kind == "HabitatLoss":
+        table = pd.DataFrame(summary["scenarios"])
+        print(
+            f"Species lost, model average by {summary['ic']}, {summary['conf']:.0%} intervals:",
+            file=out,
+        )
+        for column in table.columns:
+            table[column] = [_cell(v) for v in table[column]]
+        print(table.to_string(index=False), file=out)
+        return
     if kind == "SARFit":
         params = "  ".join(f"{k} = {_fmt(v)}" for k, v in summary["params"].items())
         print(f"{summary['model']}: {params}", file=out)
@@ -351,6 +368,28 @@ def _cmd_cv(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
         models="all" if models == ["all"] else models,
         warm_start=args.warm,
         ic=args.ic,
+        n_jobs=args.n_jobs,
+    )
+    return _finish(obj, args)
+
+
+def _cmd_loss(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
+    import numpy as np
+
+    import sars
+
+    data = _read_data(args.data, args.area_col, args.species_col)
+    models = _model_list(args.models) or ["all"]
+    obj = sars.habitat_loss(
+        data,
+        area=args.area,
+        remaining=args.remaining,
+        fraction_lost=args.fraction_lost,
+        models="all" if models == ["all"] else models,
+        ic=args.ic,
+        n_boot=args.n_boot,
+        conf=args.conf,
+        rng=np.random.default_rng(args.seed),
         n_jobs=args.n_jobs,
     )
     return _finish(obj, args)
@@ -565,6 +604,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_output_args(cv)
     cv.set_defaults(handler=_cmd_cv)
+
+    loss = commands.add_parser(
+        "loss",
+        help="species expected to be lost with habitat",
+        description="Species expected to be lost when an area loses habitat, from the model "
+        "average, with bootstrap intervals. An eventual loss, and likely an overestimate: see "
+        "the documentation.",
+    )
+    _add_data_args(loss)
+    loss.add_argument(
+        "--area", type=float, nargs="+", required=True, help="the area before the loss"
+    )
+    after = loss.add_mutually_exclusive_group(required=True)
+    after.add_argument("--remaining", type=float, nargs="+", help="the area left")
+    after.add_argument(
+        "--fraction-lost", type=float, nargs="+", metavar="F", help="the share lost, 0 to 1"
+    )
+    loss.add_argument(
+        "-m", "--models", action="append", metavar="NAME", help="models to average (default: all)"
+    )
+    loss.add_argument("--ic", choices=["AICc", "AIC", "BIC"], default="AICc")
+    loss.add_argument(
+        "--n-boot", type=int, default=1000, metavar="N", help="resamples (default 1000; 0: none)"
+    )
+    loss.add_argument("--conf", type=float, default=0.95, help="interval level (default 0.95)")
+    loss.add_argument("--seed", type=int, help="seed for the resamples, for reproducible intervals")
+    loss.add_argument(
+        "--n-jobs", type=int, default=1, metavar="N", help="processes to use; -1 for one per core"
+    )
+    _add_output_args(loss)
+    loss.set_defaults(handler=_cmd_loss)
 
     predict = commands.add_parser(
         "predict",
