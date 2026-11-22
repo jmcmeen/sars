@@ -12,6 +12,13 @@ reconstructed from the commit history and the
 
 ### Added
 
+- `sar_many()` fits the same models to many datasets and summarises them in one table,
+  one row per dataset: islands, area range, the log-log power fit's z and R², the
+  multi-model average's best model and its weight, and the threshold model and its
+  breakpoint, with the fits kept in a `ManySARFit`. Datasets come as a dict of name to
+  DataFrame or as one long DataFrame with `by=`. A fit that fails is named with its
+  error in the table, without stopping the dataset's other fits or the other datasets;
+  each dataset's warnings are listed against it; `n_jobs` fits them in parallel (#209)
 - `bootstrap_ci` and `threshold_ci` take `n_jobs`, to fit the bootstrap resamples in
   several processes (`-1` for one per core), with the standard library's
   `concurrent.futures`, so no new dependency. The default, 1, runs as before, and the

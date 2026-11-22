@@ -778,6 +778,9 @@ _SEARCHES: dict[str, _Search] = {
         lambda x, ys, interval: _disc_two_breakpoints(x, ys),
     ),
 }
+
+# The threshold models, by name, in the order sar_threshold lists them.
+THRESHOLD_MODELS: list[str] = list(_SEARCHES)
 assert set(_SEARCHES) == set(_K)
 
 

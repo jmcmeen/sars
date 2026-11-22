@@ -269,6 +269,32 @@ if __name__ == "__main__":
     ci = sars.bootstrap_ci(galap, n_boot=1000, n_jobs=-1)
 ```
 
+## Many datasets at once
+
+`sar_many` fits the same models to several datasets and puts the results in one table,
+one row per dataset: the multi-model average's best model and its weight, the log-log
+power fit, and the threshold model `sar_threshold` chooses. Pass a dict of named
+datasets, or one long DataFrame with `by=` naming the column that says which dataset
+each row belongs to:
+
+```python
+many = sars.sar_many({"galap": sars.load_galap(), "gala": sars.load_gala(), "xu": sars.load_xu()})
+print(many.summary[["dataset", "n", "z", "R2", "best_model", "threshold_model", "breakpoint_area"]])
+#   dataset   n     z    R2 best_model threshold_model  breakpoint_area
+# 0   galap  16  0.34  0.53    negexpo          Linear              NaN
+# 1    gala  30  0.39  0.76         p1       ZslopeOne            10.85
+# 2      xu  42  0.35  0.79      power         ContOne            17.00
+
+sars.sar_many(long_table, by="archipelago", threshold=False, n_jobs=-1)
+```
+
+Each fit runs on its own: one that fails (a dataset too small for the threshold models,
+say) is named with its error in the `error` column, without stopping the dataset's other
+fits or the other datasets, and the warnings each dataset raised are listed against it
+in `warnings`.
+The fits themselves are kept, by name, in `many.averages`, `many.log_log` and
+`many.thresholds`. `n_jobs` fits the datasets in parallel, as for `bootstrap_ci`.
+
 ## Threshold models
 
 Detect breakpoints in the species-area relationship (e.g., the small island
