@@ -328,6 +328,27 @@ class TestMoreThresholdModels:
         assert fit.best_model == "DiscTwo"
         assert fit.summary.iloc[0]["AICc"] == -np.inf
 
+    @pytest.mark.parametrize("model", ["ContOne", "ZslopeOne", "ContTwo", "ZslopeTwo"])
+    def test_a_resample_gets_the_same_breakpoints_however_it_is_batched(self, model):
+        """Serially the bootstrap searches a whole batch of resamples; in
+        parallel each worker searches a chunk. Each resample's breakpoints
+        must not depend on which (#239)."""
+        from sars import _threshold as th
+
+        data = sars.load_aegean()
+        x = np.log(data["area"].to_numpy(float))
+        y = data["species"].to_numpy(float)
+        ys = y + np.random.default_rng(5).normal(0, np.std(y) * 0.3, size=(60, len(y)))
+        whole = th._resample_breakpoints(model, x, ys, None)
+        chunks = np.vstack(
+            [th._resample_breakpoints(model, x, c, None) for c in np.array_split(ys, 7)]
+        )
+        alone = np.vstack(
+            [th._resample_breakpoints(model, x, ys[i : i + 1], None) for i in range(0, 60, 6)]
+        )
+        np.testing.assert_array_equal(chunks, whole)
+        np.testing.assert_array_equal(alone, whole[::6])
+
     def test_vectorised_searches_match_trying_every_pair(self):
         """The two-threshold searches score pairs in bulk; the pair they pick must be the
         one fitting every pair separately would."""
