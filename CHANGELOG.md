@@ -28,6 +28,9 @@ reconstructed from the commit history and the
   `nortest::lillie.test`; above 0.1 the p value comes from a simulated null (and is at
   least 0.1), within about 0.01 of the true value, where R's polynomial fit is off by up
   to 0.03 (#152)
+- A Galápagos example for `from_geodataframe`: 28 island outlines from OpenStreetMap,
+  joined by name to `load_gala()`'s plant counts, fitted over 0.02 to 4,700 km² and
+  compared with the published areas (#153)
 
 ### Changed
 

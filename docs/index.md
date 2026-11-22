@@ -69,6 +69,10 @@ shows what a weak fit and a wide bootstrap interval look like.
 reprojects them to an equal-area coordinate system, and builds the dataset with
 `from_geodataframe`, checking the computed areas against published ones.
 
+[Galápagos islands from polygons](examples/galapagos_polygons.ipynb) joins 28 island
+outlines from OpenStreetMap to Johnson and Raven's plant counts by name, and fits a curve
+to areas computed from the polygons over 0.02 to 4,700 km².
+
 ## Support and contributing
 
 Bug reports, questions, and feature requests go in the

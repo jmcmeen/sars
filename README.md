@@ -72,7 +72,9 @@ A [second example](https://jmcmeen.github.io/sars/examples/appalachian/) takes p
 amphibian counts from 26 southern Appalachian sites, read from a CSV, through the same
 steps, and compares the classical log-log power fit with the non-linear one. A
 [third](https://jmcmeen.github.io/sars/examples/geodataframe/) computes site areas from
-polygons with `from_geodataframe`.
+polygons with `from_geodataframe`, and a
+[fourth](https://jmcmeen.github.io/sars/examples/galapagos_polygons/) does so for 28
+Galápagos islands from OpenStreetMap, over 0.02 to 4,700 km².
 
 ## Available models
 
