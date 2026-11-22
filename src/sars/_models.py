@@ -209,6 +209,9 @@ class SARFit:
         ``converged``: the data want it further out. ``param_table`` gives
         such a parameter no standard error.
 
+        Computed from the fit's data on each access, so it raises if that
+        data has been changed since.
+
         Returns
         -------
         tuple of str
@@ -220,10 +223,10 @@ class SARFit:
         ValueError
             As ``predict``, for a fit whose model or data have been edited.
         """
+        spec = self._spec()
         if not self.converged:
             return ()
-        spec = self._spec()
-        names = list(self.params)
+        names = list(spec.param_names)
         area, species = self._fitted_data(spec)
         estimate = np.array([self.params[k] for k in names], dtype=float)
         on_bound = _on_bound(self.model, estimate, area, species)
@@ -307,7 +310,7 @@ class SARFit:
         if not 0.0 < conf < 1.0:
             raise ValueError(f"conf must be between 0 and 1, got {conf}")
         spec = self._spec()
-        names = list(self.params)
+        names = list(spec.param_names)
         estimate = np.array([self.params[k] for k in names], dtype=float)
         std_error = np.full(len(names), np.nan)
         dof = self.n - len(names)

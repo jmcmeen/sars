@@ -147,7 +147,8 @@ and any other whose standard error depends on it, and for a parameter that stopp
 of the bounds the fit searches within: there the optimum is the bound's, not the data's.
 `sar_weibull4` on the Galápagos data runs along a nearly flat ridge, `c` falling toward 0
 as `z` grows, until `z` reaches its upper bound of 10, so `z` has no standard error and
-`c`'s dwarfs its estimate. A fit with as many parameters as islands has `NaN` too, without
+`c`'s dwarfs its estimate. `fit.at_bounds` names such parameters without the warning
+(`("z",)` here), for code that compares many fits. A fit with as many parameters as islands has `NaN` too, without
 a warning. A large but finite standard error is the ordinary case of a parameter the data
 only weakly determine.
 

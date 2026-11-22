@@ -489,8 +489,20 @@ def test_at_bounds_on_a_near_vertical_curve():
     species = np.linspace(3, 750, 30)
     fit = sars.sar_power(pd.DataFrame({"area": area, "species": species}))
     assert fit.converged
-    assert fit.params["z"] == pytest.approx(5.0)
     assert fit.at_bounds == ("z",)
+    with pytest.warns(UserWarning, match="stopped on a bound"):
+        assert np.isnan(fit.param_table().loc["z", "std_error"])
+
+
+def test_at_bounds_and_param_table_follow_the_model_order(galap_fits):
+    """A fit built with its params in another order: both line the values up
+    with the model's parameters, not the dict's order."""
+    fit = galap_fits["weibull4"]
+    shuffled = dataclasses.replace(fit, params=dict(reversed(list(fit.params.items()))))
+    assert shuffled.at_bounds == ("z",)
+    with pytest.warns(UserWarning):
+        table = shuffled.param_table()
+    assert list(table.index) == list(fit.params)
 
 
 def test_at_bounds_is_empty_for_a_fit_that_didnt_converge(galap_fits):

@@ -17,6 +17,12 @@ reconstructed from the commit history and the
   model's z at 5 on a near-vertical curve, say), for code that compares many
   fits.
 
+### Fixed
+
+- `param_table` lines parameter values up with the model's parameters, not
+  the order of the fit's `params` dict, which could differ for a fit built
+  by hand.
+
 ## [0.11.4] - 2026-11-22
 
 ### Added
