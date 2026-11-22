@@ -32,10 +32,22 @@ def fit():
 
 
 @pytest.mark.parametrize(
-    "name", ["logc", "z", "logc_se", "z_se", "sd_logc", "sd_z", "corr", "sigma"]
+    ("name", "rel"),
+    [
+        ("logc", 1e-5),
+        ("z", 1e-5),
+        # The REML surface is flat along the variance parameters: optimisers
+        # (and scipy versions) stop at points that agree to about 1e-5.
+        ("logc_se", 1e-4),
+        ("z_se", 1e-4),
+        ("sd_logc", 1e-4),
+        ("sd_z", 1e-4),
+        ("corr", 1e-4),
+        ("sigma", 1e-5),
+    ],
 )
-def test_matches_lme4(fit, name):
-    assert getattr(fit, name) == pytest.approx(FIT[name], rel=1e-5)
+def test_matches_lme4(fit, name, rel):
+    assert getattr(fit, name) == pytest.approx(FIT[name], rel=rel)
 
 
 def test_reml_criterion_matches_lme4(fit):
