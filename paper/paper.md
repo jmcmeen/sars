@@ -109,8 +109,8 @@ architectural decision that makes the package composable: `sar_multi()` fits
 any subset of the twenty models, named by the user, and returns the fits that
 converge together with a summary table ranked by AICc; `sar_average()` fits a
 set the same way and weights it into a model-averaged curve, keeping that
-multi-model result alongside. `sar_pred()` takes a single fit, a set of fits
-or their average alike, as well as the threshold and log-log power fits,
+multi-model result alongside. `sar_pred()` takes a `SARFit`, a `MultiSARFit`
+or an `AveragedSAR` alike, as well as the threshold and log-log power fits,
 which have result types of their own, and each has a matching plot function,
 so moving from one model to a weighted average needs no change of interface.
 The general dynamic and random placement models, which need island age or
