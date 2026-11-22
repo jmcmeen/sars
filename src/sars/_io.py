@@ -238,6 +238,58 @@ def load_xu() -> pd.DataFrame:
     return _load_dataset("xu")
 
 
+def load_habitat() -> pd.DataFrame:
+    """Load the Skyros land snail dataset, with habitat counts, for `sar_habitat`.
+
+    Twelve islands of the Skyros Archipelago in the Aegean Sea, Greece: each
+    island's area (km²), its number of habitats, and the number of land snail
+    species recorded on it. The values are those shipped in R sars, in its
+    row order.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns 'area', 'habitats' and 'species'.
+
+    References
+    ----------
+    Triantis KA, Mylonas M, Weiser MD, Lika K, Vardinoyannis K (2005).
+    Species richness, environmental heterogeneity and area: a case study based
+    on land snails in Skyros archipelago (Aegean Sea, Greece). Journal of
+    Biogeography 32, 1727-1735.
+    """
+    df = _load_dataset("habitat")
+    return df.rename(columns={"Area": "area", "Het": "habitats", "Species": "species"})
+
+
+def load_countryside() -> pd.DataFrame:
+    """Load the Portuguese multi-habitat plant dataset, for `sar_countryside`.
+
+    425 nested sampling sites in five 26.2-ha habitat mosaics in Portugal:
+    each site's area (m²) of agricultural land (``Area_AG``), shrubland
+    (``Area_SH``) and oak forest (``Area_QF``), and the number of understory
+    plant species in each habitat-affinity group: species of agricultural
+    land, shrubland or oak forest (``Spcs_AG``, ``Spcs_SH``, ``Spcs_QF``),
+    and ubiquitous species (``Spcs_UB``). The plots are 1 m², nested in
+    squares of 64 m², 4,096 m² and the whole mosaic, so the rows aren't
+    independent. The values are those shipped in R sars, in its row order,
+    with its row names in ``site``.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns 'site', three of habitat areas and four of
+        richness.
+
+    References
+    ----------
+    Proença V, Pereira HM (2013). Species-area models to assess biodiversity
+    change in multi-habitat landscapes: the importance of species habitat
+    affinity. Basic and Applied Ecology 14, 102-114.
+    """
+    return _load_dataset("countryside")
+
+
 def from_df(
     df: pd.DataFrame,
     area_col: str = "area",

@@ -42,6 +42,12 @@ reconstructed from the commit history and the
   its known upward bias. The CLI runs it as `sars loss` (#224)
 - `bootstrap_ci(keep_samples=True)` keeps every resample's prediction in
   `BootstrappedCI.samples` (#224)
+- `sars.sar_habitat()`, R sars's habitat models (choros, jigsaw, Kallimanis and the
+  classical curve) in power, logarithmic and log-log forms, and `sars.sar_countryside()`,
+  the countryside model for multi-habitat landscapes, with habitat affinities and
+  predictions for any mix of habitats. Both match R sars 2.1.1. New datasets for them,
+  `load_habitat()` and `load_countryside()` (#230)
+- `sars.to_json()` saves pandas Series (#230)
 - An optional HTTP server, `sars serve` (the `server` extra: FastAPI and uvicorn). Each
   endpoint (`/v1/fit`, `average`, `threshold`, `cv`, `loss`, `predict`, `datasets`)
   runs the matching `sars` command in a subprocess and returns its JSON envelope. It

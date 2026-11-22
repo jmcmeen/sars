@@ -1,6 +1,7 @@
 # Datasets
 
-Seven published island datasets ship with the package. Each loader returns a
+Seven published island datasets ship with the package, and two more in the formats
+of the habitat models (below). Each loader returns a
 DataFrame with `area` and `species` columns; `load_gala`, `load_schrader` and
 `load_xu` add `island` (the island's name or survey code), and `load_gala`
 `endemics`.
@@ -21,6 +22,16 @@ with R's directly; `load_gala`'s are those in R `faraway`'s `gala`. `load_schrad
 `load_xu` come from the compilation of Gooriah et al. (2021), released under CC0, with
 the areas converted from hectares. Only `load_schrader` has islands with no species,
 which have to be dropped before most fits (see below).
+
+Two more come in the formats the habitat models take, from R `sars` 2.1.1:
+
+| Loader | Sites | Taxon | Columns | Source |
+| ------ | ----- | ----- | ------- | ------ |
+| `load_habitat()` | 12 islands, Skyros, Greece | Land snails | `area` (km²), `habitats`, `species` | Triantis et al. (2005) |
+| `load_countryside()` | 425 nested plots, Portugal | Understory plants | three habitat areas (m²), four habitat-affinity groups' richness | Proença & Pereira (2013) |
+
+`load_countryside`'s plots are nested (1 m² plots within 64 m², 4,096 m² and 26.2 ha
+squares), so its rows aren't independent.
 
 Some things to know about each:
 

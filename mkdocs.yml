@@ -79,6 +79,7 @@ nav:
       - Models: api/models.md
       - Multi-model Inference: api/inference.md
       - Threshold Models: api/threshold.md
+      - Habitat Models: api/habitat.md
       - Random Placement: api/coleman.md
       - General Dynamic Model: api/gdm.md
       - Plotting: api/plots.md

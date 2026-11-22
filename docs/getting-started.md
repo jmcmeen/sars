@@ -492,6 +492,70 @@ and, given `ci`, their intervals shaded:
 sars.plot_threshold(th, ci=ci)
 sars.plot_threshold(th, model="DiscOne")   # separate lines either side of the jump
 ```
+## Habitat models
+
+Richness can depend on how many habitats an island has as well as on its size.
+`sar_habitat` fits R sars's four habitat models:
+
+- **choros**, on area times the number of habitats;
+- **jigsaw**, with habitats as pieces of area, each with its own species;
+- **Kallimanis**, whose slope rises with habitat diversity;
+- **the classical curve**, on area alone.
+
+```python
+fit = sars.sar_habitat(sars.load_habitat())  # Skyros land snails: area, habitats, species
+fit.summary[["model", "z", "d", "R2", "AICc"]]
+#         model      z      d     R2    AICc
+# 0      choros  0.147    NaN  0.914   2.228
+# 1      jigsaw  0.086  0.501  0.940   2.614
+# 2       power  0.177    NaN  0.877   6.444
+# 3  Kallimanis  0.179 -0.000  0.877  11.150
+```
+
+By default (`mod_type="power_log"`, as in R) the power forms are fitted as regressions on
+the logs. `mod_type="power"` fits them by non-linear least squares, and `"logarithmic"`
+fits the logarithmic forms instead. On these 12 islands, choros and jigsaw beat area
+alone, and Kallimanis doesn't. In the jigsaw model richness rises faster with habitats (d = 0.50) than
+with area (z = 0.09). `fit.predict(area, habitats)` uses the best model, or the one named
+in `model=`.
+
+`sar_countryside` fits the countryside model, for landscapes of several habitats whose
+species differ in which habitats they use. Each group of species, sorted by habitat
+affinity, gets a curve of a weighted sum of the habitat areas. The weights say how much
+each habitat counts for that group:
+
+```python
+cs = sars.load_countryside()  # Portuguese plants: three habitats, four species groups
+fit = sars.sar_countryside(
+    cs,
+    habitats=["Area_AG", "Area_SH", "Area_QF"],
+    species=["Spcs_AG", "Spcs_SH", "Spcs_QF", "Spcs_UB"],
+)
+fit.affinity.round(3)
+#          Area_AG  Area_SH  Area_QF
+# Spcs_AG    1.000    0.000      0.0
+# Spcs_SH    0.000    1.000      0.0
+# Spcs_QF    0.000    0.000      1.0
+# Spcs_UB    0.420    0.106      1.0
+```
+
+Each habitat's specialists depend on it alone. The ubiquitous species use all three,
+oak forest most. The fit predicts richness for any mix of habitats. Here are 26 ha of
+each habitat alone, then a third of each:
+
+```python
+fit.predict([[262144, 0, 0], [0, 262144, 0], [0, 0, 262144], [87381, 87381, 87382]])
+#    Spcs_AG  Spcs_SH  Spcs_QF  Spcs_UB  total
+# 0     50.3      0.6      5.3      7.7   63.9
+# 1      3.8     16.6      4.1      6.0   30.4
+# 2      4.6      5.1     33.7      9.1   52.5
+# 3     44.0     14.7     28.9      8.0   95.6
+```
+
+On these data, the countryside model's error in total richness is half that of one power
+curve of total area (`fit.rss`: 5,256 against 10,573). Both functions reproduce R sars's
+fits, and their results save as JSON like the others.
+
 ## Random placement
 
 Coleman's (1981) random placement model asks whether species-area data need any ecology at

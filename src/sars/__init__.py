@@ -15,6 +15,7 @@ from sars._checks import ResidualChecks
 from sars._coleman import ColemanFit, ColemanTest, coleman
 from sars._crossval import LOOCV, loo_cv
 from sars._gdm import GDMFit, GDMMultiFit, sar_gdm
+from sars._habitat import CountrysideFit, HabitatFit, sar_countryside, sar_habitat
 from sars._inference import (
     AveragedSAR,
     BootstrappedCI,
@@ -32,8 +33,10 @@ from sars._io import (
     from_pyinaturalist,
     load_aegean,
     load_aegean2,
+    load_countryside,
     load_gala,
     load_galap,
+    load_habitat,
     load_niering,
     load_schrader,
     load_xu,
@@ -84,8 +87,10 @@ __all__ = [
     "LinPowFit",
     "ColemanFit",
     "ColemanTest",
+    "CountrysideFit",
     "GDMFit",
     "GDMMultiFit",
+    "HabitatFit",
     "HabitatLoss",
     "LOOCV",
     "ManySARFit",
@@ -108,14 +113,18 @@ __all__ = [
     "load",
     "load_aegean",
     "load_aegean2",
+    "load_countryside",
     "load_gala",
     "load_galap",
+    "load_habitat",
     "load_niering",
     "load_schrader",
     "load_xu",
     "loo_cv",
     "sar_average",
+    "sar_countryside",
     "sar_gdm",
+    "sar_habitat",
     "sar_many",
     "sar_multi",
     "sar_pred",

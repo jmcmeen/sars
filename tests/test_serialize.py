@@ -230,3 +230,20 @@ def test_a_look_alike_class_is_refused():
 
     with pytest.raises(TypeError, match="saves sars results"):
         sars.to_json(LinPowFit(0.3))
+
+
+@pytest.mark.parametrize(
+    "series",
+    [
+        pd.Series([1.5, np.nan], index=["a", "b"], name="c"),
+        pd.Series([1, 2], name=None),
+        pd.Series(pd.array([1, None], dtype="Int64"), index=pd.Index(["x", "y"], name="group")),
+        pd.Series([1.0, 2.0]).rename_axis("g"),
+    ],
+    ids=["named-float", "unnamed-int", "nullable-with-index-name", "named-range-index"],
+)
+def test_series_round_trip(series):
+    from sars._serialize import _decode, _encode
+
+    again = _decode(json.loads(json.dumps(_encode(series), allow_nan=False)))
+    pd.testing.assert_series_equal(again, series)

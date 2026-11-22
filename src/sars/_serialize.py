@@ -19,6 +19,7 @@ def _result_types() -> dict[str, type]:
     """The result classes JSON may rebuild, by name. Nothing else is ever
     constructed from a file, so loading one can't run arbitrary code."""
     from sars._crossval import LOOCV
+    from sars._habitat import CountrysideFit, HabitatFit
     from sars._inference import AveragedSAR, BootstrappedCI, MultiSARFit
     from sars._linpow import LinPowFit
     from sars._loss import HabitatLoss
@@ -37,6 +38,8 @@ def _result_types() -> dict[str, type]:
         ManySARFit,
         LOOCV,
         HabitatLoss,
+        HabitatFit,
+        CountrysideFit,
     ]
     return {cls.__name__: cls for cls in classes}
 
@@ -46,7 +49,7 @@ def to_json(obj: Any, indent: int | None = None) -> str:
 
     Works for every result the package returns (`SARFit`, `MultiSARFit`,
     `AveragedSAR`, `BootstrappedCI`, `LinPowFit`, `ThresholdFit`,
-    `ThresholdCI`, `ManySARFit`, `LOOCV`, `HabitatLoss`), with its data, parameters and
+    `ThresholdCI`, `ManySARFit`, `LOOCV`, `HabitatLoss`, `HabitatFit`, `CountrysideFit`), with its data, parameters and
     settings. The
     text is standard JSON: NaN and infinite numbers (an AICc that is
     undefined, say) are written as strings and read back as numbers. It
@@ -172,6 +175,15 @@ def _encode(value: Any) -> Any:
         return {"__type__": name, "fields": fields}
     if isinstance(value, pd.DataFrame):
         return {"__frame__": _encode_frame(value)}
+    if isinstance(value, pd.Series):
+        # As a one-column frame, so it keeps its dtype and index; its name
+        # (which may be None) goes alongside.
+        return {
+            "__series__": {
+                "name": _encode(value.name),
+                "frame": _encode_frame(value.to_frame(name="values")),
+            }
+        }
     if isinstance(value, np.ndarray):
         return {
             "__array__": {
@@ -208,7 +220,8 @@ def _encode_frame(frame: pd.DataFrame) -> dict[str, Any]:
     if len({repr(n) for n in names}) != len(names):
         raise TypeError(f"Can't save a DataFrame with repeated column names: {names}")
     index = frame.index
-    if isinstance(index, pd.RangeIndex) and index.start == 0 and index.step == 1:
+    default = isinstance(index, pd.RangeIndex) and index.start == 0 and index.step == 1
+    if default and index.name is None:
         encoded_index = None  # the default index, rebuilt from the length
     elif isinstance(index, pd.MultiIndex):
         encoded_index = {
@@ -283,6 +296,11 @@ def _decode(value: Any) -> Any:
         return types[name](**fields)
     if "__frame__" in value:
         return _decode_frame(value["__frame__"])
+    if "__series__" in value:
+        spec = value["__series__"]
+        series = _decode_frame(spec["frame"])["values"]
+        series.name = _decode(spec["name"])
+        return series
     if "__array__" in value:
         spec = value["__array__"]
         flat = _decode(spec["data"])

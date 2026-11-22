@@ -413,5 +413,53 @@ for (m in models) {
 }
 write.csv(do.call(rbind, lillie_fits), out("lillie_galap.csv"), row.names = FALSE)
 
+# 15. Habitat models (sar_habitat) on R sars's habitat data (Skyros land
+#    snails: area, number of habitats, species), in each form: every model's
+#    parameters, R2, AIC, BIC and AICc, unrounded. Then the countryside model
+#    (sar_countryside) on its countryside data, power and logarithmic: each
+#    species group's parameters and RSS, its affinities and c, the predicted
+#    total richness of every site, and the countryside and power-law RSS.
+data(habitat)
+data(countryside)
+hab_rows <- list()
+for (mt in c("power", "logarithmic", "power_log")) {
+  set.seed(SEED)
+  fits <- suppressMessages(sar_habitat(habitat, modType = mt))
+  for (m in names(fits)) {
+    f <- fits[[m]]
+    co <- if (inherits(f, "lm")) coef(f) else f$m$getPars()
+    ic <- sars:::extr_fit(f)
+    hab_rows[[length(hab_rows) + 1]] <- data.frame(
+      modType = mt, model = m, p1 = unname(co[1]), p2 = unname(co[2]),
+      p3 = if (length(co) > 2) unname(co[3]) else NA,
+      rss = sum(residuals(f)^2), R2 = ic[1], adjR2 = ic[2], AIC = ic[3], BIC = ic[4],
+      AICc = ic[5])
+  }
+}
+write.csv(do.call(rbind, hab_rows), out("habitat_models.csv"), row.names = FALSE)
+
+cs_rows <- list()
+cs_tot <- data.frame(site = rownames(countryside))
+cs_rss <- list()
+for (mt in c("power", "logarithmic")) {
+  set.seed(SEED)
+  cs <- suppressWarnings(sar_countryside(countryside, modType = mt,
+                                         habNam = 1:3, spNam = 4:7))
+  for (g in names(cs$fits)) {
+    f <- cs$fits[[g]]
+    p <- f$m$getPars()
+    cs_rows[[length(cs_rows) + 1]] <- data.frame(
+      modType = mt, group = g, h1 = p[["h1"]], h2 = p[["h2"]], h3 = p[["h3"]], z = p[["z"]],
+      rss = sum(residuals(f)^2), aff1 = cs$affinity[[g]][1], aff2 = cs$affinity[[g]][2],
+      aff3 = cs$affinity[[g]][3], c = unname(cs$c[paste0(g, ".c")]))
+  }
+  cs_tot[[mt]] <- cs$Pred.Tot.Rich
+  cs_rss[[length(cs_rss) + 1]] <- data.frame(
+    modType = mt, countryside_rss = unname(cs$rss[1]), sar_rss = unname(cs$rss[2]))
+}
+write.csv(do.call(rbind, cs_rows), out("countryside_fits.csv"), row.names = FALSE)
+write.csv(cs_tot, out("countryside_total.csv"), row.names = FALSE)
+write.csv(do.call(rbind, cs_rss), out("countryside_rss.csv"), row.names = FALSE)
+
 cat("Reference tables written.\n\nPower law:\n")
 print(sar_power(galap))
