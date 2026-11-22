@@ -27,6 +27,13 @@ reconstructed from the commit history and the
   fit five models instead of all 20 to check the IC weighting. A threshold test now
   allows the warning it triggers on some machines (#194, #195, #196, #197)
 
+### Security
+
+- The development lockfile moves to Pillow 13.0.0, tornado 6.6.1 and soupsieve 4.1.3,
+  which fix the vulnerabilities GitHub reported in the versions it locked. soupsieve
+  stays at 2.10 for Python before 3.11.5, which no fixed release supports. None of
+  this changes what pip installs for users (#202)
+
 ## [0.11.1] - 2026-11-22
 
 ### Added
