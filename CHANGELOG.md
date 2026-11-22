@@ -42,6 +42,10 @@ reconstructed from the commit history and the
   its known upward bias. The CLI runs it as `sars loss` (#224)
 - `bootstrap_ci(keep_samples=True)` keeps every resample's prediction in
   `BootstrappedCI.samples` (#224)
+- `sars.lin_pow_mixed()`: the log-log power model fitted to several archipelagos at once,
+  with random intercepts and slopes, by REML. It gives the mean z, its spread across
+  archipelagos, and each archipelago's partially pooled c and z beside its own fit. It
+  matches R's `lme4::lmer` and needs no new dependency (#234)
 - `sars.standardised_richness()`: richness standardised for sampling effort, rarefied or
   extrapolated to the same sample coverage or number of individuals from a species-by-site
   table, matching R's iNEXT, ready to fit. `load_xu_abundance()` has the butterfly counts

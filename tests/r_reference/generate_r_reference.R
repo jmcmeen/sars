@@ -489,5 +489,29 @@ if (requireNamespace("iNEXT", quietly = TRUE) && requireNamespace("vegan", quiet
              out("effort_versions.txt"))
 }
 
+# 17. The log-log power model fitted to six archipelagos at once, with
+#    random intercepts and slopes, by lme4's lmer (REML). mixed_data.csv holds
+#    the Python package's bundled gala, aegean, aegean2, niering, schrader and
+#    xu data, three of which R sars doesn't have; make_mixed_data.py writes it
+#    (run it first). One is added to every richness value, as Schrader's has
+#    zeros. Needs lme4; skipped without it.
+if (requireNamespace("lme4", quietly = TRUE) && file.exists(out("mixed_data.csv"))) {
+  md <- read.csv(out("mixed_data.csv"))
+  md$S <- md$species + md$con
+  mf <- lme4::lmer(log(S) ~ log(area) + (log(area) | group), data = md, REML = TRUE,
+                   control = lme4::lmerControl(optimizer = "bobyqa"))
+  vc <- as.data.frame(lme4::VarCorr(mf))
+  se <- sqrt(diag(as.matrix(vcov(mf))))
+  write.csv(data.frame(
+    logc = lme4::fixef(mf)[[1]], z = lme4::fixef(mf)[[2]], logc_se = se[[1]], z_se = se[[2]],
+    sd_logc = vc$sdcor[1], sd_z = vc$sdcor[2], corr = vc$sdcor[3], sigma = vc$sdcor[4],
+    reml = lme4::REMLcrit(mf)), out("mixed_fit.csv"), row.names = FALSE)
+  cf <- coef(mf)$group
+  write.csv(data.frame(group = rownames(cf), logc = cf[[1]], z = cf[[2]]),
+            out("mixed_groups.csv"), row.names = FALSE)
+  writeLines(c(paste("lme4", as.character(packageVersion("lme4"))), R.version.string),
+             out("mixed_versions.txt"))
+}
+
 cat("Reference tables written.\n\nPower law:\n")
 print(sar_power(galap))

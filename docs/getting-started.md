@@ -78,6 +78,42 @@ and the line on log-log axes.
 `load_galap()` is one of seven bundled datasets; `load_gala()`, `load_aegean()`,
 `load_aegean2()`, `load_niering()`, `load_schrader()` and `load_xu()` load the
 others. [Datasets](datasets.md) lists what each holds and where it was published.
+
+### Many archipelagos at once
+
+Fitting each archipelago on its own gives noisy slopes for the small ones; pooling them
+into one curve ignores that they differ. `lin_pow_mixed` fits the log-log model to all of
+them at once as a mixed model. Each archipelago's intercept and slope deviate from
+shared means, and the spread of those deviations is estimated too. It matches R's
+`lme4::lmer(log(S) ~ log(A) + (log(A) | archipelago))`:
+
+```python
+fit = sars.lin_pow_mixed({
+    "gala": sars.load_gala(), "aegean": sars.load_aegean(), "aegean2": sars.load_aegean2(),
+    "niering": sars.load_niering(), "schrader": sars.load_schrader(), "xu": sars.load_xu(),
+})
+fit.z, fit.z_se, fit.sd_z     # (0.325, 0.034, 0.079)
+fit.groups[["n", "z", "z_alone"]].round(3)
+#             n      z  z_alone
+# gala       30  0.352    0.366
+# aegean     90  0.199    0.195
+# aegean2   173  0.338    0.336
+# niering    32  0.349    0.348
+# schrader   60  0.426    0.432
+# xu         42  0.288    0.302
+```
+
+Across these six archipelagos the mean slope is 0.33 ± 0.03. Archipelagos' slopes vary
+around it with a standard deviation of 0.08. Allowing for the mean's own uncertainty too,
+a new archipelago's z would most likely fall between about 0.16 and 0.49. Each archipelago's pooled `z` sits beside its own
+`z_alone`. The pooled values move towards the mean, most for archipelagos with few
+islands or a poor fit. Intercept and slope move together, so with correlated deviations
+a slope can move slightly the other way, as Xu's does here. `fit.predict(area)` gives
+the mean curve, and `fit.predict(area, group="xu")` an archipelago's own. As with
+`lin_pow`, when an island has no species `con` (1) is added to every richness value
+before taking logs. That happens here because of Schrader's empty islets, and it applies
+to all six archipelagos, so that they share one log scale.
+
 ## Parameter uncertainty
 
 `param_table()` gives each parameter's standard error, a t test against zero, and a

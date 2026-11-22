@@ -33,6 +33,7 @@ uvicorn): `pip install "sars[server]"`.
 - **Habitat loss** — species expected to be lost with habitat, with model-averaged bootstrap intervals
 - **Cross-validation** — rank models by how well they predict a left-out island, beside AICc
 - **Save and reload results** — any fit or result as standard JSON, data and settings included
+- **Many archipelagos at once** — a mixed-effects log-log model pooling z across archipelagos (matches lme4)
 - **Sampling effort** — richness standardised to equal sample coverage or size (as iNEXT) before fitting
 - **Habitat models** — the choros, jigsaw and Kallimanis models of area and habitat diversity, and the countryside model for multi-habitat landscapes
 - **HTTP server** — the command line as a small JSON API (`sars serve`, optional extra)

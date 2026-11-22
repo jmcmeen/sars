@@ -15,6 +15,15 @@ intervals.
 ## LinPowFit
 
 ::: sars.LinPowFit
+
+## lin_pow_mixed
+
+::: sars.lin_pow_mixed
+
+## MixedLinPowFit
+
+::: sars.MixedLinPowFit
+
 ## ResidualChecks
 
 ::: sars.ResidualChecks

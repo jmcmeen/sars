@@ -46,6 +46,7 @@ from sars._io import (
 from sars._linpow import LinPowFit, lin_pow
 from sars._loss import HabitatLoss, habitat_loss
 from sars._many import ManySARFit, sar_many
+from sars._mixed import MixedLinPowFit, lin_pow_mixed
 from sars._models import (
     SARFit,
     sar_asymp,
@@ -96,6 +97,7 @@ __all__ = [
     "HabitatLoss",
     "LOOCV",
     "ManySARFit",
+    "MixedLinPowFit",
     "MultiSARFit",
     "ResidualChecks",
     "SARFit",
@@ -112,6 +114,7 @@ __all__ = [
     "from_pyinaturalist",
     "habitat_loss",
     "lin_pow",
+    "lin_pow_mixed",
     "load",
     "load_aegean",
     "load_aegean2",
