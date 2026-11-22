@@ -1,3 +1,4 @@
+import dataclasses
 import warnings
 
 import numpy as np
@@ -565,17 +566,22 @@ def test_a_fit_missing_a_parameter_says_which():
         fit.predict(10.0)
 
 
-@pytest.mark.parametrize("change", ["a value", "the rows"])
+@pytest.mark.parametrize("change", ["a value", "a row added", "a row dropped"])
 def test_param_table_refuses_data_changed_since_the_fit(change):
     """The fit keeps the caller's DataFrame, not a copy; a table computed from
-    other data than the parameters were fitted to would be silently wrong."""
+    other data than the parameters were fitted to would be silently wrong. A row
+    is added in place with .loc, the way a frame still changes length in place
+    once pandas 4 drops inplace from drop(); a frame can no longer shrink in
+    place, so the fit is handed a shorter one."""
     data = pd.DataFrame({"area": _X, "species": _Y})
     fit = sars.sar_linear(data)
     _quiet_table(fit)
     if change == "a value":
         data.loc[0, "species"] += 5.0
+    elif change == "a row added":
+        data.loc[data.index.max() + 1, ["area", "species"]] = [_X.max() * 2, _Y.max()]
     else:
-        data.drop(index=0, inplace=True)
+        fit = dataclasses.replace(fit, data=data.iloc[1:])
     with pytest.raises(ValueError, match="data of this 'linear' fit have changed"):
         fit.param_table()
 

@@ -106,6 +106,9 @@ reconstructed from the commit history and the
 - The notebook tests shut each notebook's kernel down and close its zmq sockets when the
   notebook finishes. They used to leave them for garbage collection, which reported them as
   `ResourceWarning`s on whichever test ran next in the same worker (#161)
+- Two tests no longer drop rows with `inplace=True`, which pandas 3.1 deprecates and
+  pandas 4 removes. They change a fit's DataFrame by adding a row in place with `.loc`
+  instead, which still works under pandas 4 (#166)
 
 ## [0.10.0] - 2026-11-21
 

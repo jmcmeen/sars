@@ -1,5 +1,7 @@
 """Tests for threshold / piecewise SAR models."""
 
+import dataclasses
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -755,10 +757,21 @@ class TestThresholdCI:
         with pytest.raises(ValueError, match="has changed since"):
             sars.threshold_ci(fit, model, n_boot=5)
 
-    def test_rows_dropped_since_the_fit_raises(self, galap):
+    def test_rows_added_since_the_fit_raises(self, galap):
+        """A row added in place with .loc, the way a frame still changes length in
+        place once pandas 4 drops inplace from drop()."""
         data = galap.copy()
         fit = sars.sar_threshold(data, interval=COARSE)
-        data.drop(index=data.index[-1], inplace=True)
+        new_row = [data["area"].max() * 2, data["species"].max()]
+        data.loc[data.index.max() + 1, ["area", "species"]] = new_row
+        with pytest.raises(ValueError, match="has changed since"):
+            sars.threshold_ci(fit, n_boot=5)
+
+    def test_rows_dropped_since_the_fit_raises(self, galap):
+        """A frame can no longer shrink in place under pandas 4, so the fit is handed
+        a shorter one."""
+        fit = sars.sar_threshold(galap.copy(), interval=COARSE)
+        fit = dataclasses.replace(fit, data=fit.data.iloc[:-1])
         with pytest.raises(ValueError, match="has changed since"):
             sars.threshold_ci(fit, n_boot=5)
 
