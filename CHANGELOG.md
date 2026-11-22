@@ -25,7 +25,7 @@ reconstructed from the commit history and the
   in a job of their own, instead of on every Python; a failure on the pre-release 3.15
   no longer fails the run; coverage runs on one Python; and three `sar_average` tests
   fit five models instead of all 20 to check the IC weighting. A threshold test now
-  expects the warning it triggers (#194, #195, #196, #197)
+  allows the warning it triggers on some machines (#194, #195, #196, #197)
 
 ## [0.11.1] - 2026-11-22
 

@@ -288,14 +288,17 @@ class TestMoreThresholdModels:
         assert fit.breakpoints_area == pytest.approx(np.exp(fit.best_breakpoints))
         assert fit.predict(np.exp([1.0, 6.5])) == pytest.approx([10.0, 40.0], abs=0.2)
 
+    # DiscTwo fits these jumps exactly. Where the RSS rounds to exactly 0 (it's
+    # 1.6e-28 on some machines), its AICc is -inf and sar_threshold warns that AICc
+    # is undefined; the warning depends on the platform, so it's allowed, not expected.
+    @pytest.mark.filterwarnings("ignore:AICc is undefined for DiscTwo:UserWarning")
     def test_jumps_are_recovered_by_the_discontinuous_models(self):
         x = np.arange(1.0, 13.0)
         y = np.where(x <= 4, 5.0 + x, np.where(x <= 8, 30.0 + 2 * x, 80.0 - x))
         data = pd.DataFrame({"area": np.exp(x), "species": y})
         one = sars.sar_threshold(data, models=["DiscOne"]).all_fits["DiscOne"]
         assert one["breakpoints"][0] in (4.0, 8.0)  # at one of the jumps
-        with pytest.warns(UserWarning, match="AICc is undefined for DiscTwo with 12"):
-            two = sars.sar_threshold(data, models=["DiscTwo", "DiscOne", "Linear"])
+        two = sars.sar_threshold(data, models=["DiscTwo", "DiscOne", "Linear"])
         assert two.best_model == "DiscTwo"
         assert two.best_breakpoints == pytest.approx((4.0, 8.0))
         assert two.all_fits["DiscTwo"]["rss"] == pytest.approx(0.0, abs=1e-18)
