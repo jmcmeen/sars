@@ -68,6 +68,7 @@ nav:
   - Models: models.md
   - Datasets: datasets.md
   - Validation: validation.md
+  - Command Line: cli.md
   - Examples:
       - Galápagos plants: examples/galapagos.ipynb
       - Appalachian amphibians: examples/appalachian.ipynb

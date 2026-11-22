@@ -18,6 +18,10 @@ reconstructed from the commit history and the
   its data, parameters and settings, the `sars` version that wrote it and a format
   version. Non-finite numbers are kept, and loading rebuilds only `sars`'s own result
   types (#215)
+- A `sars` command (also `python -m sars`), with no extra dependencies: `sars fit`,
+  `average`, `threshold`, `predict` and `datasets`. It reads a CSV file, standard input
+  or a bundled dataset, saves results with `--save`, and with `--json` prints a JSON
+  envelope (`sars`, `command`, `ok`, `result` or `error`, `warnings`) (#217)
 
 ## [0.11.3] - 2026-11-22
 

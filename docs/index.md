@@ -15,6 +15,7 @@ A conceptual mirror of the R [`sars`](https://cran.r-project.org/package=sars) p
 - **Log-log power model** -- the classic straight-line fit of log S on log A, with standard errors and p values
 - **Multi-model inference** -- fit all models at once, ranked by AICc with Akaike weights
 - **Save and reload results** -- any fit or result as standard JSON, data and settings included
+- **[Command line](cli.md)** -- `sars fit|average|threshold|predict|datasets`, with JSON output for scripts
 - **Many datasets at once** -- the same models fitted to many datasets, summarised in one table
 - **Parameter uncertainty** -- standard errors, t tests and confidence intervals for each fitted parameter
 - **Model averaging** -- weighted-average predictions across candidate models
