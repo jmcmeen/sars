@@ -158,11 +158,8 @@ repositories, `appalachian-sar` and `etn-sar`, reanalyse the datasets of
 least squares fits reported in those papers with nonlinear least squares,
 multi-model comparison across all twenty models, and threshold analysis. A
 manuscript reporting that reanalysis for Southern Appalachian amphibians and
-reptiles is in preparation. `sars` is also the fitting engine for
-`geneticsar`, a package in development that constructs nested SARs from
-biodiversity occurrence records and applies a genetic algorithm to optimise
-the nesting sequence; its associated papers will cite this software directly.
-The Zenodo archive of `sars` provides a citable DOI for these dependencies.
+reptiles is in preparation. The Zenodo archive of `sars` provides a citable
+DOI for this work.
 
 Beyond the author's own programme, `sars` addresses a demand that is well
 established in the ecological literature. The R `sars` package has accumulated
