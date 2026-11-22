@@ -110,6 +110,13 @@ class TestPlotMulti:
         assert ax.get_title() == "Top 2 SAR models"
         plt.close("all")
 
+    def test_negative_top_n_is_refused(self, galap_multi):
+        """summary.head(-1) used to draw every model but the last."""
+        plt.close("all")
+        with pytest.raises(ValueError, match="top_n must be 0 or more, got -1"):
+            plot_multi(galap_multi, top_n=-1)
+        assert not plt.get_fignums()  # refused before a figure was made
+
     def test_zero_curves_asked_for_is_not_called_unfitted(self, galap):
         ax = plot_multi(sar_multi(galap, models=["power"]), top_n=0)
         assert ax.get_title() == "Top 0 SAR models"

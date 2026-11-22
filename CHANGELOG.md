@@ -10,6 +10,12 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Fixed
+
+- `plot_multi` raises `ValueError` for a negative `top_n`, which it used to read as
+  "all but the last n" models (`top_n=-1` drew 19 of 20). `top_n=0` still draws the
+  observed data alone, now documented (#184)
+
 ## [0.11.2] - 2026-11-22
 
 ### Changed
