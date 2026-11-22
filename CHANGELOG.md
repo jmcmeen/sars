@@ -10,6 +10,14 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Fixed
+
+- `sar_threshold` reports a perfect fit (residual sum of squares exactly 0,
+  which depends on the platform's rounding) as fitting exactly, ranking
+  first, instead of calling its AICc undefined for want of observations (and
+  saying it ranks last). Its AIC, AICc and BIC are -inf without numpy's
+  divide-by-zero warning.
+
 ## [0.11.5] - 2026-11-22
 
 ### Added
@@ -26,11 +34,6 @@ reconstructed from the commit history and the
 
 ### Fixed
 
-- `sar_threshold` reports a perfect fit (residual sum of squares exactly 0,
-  which depends on the platform's rounding) as fitting exactly, ranking
-  first, instead of calling its AICc undefined for want of observations (and
-  saying it ranks last). Its AIC, AICc and BIC are -inf without numpy's
-  divide-by-zero warning.
 - `param_table` lines parameter values up with the model's parameters, not
   the order of the fit's `params` dict, which could differ for a fit built
   by hand.
