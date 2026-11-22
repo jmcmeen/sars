@@ -10,6 +10,8 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+## [0.11.6] - 2026-11-22
+
 ### Fixed
 
 - `threshold_ci` gives the same bounds with `n_jobs > 1` as serially on every
@@ -761,7 +763,8 @@ reconstructed from the commit history and the
 - Project skeleton: package layout, CI, publishing workflow, license, and
   citation file.
 
-[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.5...HEAD
+[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.6...HEAD
+[0.11.6]: https://github.com/jmcmeen/sars/compare/v0.11.5...v0.11.6
 [0.11.5]: https://github.com/jmcmeen/sars/compare/v0.11.4...v0.11.5
 [0.11.4]: https://github.com/jmcmeen/sars/compare/v0.11.3...v0.11.4
 [0.11.3]: https://github.com/jmcmeen/sars/compare/v0.11.2...v0.11.3
