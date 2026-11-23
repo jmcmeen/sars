@@ -10,6 +10,15 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Fixed
+
+- Five wrong references. In the JOSS paper's bibliography, the DOIs of
+  Matthews et al. (2016), Guilhaumon et al. (2008) and Guilhaumon et al.
+  (2010) pointed to other papers or to nothing. In the README, Kobayashi's
+  model is cited with part I's year, volume and pages (1974, vol. 15,
+  223-237), and `betap` is credited to Mielke & Johnson's (1974) beta-P
+  distribution instead of an unrelated 2007 regression paper.
+
 ## [0.11.7] - 2026-11-23
 
 ### Fixed

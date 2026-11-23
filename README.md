@@ -135,7 +135,8 @@ This package is a Python implementation inspired by the R [`sars`](https://githu
 - Arrhenius O (1921). Species and area. *Journal of Ecology*, 9, 95-99. (`power`)
 - Gleason HA (1922). On the relation between species and area. *Ecology*, 3, 158-162. (`loga`)
 - Gompertz B (1825). On the nature of the function expressive of the law of human mortality. *Philosophical Transactions of the Royal Society of London*, 115, 513-583. (`gompertz`)
-- Kobayashi S (1975). The species-area relation. I. A model for discrete sampling. *Researches on Population Ecology*, 17, 87-96. (`koba`)
+- Kobayashi S (1974). The species-area relation. I. A model for discrete sampling. *Researches on Population Ecology*, 15, 223-237. (`koba`)
+- Mielke PW, Johnson ES (1974). Some generalized beta distributions of the second kind having desirable application features in hydrology and meteorology. *Water Resources Research*, 10, 223-226. (`betap`)
 - Monod J (1950). La technique de culture continue: theorie et applications. *Annales de l'Institut Pasteur*, 79, 390-410. (`monod`)
 - Morgan PH, Mercer LP, Flodin NW (1975). General model for nutritional responses of higher organisms. *Proceedings of the National Academy of Sciences*, 72, 4327-4331. (`mmf`)
 - Ratkowsky DA (1990). *Handbook of Nonlinear Regression Models*. Marcel Dekker, New York. (`asymp`, `ratio`)
@@ -143,7 +144,6 @@ This package is a Python implementation inspired by the R [`sars`](https://githu
 - Rosenzweig ML (1995). *Species Diversity in Space and Time*. Cambridge University Press. (`powerR`)
 - Ulrich W, Buszko J (2003). Self-similarity and the species-area relation of Polish butterflies. *Basic and Applied Ecology*, 4, 263-270. (`p1`, `p2`)
 - Weibull W (1951). A statistical distribution function of wide applicability. *Journal of Applied Mechanics*, 18, 293-297. (`weibull3`, `weibull4`)
-- Minami M, Lennert-Cody CE, Gao W, Roman-Verdesoto M (2007). Modeling shark bycatch: the zero-inflated negative binomial regression model with smoothing. *Fisheries Research*, 84, 210-221. (`betap`)
 
 ### Data
 
