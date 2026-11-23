@@ -10,6 +10,8 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+## [0.11.11] - 2026-11-23
+
 ### Added
 
 - `sars.set_backend("cupy")` screens every fit's start grid on an NVIDIA GPU
@@ -822,7 +824,8 @@ reconstructed from the commit history and the
 - Project skeleton: package layout, CI, publishing workflow, license, and
   citation file.
 
-[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.10...HEAD
+[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.11...HEAD
+[0.11.11]: https://github.com/jmcmeen/sars/compare/v0.11.10...v0.11.11
 [0.11.10]: https://github.com/jmcmeen/sars/compare/v0.11.9...v0.11.10
 [0.11.8]: https://github.com/jmcmeen/sars/compare/v0.11.7...v0.11.8
 [0.11.7]: https://github.com/jmcmeen/sars/compare/v0.11.6...v0.11.7
