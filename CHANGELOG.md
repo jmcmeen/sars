@@ -10,6 +10,8 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+## [0.11.8] - 2026-11-23
+
 ### Fixed
 
 - Five wrong references. In the JOSS paper's bibliography, the DOIs of
@@ -785,7 +787,8 @@ reconstructed from the commit history and the
 - Project skeleton: package layout, CI, publishing workflow, license, and
   citation file.
 
-[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.7...HEAD
+[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.8...HEAD
+[0.11.8]: https://github.com/jmcmeen/sars/compare/v0.11.7...v0.11.8
 [0.11.7]: https://github.com/jmcmeen/sars/compare/v0.11.6...v0.11.7
 [0.11.6]: https://github.com/jmcmeen/sars/compare/v0.11.5...v0.11.6
 [0.11.5]: https://github.com/jmcmeen/sars/compare/v0.11.4...v0.11.5
