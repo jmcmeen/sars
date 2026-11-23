@@ -10,6 +10,8 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+## [0.11.10] - 2026-11-23
+
 ### Changed
 
 - Fits are about 1.25 times faster: the finite-difference Jacobian the
@@ -797,7 +799,8 @@ reconstructed from the commit history and the
 - Project skeleton: package layout, CI, publishing workflow, license, and
   citation file.
 
-[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.8...HEAD
+[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.10...HEAD
+[0.11.10]: https://github.com/jmcmeen/sars/compare/v0.11.9...v0.11.10
 [0.11.8]: https://github.com/jmcmeen/sars/compare/v0.11.7...v0.11.8
 [0.11.7]: https://github.com/jmcmeen/sars/compare/v0.11.6...v0.11.7
 [0.11.6]: https://github.com/jmcmeen/sars/compare/v0.11.5...v0.11.6
