@@ -289,10 +289,9 @@ class TestMoreThresholdModels:
         assert fit.breakpoints_area == pytest.approx(np.exp(fit.best_breakpoints))
         assert fit.predict(np.exp([1.0, 6.5])) == pytest.approx([10.0, 40.0], abs=0.2)
 
-    # DiscTwo fits these jumps exactly. Where the RSS rounds to exactly 0 (it's
-    # 1.6e-28 on some machines), its AICc is -inf and sar_threshold warns that AICc
-    # is undefined; the warning depends on the platform, so it's allowed, not expected.
-    @pytest.mark.filterwarnings("ignore:AICc is undefined for DiscTwo:UserWarning")
+    # DiscTwo fits these jumps exactly (RSS 0 or about 1e-28, by platform), so
+    # sar_threshold warns that it fits exactly; that's tested on its own below.
+    @pytest.mark.filterwarnings("ignore:DiscTwo fits the data exactly:UserWarning")
     def test_jumps_are_recovered_by_the_discontinuous_models(self):
         x = np.arange(1.0, 13.0)
         y = np.where(x <= 4, 5.0 + x, np.where(x <= 8, 30.0 + 2 * x, 80.0 - x))
@@ -306,15 +305,34 @@ class TestMoreThresholdModels:
         # A point at a breakpoint is in the segment to its left, as in the fit.
         assert two.predict(np.exp([4.0, 8.0])) == pytest.approx([9.0, 46.0])
 
-    def test_a_perfect_fit_ranks_first_and_says_why(self, monkeypatch):
-        """Where DiscTwo's RSS rounds to exactly 0 (it's about 1e-28 on some
-        machines, 0 on others), its AICc is -inf: the warning says it fits
-        exactly, not that n > k + 1 is needed, and it ranks first."""
+    def test_an_exact_fit_with_too_few_observations_is_only_undefined(self):
+        """With n <= k + 1 an exact fit's AICc is undefined: the warning says
+        that, not that it fits exactly and ranks high."""
+        x = np.arange(1.0, 11.0)
+        y = np.where(x <= 4, 5.0 + x, np.where(x <= 7, 30.0 + 2 * x, 80.0 - x))
+        data = pd.DataFrame({"area": np.exp(x), "species": y})
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            sars.sar_threshold(data, models=["DiscTwo", "Linear"])
+        messages = [str(w.message) for w in caught]
+        assert any("undefined" in m and "DiscTwo" in m for m in messages)
+        assert not any("fits the data exactly" in m for m in messages)
+
+    @pytest.mark.parametrize("exact", [True, False])
+    def test_a_perfect_fit_ranks_first_the_same_everywhere(self, monkeypatch, exact):
+        """DiscTwo fits these data exactly; its RSS is 0 on some machines and
+        about 1e-28 on others. Either way its AICc is the same finite value,
+        the warning says it fits exactly (not that n > k + 1 is needed), and
+        it ranks first."""
         from sars import _threshold as th
 
         real = th._compute_ic
         monkeypatch.setattr(
-            th, "_compute_ic", lambda k, n, rss: real(k, n, 0.0 if rss < 1e-20 else rss)
+            th,
+            "_compute_ic",
+            lambda k, n, rss, y=None: real(
+                k, n, (0.0 if exact else 1e-28) if rss < 1e-20 else rss, y
+            ),
         )
         x = np.arange(1.0, 13.0)
         y = np.where(x <= 4, 5.0 + x, np.where(x <= 8, 30.0 + 2 * x, 80.0 - x))
@@ -323,10 +341,13 @@ class TestMoreThresholdModels:
             warnings.simplefilter("always")
             fit = sars.sar_threshold(data, models=["DiscTwo", "DiscOne", "Linear"])
         messages = [str(w.message) for w in caught]
-        assert any("DiscTwo fit the data exactly (RSS 0)" in m for m in messages)
+        assert any("DiscTwo fits the data exactly" in m for m in messages)
         assert not any("n > k + 1" in m for m in messages)
         assert fit.best_model == "DiscTwo"
-        assert fit.summary.iloc[0]["AICc"] == -np.inf
+        best = fit.summary.iloc[0]["AICc"]
+        assert np.isfinite(best)
+        k = th._K["DiscTwo"]
+        assert best == pytest.approx(sars.aicc(k, len(y), 0.0, y))
 
     @pytest.mark.parametrize("model", ["ContOne", "ZslopeOne", "ContTwo", "ZslopeTwo"])
     def test_a_resample_gets_the_same_breakpoints_however_it_is_batched(self, model):

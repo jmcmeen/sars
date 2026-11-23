@@ -81,7 +81,7 @@ def _fit_stats(y: np.ndarray, rss: float, n_params: int, linear: bool) -> dict[s
     r2 = 1.0 - rss / tss if tss > 0 else np.nan
     p = n_params if linear else n_params + 1
     adj = 1.0 - (n - 1) * rss / ((n - p) * tss) if tss > 0 and n > p else np.nan
-    aic, aicc, bic = _compute_ic(n_params + 1, n, rss)
+    aic, aicc, bic = _compute_ic(n_params + 1, n, rss, y)
     return {"R2": r2, "adjR2": adj, "AIC": aic, "BIC": bic, "AICc": aicc}
 
 
@@ -637,7 +637,7 @@ def sar_countryside(
     param_rows = []
     for g in groups:
         p, r = fits[g]
-        aic = _compute_ic(k + 2, n, r)[0]
+        aic = _compute_ic(k + 2, n, r, frame[g].to_numpy(dtype=float))[0]
         param_rows.append(
             {**dict(zip(h_cols, p[:-1], strict=True)), "z": p[-1], "rss": r, "AIC": aic}
         )

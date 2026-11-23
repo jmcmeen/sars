@@ -378,13 +378,9 @@ def _fit_candidate(model: str, terms: str, design: np.ndarray, data: pd.DataFram
     with np.errstate(divide="ignore", invalid="ignore"):
         p = 2.0 * stdtr(dof, -np.abs(beta / se))
 
-    # Each coefficient and the residual variance count as a parameter. The
-    # likelihood is unbounded as RSS goes to zero, so an exact fit is scored
-    # at the rounding error of the data (a relative residual of the square
-    # root of machine epsilon): finite criteria, in which exact fits tie on
-    # the likelihood and the one with fewer parameters ranks first.
-    rss_floor = float(np.finfo(float).eps * np.sum(y**2))
-    aic, aicc, bic = _compute_ic(n_terms + 1, n, max(rss, rss_floor))
+    # Each coefficient and the residual variance count as a parameter; an
+    # exact fit is scored at the data's rounding error (see rss_floor).
+    aic, aicc, bic = _compute_ic(n_terms + 1, n, rss, y)
     names = _PARAM_NAMES[:n_terms]
     return GDMFit(
         model=model,

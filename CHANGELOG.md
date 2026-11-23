@@ -10,6 +10,17 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Fixed
+
+- A fit that matches its data exactly is scored the same way everywhere:
+  its residual sum of squares is taken as no lower than the data's rounding
+  error, `eps * sum(y**2)`, before AIC, AICc and BIC are computed, as the GDM
+  already did (now also when every island has 0 species). Exact fits used to
+  get AICc -inf or a tiny finite value depending on the platform, and -inf
+  was ranked first by `sar_threshold` but given weight 0 in averages, shown
+  as NA in LOOCV ranks and as null in the CLI's JSON. `aicc()` takes the
+  data as an optional `y` to apply the same rule (#243).
+
 ## [0.11.6] - 2026-11-22
 
 ### Fixed
