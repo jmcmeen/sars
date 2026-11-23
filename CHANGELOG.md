@@ -12,12 +12,13 @@ reconstructed from the commit history and the
 
 ### Changed
 
-- Fits are about 1.3 times faster: the finite-difference Jacobian the solver
-  needs is computed for every parameter in one evaluation of the model,
-  rather than one at a time. All 20 models on galap take 3.1 s instead of
-  4.1 s, and a full bootstrap of 20 resamples 93 s instead of 122 s; fitted
-  values are unchanged (every AICc on the bundled datasets within a
-  millionth).
+- Fits are about 1.25 times faster: the finite-difference Jacobian the
+  solver needs is computed for every parameter in one evaluation of the
+  model, rather than one at a time. All 20 models on galap take 3.3 s instead
+  of 4.1 s, and a full bootstrap of 20 resamples 97 s instead of 122 s;
+  fitted values are unchanged (every AICc on the bundled datasets within a
+  millionth). A model function must broadcast over a matrix of parameters
+  for the speed-up (see CONTRIBUTING); one that doesn't still fits.
 
 ## [0.11.8] - 2026-11-23
 

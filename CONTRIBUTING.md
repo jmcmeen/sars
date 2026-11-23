@@ -119,7 +119,11 @@ Models are declared, not subclassed. To add one:
    the function `f(area, *params)`, parameter names, lower and upper bounds,
    and a start grid (one list of starting values per parameter). The fitting
    loop tries every point in the Cartesian product of the grid, so keep each
-   list short and spread across the plausible range.
+   list short and spread across the plausible range. Write the function with
+   numpy operations on its arguments, so it broadcasts: the solver's
+   Jacobian evaluates every parameter's step at once, passing area shaped
+   (1, n) and each parameter shaped (k, 1). (One that doesn't broadcast still
+   fits, but more slowly.)
 2. Add the public wrapper `sar_<name>()` next to the others and export it
    from `__init__.py`.
 3. If the R `sars` package has the same model, add it to the `models`

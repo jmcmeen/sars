@@ -8,7 +8,7 @@ from scipy import stats
 
 import sars  # noqa: I001
 from sars._inference import ALL_MODEL_NAMES
-from sars._models import _param_std_errors
+from sars._models import _MODEL_REGISTRY, _param_std_errors
 
 # ---------------------------------------------------------------------------
 # Input validation (applies to all sar_* functions via _fit_nls)
@@ -876,3 +876,76 @@ def test_the_floor_needs_finite_data_of_length_n():
         sars.aicc(2, 6, 0.0, np.array([1.0, 2.0, np.nan, 4.0, 5.0, 6.0]))
     with pytest.raises(ValueError, match="y has 5 values, but n is 6"):
         sars.aicc(2, 6, 0.0, np.arange(5.0))
+
+
+class TestJacobian:
+    """The batched finite-difference Jacobian against scipy's own "2-point"."""
+
+    @staticmethod
+    def objective(name, data):
+        from sars._models import _MODEL_REGISTRY, _objective, _to_search_scale
+
+        spec = _MODEL_REGISTRY[name]
+        area = data["area"].to_numpy(float)
+        species = data["species"].to_numpy(float)
+        area_s, species_s = area / np.exp(np.mean(np.log(area))), species / species.max()
+        log_idx = [spec.param_names.index(p) for p in spec.log_params]
+        lower = _to_search_scale(spec.bounds_lower, log_idx)
+        upper = _to_search_scale(spec.bounds_upper, log_idx)
+        residuals, jacobian = _objective(spec, area_s, species_s, log_idx, lower, upper)
+        return spec, residuals, jacobian, lower, upper, log_idx
+
+    @pytest.mark.parametrize("name", sorted(_MODEL_REGISTRY))
+    def test_matches_scipy_two_point(self, name):
+        from itertools import product
+
+        from scipy.optimize._numdiff import approx_derivative
+
+        from sars._models import _to_search_scale
+
+        spec, residuals, jacobian, lower, upper, log_idx = self.objective(name, sars.load_galap())
+        for start in list(product(*spec.start_grid))[:25]:
+            p = np.clip(_to_search_scale(start, log_idx), lower, upper)
+            with np.errstate(all="ignore"):
+                ours = jacobian(p)
+                theirs = approx_derivative(residuals, p, method="2-point", bounds=(lower, upper))
+            assert ours.shape == theirs.shape
+            np.testing.assert_allclose(ours, theirs, rtol=1e-6, atol=1e-6)
+
+    def test_steps_turn_inside_tight_bounds(self):
+        """Where neither the step nor its reverse fits between the bounds,
+        both take a one-sided step to the farther bound."""
+        from scipy.optimize._numdiff import approx_derivative
+
+        from sars._models import _objective
+
+        data = sars.load_galap()
+        area = data["area"].to_numpy(float)
+        species = data["species"].to_numpy(float)
+        lower, upper = np.array([0.3, 0.2]), np.array([0.3 + 1e-12, 0.2 + 2e-12])
+        area_s, species_s = area / np.exp(np.mean(np.log(area))), species / species.max()
+        residuals, jacobian = _objective(
+            _MODEL_REGISTRY["power"], area_s, species_s, [], lower, upper
+        )
+        p = np.array([0.3 + 4e-13, 0.2 + 1.5e-12])
+        theirs = approx_derivative(residuals, p, method="2-point", bounds=(lower, upper))
+        np.testing.assert_allclose(jacobian(p), theirs, rtol=1e-6, atol=1e-6)
+
+    def test_a_model_that_does_not_broadcast_still_fits(self, monkeypatch):
+        from sars import _models
+
+        spec = _models._MODEL_REGISTRY["power"]
+        scalar_func = spec.func
+
+        def scalar_only(a, c, z):
+            if np.ndim(c) or np.ndim(z):
+                raise TypeError("scalar parameters only")
+            return scalar_func(a, c, z)
+
+        monkeypatch.setattr(spec, "func", scalar_only)
+        fit = _models._fit_nls("power", sars.load_galap())
+        monkeypatch.setattr(spec, "func", scalar_func)
+        assert fit.converged
+        assert fit.params["z"] == pytest.approx(
+            sars.sar_power(sars.load_galap()).params["z"], rel=1e-6
+        )

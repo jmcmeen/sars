@@ -554,6 +554,10 @@ def _compute_ic(
 # A SAR model function, f(area, p1, p2, ...) -> predicted S. Each model takes a
 # fixed number of parameters, named by its spec's ``param_names``, which a
 # Callable type can't express for every arity at once.
+# A model's curve, f(area, *params). It must broadcast: the Jacobian evaluates
+# every parameter's step at once, with area shaped (1, n) and each parameter
+# (k, 1), so use numpy operations on its arguments, not scalar Python logic.
+# (A function that doesn't broadcast still fits, just more slowly.)
 _SARFunc = Callable[..., np.ndarray]
 
 
@@ -853,30 +857,7 @@ def _fit_nls(
     lower = _to_search_scale(spec.bounds_lower, log_idx)
     upper = _to_search_scale(spec.bounds_upper, log_idx)
 
-    def residuals(p: np.ndarray) -> np.ndarray:
-        pred = spec.func(area_s, *(_to_natural_scale(p, log_idx) if log_idx else p))
-        res = species_s - pred
-        # Replace any NaN/Inf with a large penalty
-        return np.where(np.isfinite(res), res, 1e10)
-
-    lower_arr, upper_arr = np.asarray(lower, dtype=float), np.asarray(upper, dtype=float)
-
-    def jacobian(p: np.ndarray) -> np.ndarray:
-        """Forward differences, as least_squares's default "2-point" takes
-        them (a relative step in the direction of the parameter's sign, turned
-        around where it would cross a bound), but with
-        every parameter's step evaluated in one call of the model: the
-        solver's own per-call overhead was most of the cost of a fit."""
-        p = np.asarray(p, dtype=float)
-        h = _FD_STEP * np.where(p >= 0, 1.0, -1.0) * np.maximum(1.0, np.abs(p))
-        h = np.where((p + h > upper_arr) | (p + h < lower_arr), -h, h)
-        stepped = p[None, :] + np.diag(h)  # one row per parameter stepped
-        if log_idx:
-            stepped[:, log_idx] = np.exp(stepped[:, log_idx])
-        pred = spec.func(area_s[None, :], *(stepped[:, j : j + 1] for j in range(len(p))))
-        res = species_s[None, :] - pred
-        res = np.where(np.isfinite(res), res, 1e10)
-        return ((res - residuals(p)[None, :]) / h[:, None]).T
+    residuals, jacobian = _objective(spec, area_s, species_s, log_idx, lower, upper)
 
     best_cost = np.inf
     best_result = None
@@ -1076,6 +1057,74 @@ def _keep_best_distinct(
                 top = [*top[:i], (cost, x), *top[i + 1 :]]
             return sorted(top, key=lambda t: t[0])
     return sorted([*top, (cost, x)], key=lambda t: t[0])[:_N_POLISH]
+
+
+# Residual given to the solver where the model overflows or is undefined.
+_PENALTY = 1e10
+
+
+def _penalized(res: np.ndarray) -> np.ndarray:
+    return np.where(np.isfinite(res), res, _PENALTY)
+
+
+def _objective(
+    spec: _ModelSpec,
+    area_s: np.ndarray,
+    species_s: np.ndarray,
+    log_idx: list[int],
+    lower: Sequence[float],
+    upper: Sequence[float],
+) -> tuple[Callable[[np.ndarray], np.ndarray], Callable[[np.ndarray], np.ndarray]]:
+    """The residuals a fit minimizes, on the search scale, and their Jacobian.
+
+    The Jacobian takes forward differences as least_squares's default
+    "2-point" does (its relative step, direction and handling of bounds, and
+    the step as actually represented), but evaluates the base point and every
+    parameter's step in one call of the model: the solver's own per-call
+    overhead was most of the cost of a fit. A model that doesn't broadcast
+    over a matrix of parameters is stepped one parameter at a time instead.
+    """
+    lb, ub = np.asarray(lower, dtype=float), np.asarray(upper, dtype=float)
+
+    def natural(p: np.ndarray) -> np.ndarray:
+        p = np.array(p, dtype=float)
+        if log_idx:
+            p[..., log_idx] = np.exp(p[..., log_idx])
+        return p
+
+    def residuals(p: np.ndarray) -> np.ndarray:
+        return _penalized(species_s - spec.func(area_s, *natural(p)))
+
+    def steps(p: np.ndarray) -> np.ndarray:
+        # scipy.optimize._numdiff: _compute_absolute_step, then
+        # _adjust_scheme_to_bounds for a one-sided scheme.
+        h = _FD_STEP * np.where(p >= 0, 1.0, -1.0) * np.maximum(1.0, np.abs(p))
+        lower_dist, upper_dist = p - lb, ub - p
+        x = p + h
+        violated = (x < lb) | (x > ub)
+        fitting = np.abs(h) <= np.maximum(lower_dist, upper_dist)
+        h = np.where(violated & fitting, -h, h)
+        forward = (upper_dist >= lower_dist) & ~fitting
+        backward = (upper_dist < lower_dist) & ~fitting
+        h = np.where(forward, upper_dist, np.where(backward, -lower_dist, h))
+        return (p + h) - p  # the step as actually represented
+
+    def jacobian(p: np.ndarray) -> np.ndarray:
+        p = np.asarray(p, dtype=float)
+        k = len(p)
+        h = steps(p)
+        points = np.vstack([p, p + np.diag(h)])  # the base point, then one row per step
+        values = natural(points)
+        try:
+            pred = spec.func(area_s[None, :], *(values[:, j : j + 1] for j in range(k)))
+            if np.shape(pred) != (k + 1, len(area_s)):
+                raise ValueError("the model didn't broadcast over the parameters")
+        except Exception:  # a model that doesn't broadcast
+            pred = np.array([spec.func(area_s, *row) for row in values])
+        res = _penalized(species_s[None, :] - pred)
+        return ((res[1:] - res[0]) / h[:, None]).T
+
+    return residuals, jacobian
 
 
 def _solve(residuals, jacobian, x0, lower, upper, **tol):
