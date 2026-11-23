@@ -582,6 +582,9 @@ class _ModelSpec:
 # Smallest log value a log-scale parameter can take (exp(-700) is about 1e-304).
 _LOG_FLOOR = -700.0
 
+# Relative step of the forward differences (as least_squares's "2-point" uses).
+_FD_STEP = float(np.sqrt(np.finfo(float).eps))
+
 
 def _to_search_scale(values: Sequence[float] | np.ndarray, log_idx: list[int]) -> list[float]:
     out = [float(v) for v in values]
@@ -856,6 +859,25 @@ def _fit_nls(
         # Replace any NaN/Inf with a large penalty
         return np.where(np.isfinite(res), res, 1e10)
 
+    lower_arr, upper_arr = np.asarray(lower, dtype=float), np.asarray(upper, dtype=float)
+
+    def jacobian(p: np.ndarray) -> np.ndarray:
+        """Forward differences, as least_squares's default "2-point" takes
+        them (a relative step in the direction of the parameter's sign, turned
+        around where it would cross a bound), but with
+        every parameter's step evaluated in one call of the model: the
+        solver's own per-call overhead was most of the cost of a fit."""
+        p = np.asarray(p, dtype=float)
+        h = _FD_STEP * np.where(p >= 0, 1.0, -1.0) * np.maximum(1.0, np.abs(p))
+        h = np.where((p + h > upper_arr) | (p + h < lower_arr), -h, h)
+        stepped = p[None, :] + np.diag(h)  # one row per parameter stepped
+        if log_idx:
+            stepped[:, log_idx] = np.exp(stepped[:, log_idx])
+        pred = spec.func(area_s[None, :], *(stepped[:, j : j + 1] for j in range(len(p))))
+        res = species_s[None, :] - pred
+        res = np.where(np.isfinite(res), res, 1e10)
+        return ((res - residuals(p)[None, :]) / h[:, None]).T
+
     best_cost = np.inf
     best_result = None
 
@@ -925,6 +947,7 @@ def _fit_nls(
                 result = least_squares(
                     residuals,
                     x0=np.clip(_to_search_scale(start, log_idx), lower, upper),
+                    jac=jacobian,
                     bounds=(lower, upper),
                     method="trf",
                     max_nfev=5000,
@@ -999,13 +1022,15 @@ def _fit_nls(
         for cost, x0 in top:
             if cost > 10 * best_cost:  # a penalty-cost start, nowhere near the fit
                 continue
-            polished = _solve(residuals, x0, lower, upper, ftol=1e-14, xtol=1e-14, gtol=1e-14)
+            polished = _solve(
+                residuals, jacobian, x0, lower, upper, ftol=1e-14, xtol=1e-14, gtol=1e-14
+            )
             if polished is not None and polished.cost <= best_result.cost:
                 best_result = polished
                 polished_any = True
         if not polished_any:
             # Never return a fit looser than the default tolerances give.
-            refined = _solve(residuals, best_result.x, lower, upper)
+            refined = _solve(residuals, jacobian, best_result.x, lower, upper)
             if refined is not None and refined.success and refined.cost <= best_result.cost:
                 best_result = refined
 
@@ -1053,12 +1078,18 @@ def _keep_best_distinct(
     return sorted([*top, (cost, x)], key=lambda t: t[0])[:_N_POLISH]
 
 
-def _solve(residuals, x0, lower, upper, **tol):
+def _solve(residuals, jacobian, x0, lower, upper, **tol):
     """One bounded least-squares solve from ``x0``, or None if it raises."""
     try:
         with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
             return least_squares(
-                residuals, x0=x0, bounds=(lower, upper), method="trf", max_nfev=5000, **tol
+                residuals,
+                x0=x0,
+                jac=jacobian,
+                bounds=(lower, upper),
+                method="trf",
+                max_nfev=5000,
+                **tol,
             )
     except Exception:
         logger.debug("A least-squares solve raised", exc_info=True)
