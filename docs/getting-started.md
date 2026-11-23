@@ -464,16 +464,19 @@ fit = sars.sar_multi(big_table)
 sars.set_backend("numpy")  # the default
 ```
 
-Only the batch moves to the GPU; the final solve stays on the CPU, so a fit agrees
-between backends to the solver's tolerance whenever that solve converges. A model
-whose optimum lies along a long flat ridge can run the final solve out of
-evaluations on a very large table, and then the two backends may stop at slightly
-different points on the ridge. The GPU pays off when the start grid
-dominates, with tens of thousands of islands or more: on a table of 169,000 samples
-it halved the time of models such as `mmf`, `weibull3` and `heleg`. For the models whose
-final solve dominates at that size (`betap`, `weibull4`) it makes little difference,
-and for a few hundred islands numpy is as fast. The `gpu` extra installs CuPy for
-CUDA 13; on CUDA 12, install `cupy-cuda12x` instead.
+The backend applies to the worker processes `n_jobs` starts as well. Only the batch
+moves to the GPU; the final solve stays on the CPU, so a fit agrees between backends
+to the solver's tolerance whenever that solve converges. A model whose optimum lies
+along a long flat ridge can run the final solve out of evaluations on a very large
+table, and then the two backends may stop at slightly different points on the ridge.
+
+The GPU pays off when the start grid dominates a fit, with tens of thousands of
+islands or more. On a table of 169,000 samples it halved the time of `p1`, `mmf`,
+`weibull3` and `heleg`; for the models whose final solve dominates at that size
+(`betap`, `weibull4`, `epm1`) it makes little difference, and for a few hundred
+islands numpy is as fast. All 20 models took about 65 minutes on either backend.
+The `gpu` extra installs CuPy for CUDA 13; on CUDA 12, install `cupy-cuda12x`
+instead.
 
 ## Threshold models
 
