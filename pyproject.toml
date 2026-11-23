@@ -56,6 +56,9 @@ docs = [
 ]
 geo = ["geopandas>=0.12", "shapely>=2.0"]
 server = ["fastapi>=0.110", "uvicorn>=0.29", "pydantic>=2"]
+# An NVIDIA GPU for the start-grid screen (sars.set_backend("cupy")): CuPy for
+# CUDA 13, with its CUDA libraries. For CUDA 12, install cupy-cuda12x instead.
+gpu = ["cupy-cuda13x[ctk]>=14.0"]
 all = ["sars[geo]", "sars[server]"]
 
 [project.urls]
@@ -122,5 +125,5 @@ warn_redundant_casts = true
 
 [[tool.mypy.overrides]]
 # No type information published for these.
-module = ["scipy.*", "geopandas.*", "shapely.*", "matplotlib.*"]
+module = ["scipy.*", "geopandas.*", "shapely.*", "matplotlib.*", "cupy", "cupy.*"]
 ignore_missing_imports = true

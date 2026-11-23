@@ -7,12 +7,14 @@ import warnings
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from itertools import product
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from scipy import special
-from scipy.optimize import least_squares
+from scipy.optimize import OptimizeResult, least_squares
 
+from sars import _batched
 from sars._checks import CheckOptions, ResidualChecks, run_checks
 
 logger = logging.getLogger(__name__)
@@ -586,9 +588,6 @@ class _ModelSpec:
 # Smallest log value a log-scale parameter can take (exp(-700) is about 1e-304).
 _LOG_FLOOR = -700.0
 
-# Relative step of the forward differences (as least_squares's "2-point" uses).
-_FD_STEP = float(np.sqrt(np.finfo(float).eps))
-
 
 def _to_search_scale(values: Sequence[float] | np.ndarray, log_idx: list[int]) -> list[float]:
     out = [float(v) for v in values]
@@ -860,7 +859,7 @@ def _fit_nls(
     residuals, jacobian = _objective(spec, area_s, species_s, log_idx, lower, upper)
 
     best_cost = np.inf
-    best_result = None
+    best_result: Any = None
 
     if start_from is not None:
         expected = set(spec.param_names)
@@ -911,94 +910,104 @@ def _fit_nls(
     # Along a flat ridge (weibull4's optimum on a bound, for one) the default
     # tolerances spent hundreds of evaluations per start creeping along it.
     grid_tol = {"ftol": _GRID_TOL, "xtol": _GRID_TOL} if used_grid else {}
-    # The best few grid results in different places, (cost, x), for polishing.
-    top: list[tuple[float, np.ndarray]] = []
 
-    n_starts = 0
-    n_errors = 0
-    n_unsuccessful = 0
-    stale_runs = 0
-    for start in starts:
-        n_starts += 1
-        try:
-            # The search visits parameters where the model overflows; residuals()
-            # turns the non-finite values into a penalty, so numpy's warnings about
-            # them carry nothing and would flood an interactive session.
-            with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
-                result = least_squares(
-                    residuals,
-                    x0=np.clip(_to_search_scale(start, log_idx), lower, upper),
-                    jac=jacobian,
-                    bounds=(lower, upper),
-                    method="trf",
-                    max_nfev=5000,
-                    **grid_tol,
+    def search(
+        start_points: Iterable[Sequence[float]],
+    ) -> tuple[list[tuple[float, np.ndarray]], Any, float]:
+        """Fit from each start in turn. Returns the best few converged results
+        in different places, (cost, x), the best result and its cost."""
+        top: list[tuple[float, np.ndarray]] = []
+        best_cost = np.inf
+        best_result = None
+        n_starts = 0
+        n_errors = 0
+        n_unsuccessful = 0
+        stale_runs = 0
+        for start in start_points:
+            n_starts += 1
+            try:
+                # The search visits parameters where the model overflows; residuals()
+                # turns the non-finite values into a penalty, so numpy's warnings about
+                # them carry nothing and would flood an interactive session.
+                with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+                    result = least_squares(
+                        residuals,
+                        x0=np.clip(_to_search_scale(start, log_idx), lower, upper),
+                        jac=jacobian,
+                        bounds=(lower, upper),
+                        method="trf",
+                        max_nfev=5000,
+                        **grid_tol,
+                    )
+                if not result.success:
+                    # Stopped on max_nfev or similar: not a converged solution,
+                    # so it may neither win on cost nor count as a stale run.
+                    n_unsuccessful += 1
+                    continue
+                top = _keep_best_distinct(top, float(result.cost), result.x)
+                if result.cost < best_cost * (1 - _STALE_RTOL):
+                    stale_runs = 0
+                else:
+                    stale_runs += 1
+                if result.cost < best_cost:
+                    best_cost = result.cost
+                    best_result = result
+            except Exception:
+                n_errors += 1
+                logger.debug(
+                    "Model '%s' NLS failed for start %s",
+                    name,
+                    list(start),
+                    exc_info=True,
                 )
-            if not result.success:
-                # Stopped on max_nfev or similar: not a converged solution,
-                # so it may neither win on cost nor count as a stale run.
-                n_unsuccessful += 1
-                continue
-            top = _keep_best_distinct(top, float(result.cost), result.x)
-            if result.cost < best_cost * (1 - _STALE_RTOL):
-                stale_runs = 0
-            else:
-                stale_runs += 1
-            if result.cost < best_cost:
-                best_cost = result.cost
-                best_result = result
-        except Exception:
-            n_errors += 1
-            logger.debug(
-                "Model '%s' NLS failed for start %s",
-                name,
-                list(start),
-                exc_info=True,
-            )
 
-        if stale_runs >= stale_limit and best_result is not None:
-            logger.debug(
-                "Model '%s': early stop after %d starts (%d without improvement)",
+            if stale_runs >= stale_limit and best_result is not None:
+                logger.debug(
+                    "Model '%s': early stop after %d starts (%d without improvement)",
+                    name,
+                    n_starts,
+                    stale_limit,
+                )
+                break
+
+            if n_starts % 100 == 0:
+                logger.debug(
+                    "Model '%s': %d starts evaluated (best cost=%.4g)",
+                    name,
+                    n_starts,
+                    best_cost,
+                )
+
+        if n_errors:
+            logger.info(
+                "Model '%s': %d/%d starting points raised exceptions",
                 name,
+                n_errors,
                 n_starts,
-                stale_limit,
             )
-            break
-
-        if n_starts % 100 == 0:
-            logger.debug(
-                "Model '%s': %d starts evaluated (best cost=%.4g)",
+        if n_unsuccessful:
+            logger.info(
+                "Model '%s': %d/%d starting points stopped without converging",
                 name,
+                n_unsuccessful,
                 n_starts,
-                best_cost,
             )
+        return top, best_result, best_cost
 
-    if n_errors:
-        logger.info(
-            "Model '%s': %d/%d starting points raised exceptions",
-            name,
-            n_errors,
-            n_starts,
-        )
-    if n_unsuccessful:
-        logger.info(
-            "Model '%s': %d/%d starting points stopped without converging",
-            name,
-            n_unsuccessful,
-            n_starts,
-        )
+    def polish(
+        top: list[tuple[float, np.ndarray]],
+        best_result: Any,
+        best_cost: float,
+        converged: bool,
+    ) -> tuple[Any, bool]:
+        """Tight solves from the best few grid results, in different places.
 
-    if best_result is None:
-        return _failed_fit(name, spec.param_names, n, data)
-
-    if used_grid:
-        # The grid's loose tolerances stop early along flat ridges of the
-        # likelihood; tight solves from the best few grid results, in different
-        # places, pin the optimum down. Polishing more than one guards against the
-        # loose tolerances ranking two basins in the wrong order. A warm start (the
-        # bootstrap's) skips it: its resamples need the fit, not the last digits.
-        # A polish that runs out of evaluations along a ridge still counts if it
-        # lowered the cost: it's a better point on the same curve.
+        The grid's loose tolerances stop early along flat ridges of the
+        likelihood, and polishing more than one guards against them ranking two
+        basins in the wrong order. A polish that runs out of evaluations along a
+        ridge still counts if it lowered the cost: it's a better point on the
+        same curve. Returns the best result and whether a solve converged.
+        """
         polished_any = False
         for cost, x0 in top:
             if cost > 10 * best_cost:  # a penalty-cost start, nowhere near the fit
@@ -1009,11 +1018,102 @@ def _fit_nls(
             if polished is not None and polished.cost <= best_result.cost:
                 best_result = polished
                 polished_any = True
-        if not polished_any:
-            # Never return a fit looser than the default tolerances give.
+                converged = converged or bool(polished.success)
+        if not polished_any or not converged:
+            # Never return a fit looser than the default tolerances give. A
+            # polish can also sit at the optimum yet never meet its tight
+            # tolerance, spending its whole budget on rounding noise; a solve
+            # at the default tolerances from there settles it in a few steps.
             refined = _solve(residuals, jacobian, best_result.x, lower, upper)
-            if refined is not None and refined.success and refined.cost <= best_result.cost:
-                best_result = refined
+            if refined is not None and refined.success:
+                converged = True
+                if refined.cost <= best_result.cost:
+                    best_result = refined
+        return best_result, converged
+
+    # The grid's starts are fitted as one batch (see _batched), which only
+    # ranks them; the best few distinct results get the tight polish. A model
+    # whose function doesn't broadcast over a batch of parameters, and the
+    # bootstrap's single warm start, are fitted one start at a time.
+    screened = None
+    if used_grid:
+        grid = np.array(
+            [
+                np.clip(_to_search_scale(s, log_idx), lower, upper)
+                for s in product(*spec.start_grid)
+            ],
+            dtype=float,
+        )
+        try:
+            with np.errstate(over="ignore", invalid="ignore", divide="ignore", under="ignore"):
+                screened = _batched.screen(
+                    spec.func, area_s, species_s, grid, lower, upper, log_idx
+                )
+        except Exception as err:
+            # Expected on numpy only for a model that doesn't broadcast; on a
+            # GPU it's a failure the user should hear about (out of memory,
+            # say), since the fallback is far slower than either backend.
+            log = logger.debug if _batched.get_backend() == "numpy" else logger.warning
+            log(
+                "Model '%s': the batched screen on %s failed (%s); fitting starts one at a time",
+                name,
+                _batched.get_backend(),
+                err,
+                exc_info=logger.isEnabledFor(logging.DEBUG),
+            )
+
+    if screened is None:
+        top, best_result, best_cost = search(starts)
+        if best_result is None:
+            return _failed_fit(name, spec.param_names, n, data)
+        if used_grid:
+            # A warm start (the bootstrap's) skips the polish: its resamples
+            # need the fit, not the last digits.
+            best_result, _ = polish(top, best_result, best_cost, converged=True)
+    else:
+        xs, costs = screened
+        top = []
+        for i in np.argsort(costs):
+            if np.isfinite(costs[i]):
+                top = _keep_best_distinct(top, float(costs[i]), xs[i])
+        logger.debug("Model '%s': screened %d starts in one batch", name, len(grid))
+        converged = False
+        searched = None
+        if top:
+            best_cost = top[0][0]
+            best_result = OptimizeResult(x=top[0][1], cost=best_cost)
+            # The screen isn't a solver run of its own: its result counts only
+            # once a trust-region solve from it converges.
+            best_result, converged = polish(top, best_result, best_cost, converged=False)
+        if not converged:
+            # A long flat ridge (epm1 on large areas, for one), where neither
+            # the batch nor the polish, even at the default tolerances, gets
+            # far along within its budget. The
+            # start-by-start search can land further along it from some start,
+            # so it runs as well, and the better fit wins.
+            logger.debug(
+                "Model '%s': no polish from the screen converged; fitting starts one at a time",
+                name,
+            )
+            searched_top, searched, searched_cost = search(product(*spec.start_grid))
+            if searched is not None:
+                searched, _ = polish(searched_top, searched, searched_cost, converged=True)
+                if best_result is None or searched.cost <= best_result.cost:
+                    best_result, converged = searched, True
+        if best_result is not None and not converged:
+            # The screened point is still the better one: a solve at the grid's
+            # tolerance from it, which the start-by-start search would have
+            # accepted, vouches for its basin.
+            vouched = _solve(residuals, jacobian, best_result.x, lower, upper, **grid_tol)
+            if vouched is not None and vouched.success:
+                converged = True
+                if vouched.cost <= best_result.cost:
+                    best_result = vouched
+            elif searched is not None:
+                best_result, converged = searched, True
+        if not converged:
+            logger.info("Model '%s': no solve from the screened starts succeeded", name)
+            return _failed_fit(name, spec.param_names, n, data)
 
     with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
         values = np.array(
@@ -1095,24 +1195,10 @@ def _objective(
     def residuals(p: np.ndarray) -> np.ndarray:
         return _penalized(species_s - spec.func(area_s, *natural(p)))
 
-    def steps(p: np.ndarray) -> np.ndarray:
-        # scipy.optimize._numdiff: _compute_absolute_step, then
-        # _adjust_scheme_to_bounds for a one-sided scheme.
-        h = _FD_STEP * np.where(p >= 0, 1.0, -1.0) * np.maximum(1.0, np.abs(p))
-        lower_dist, upper_dist = p - lb, ub - p
-        x = p + h
-        violated = (x < lb) | (x > ub)
-        fitting = np.abs(h) <= np.maximum(lower_dist, upper_dist)
-        h = np.where(violated & fitting, -h, h)
-        forward = (upper_dist >= lower_dist) & ~fitting
-        backward = (upper_dist < lower_dist) & ~fitting
-        h = np.where(forward, upper_dist, np.where(backward, -lower_dist, h))
-        return (p + h) - p  # the step as actually represented
-
     def jacobian(p: np.ndarray) -> np.ndarray:
         p = np.asarray(p, dtype=float)
         k = len(p)
-        h = steps(p)
+        h = _batched.fd_steps(np, p, lb, ub)
         points = np.vstack([p, p + np.diag(h)])  # the base point, then one row per step
         values = natural(points)
         try:

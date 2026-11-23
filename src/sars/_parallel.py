@@ -11,6 +11,8 @@ from concurrent.futures.process import BrokenProcessPool
 from operator import index
 from typing import Any
 
+from sars import _batched
+
 _BLAS_THREADS = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")
 
 
@@ -82,7 +84,7 @@ class Workers:
                 max_workers=self.workers,
                 mp_context=_context(),
                 initializer=_start_worker,
-                initargs=(self.shared,),
+                initargs=(self.shared, _batched.get_backend()),
             )
         return self
 
@@ -128,13 +130,19 @@ def map_in_order(
 _SHARED: dict[str, Any] = {}
 
 
-def _start_worker(shared: dict[str, Any]) -> None:
+def _start_worker(shared: dict[str, Any], backend: str = "numpy") -> None:
     # The pool's workers already run side by side, one per core: a math-library
     # thread pool per worker sized to the whole machine would oversubscribe it.
     # Best effort: it only takes effect where the library starts after this.
     for name in _BLAS_THREADS:
         os.environ.setdefault(name, "1")
     _SHARED.update(shared)
+    # A worker imports sars afresh, on numpy: give it the parent's backend.
+    if backend != _batched.get_backend():
+        try:
+            _batched.set_backend(backend)
+        except ImportError:
+            pass  # the parent's check passed; a worker that can't stays on numpy
 
 
 def _call_in_worker(

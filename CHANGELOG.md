@@ -10,6 +10,29 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- `sars.set_backend("cupy")` screens every fit's start grid on an NVIDIA GPU
+  through CuPy (`pip install "sars[gpu]"`); `sars.get_backend()` reports the
+  current backend, which worker processes for `n_jobs` take as well. The
+  final solve stays on the CPU, so fits agree between backends wherever it
+  converges. It pays off on large datasets: on a table of 169,000 samples it
+  halved the time of the models whose start grid dominates.
+
+### Changed
+
+- Fits are 3 to 16 times faster on small and medium datasets: a model's start
+  grid is fitted as one batch of array operations (a projected
+  Levenberg-Marquardt over every start at once) rather than one
+  `least_squares` call per start, and the best few distinct results get the
+  same tight polish as before. All 20 models on galap take 0.39 s instead of
+  4.0 s, and a full bootstrap of 20 resamples 23 s instead of 118 s; every
+  AICc on the bundled datasets is unchanged to a millionth. On 169,000
+  samples all 20 models take 66 minutes instead of 132. When no solve from
+  the batch's results converges, as on a long flat ridge, the start-by-start
+  search runs as well and the better fit wins: epm1 on those 169,000 samples
+  gives the same fit as before, in 26 minutes instead of 17.
+
 ## [0.11.10] - 2026-11-23
 
 ### Changed

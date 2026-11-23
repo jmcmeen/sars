@@ -17,8 +17,11 @@ pip install "sars[geo]"
 # The HTTP server, `sars serve` (FastAPI + uvicorn)
 pip install "sars[server]"
 
-# Everything
+# Everything above
 pip install "sars[all]"
+
+# Start grids screened on an NVIDIA GPU (CuPy, CUDA 13); not part of "all"
+pip install "sars[gpu]"
 ```
 
 ## Your first SAR fit
@@ -444,6 +447,36 @@ fits or the other datasets, and the warnings each dataset raised are listed agai
 in `warnings`.
 The fits themselves are kept, by name, in `many.averages`, `many.log_log` and
 `many.thresholds`. `n_jobs` fits the datasets in parallel, as for `bootstrap_ci`.
+
+## Speed and the GPU
+
+Every nonlinear model is fitted from a grid of starting values, so that a fit doesn't
+depend on one lucky guess. The whole grid runs as one batch of array operations, a
+projected Levenberg-Marquardt over every start at once; the best few results, in
+different places, then get a tight trust-region solve on the CPU. All 20 models on
+`galap` fit in about 0.3 s, and a full bootstrap of 20 resamples in about 20 s.
+
+On a large dataset the batch can run on an NVIDIA GPU through CuPy:
+
+```python
+sars.set_backend("cupy")  # needs pip install "sars[gpu]" and an NVIDIA GPU
+fit = sars.sar_multi(big_table)
+sars.set_backend("numpy")  # the default
+```
+
+The backend applies to the worker processes `n_jobs` starts as well. Only the batch
+moves to the GPU; the final solve stays on the CPU, so a fit agrees between backends
+to the solver's tolerance whenever that solve converges. A model whose optimum lies
+along a long flat ridge can run the final solve out of evaluations on a very large
+table, and then the two backends may stop at slightly different points on the ridge.
+
+The GPU pays off when the start grid dominates a fit, with tens of thousands of
+islands or more. On a table of 169,000 samples it halved the time of `p1`, `mmf`,
+`weibull3` and `heleg`; for the models whose final solve dominates at that size
+(`betap`, `weibull4`, `epm1`) it makes little difference, and for a few hundred
+islands numpy is as fast. All 20 models took about 65 minutes on either backend.
+The `gpu` extra installs CuPy for CUDA 13; on CUDA 12, install `cupy-cuda12x`
+instead.
 
 ## Threshold models
 
