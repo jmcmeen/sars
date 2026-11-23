@@ -85,3 +85,4 @@ nav:
       - General Dynamic Model: api/gdm.md
       - Plotting: api/plots.md
       - I/O Adapters: api/io.md
+      - Backend: api/backend.md

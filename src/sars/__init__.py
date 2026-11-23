@@ -11,6 +11,7 @@ try:
 except PackageNotFoundError:
     __version__ = "0.0.0.dev0"
 
+from sars._batched import get_backend, set_backend
 from sars._checks import ResidualChecks
 from sars._coleman import ColemanFit, ColemanTest, coleman
 from sars._crossval import LOOCV, loo_cv
@@ -112,6 +113,7 @@ __all__ = [
     "from_geodataframe",
     "from_json",
     "from_pyinaturalist",
+    "get_backend",
     "habitat_loss",
     "lin_pow",
     "lin_pow_mixed",
@@ -136,6 +138,7 @@ __all__ = [
     "sar_pred",
     "sar_threshold",
     "save",
+    "set_backend",
     "threshold_ci",
     "to_json",
     "plot_average",
