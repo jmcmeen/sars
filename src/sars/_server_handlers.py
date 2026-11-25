@@ -50,8 +50,14 @@ def average(data: dict[str, Any], **options: Any) -> dict[str, Any]:
     return ops.result(ops.average(frame(data), **options), include_object=True)
 
 
-def threshold(data: dict[str, Any], **options: Any) -> dict[str, Any]:
-    return ops.result(ops.threshold(frame(data), **options), include_object=True)
+def threshold(
+    data: dict[str, Any], ci: dict[str, Any] | None = None, **options: Any
+) -> dict[str, Any]:
+    obj = ops.threshold(frame(data), **options)
+    result = ops.result(obj, include_object=True)
+    if ci is not None:
+        result["summary"]["ci"] = ops.summary(ops.breakpoint_ci(obj, **ci))
+    return result
 
 
 def cv(data: dict[str, Any], **options: Any) -> dict[str, Any]:

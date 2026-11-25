@@ -126,10 +126,20 @@ class AverageRequest(DataRequest, Checks):
     ic: IC = "AICc"
 
 
+class BreakpointCI(BaseModel):
+    model: ModelName | None = Field(default=None, description="default: the chosen model")
+    method: Literal["boot", "F"] = "boot"
+    n_boot: int = Field(default=1000, ge=1, le=100_000)
+    conf: float = Field(default=0.95, gt=0, lt=1)
+    seed: int | None = None
+    n_jobs: Jobs = 1
+
+
 class ThresholdRequest(DataRequest):
     models: Models | None = Field(default=None, description="default: ContOne, ZslopeOne, Linear")
     interval: float | None = None
     log_area: bool = True
+    ci: BreakpointCI | None = Field(default=None, description="intervals for the breakpoints")
 
 
 class CVRequest(DataRequest):
@@ -379,12 +389,17 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
     @app.post("/v1/threshold", tags=["models"], dependencies=guarded)
     def threshold(request: ThresholdRequest) -> JSONResponse:
         """Piecewise (threshold) models (as `sars threshold`)."""
+        ci = None
+        if request.ci is not None:
+            ci = request.ci.model_dump()
+            ci["n_jobs"] = jobs(request.ci.n_jobs)
         return run(
             "threshold",
             data=_data(request),
             models=request.models,
             interval=request.interval,
             log_area=request.log_area,
+            ci=ci,
         )
 
     @app.post("/v1/cv", tags=["models"], dependencies=guarded)

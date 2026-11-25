@@ -29,7 +29,7 @@ $ sars datasets xu > xu.csv
 |---|---|
 | `sars fit DATA [-m MODEL ...] [--params [--conf C]]` | Fits one model (`power` by default). With several models (`-m power,loga -m koba`) or `-m all`, fits each and ranks them by AICc. `--params` adds each model's parameter table: standard errors, t tests and confidence intervals (see [`param_table`](api/models.md)). |
 | `sars average DATA [-m MODEL ...] [--ic AICc\|AIC\|BIC]` | Averages the models (all by default), weighted by the criterion. |
-| `sars threshold DATA [-m MODEL ...] [--interval X] [--no-log-area]` | Fits piecewise models (ContOne, ZslopeOne and Linear by default) and picks one by AICc. |
+| `sars threshold DATA [-m MODEL ...] [--interval X] [--no-log-area] [--ci [--ci-method boot\|F] [--ci-model M] [--n-boot N]]` | Fits piecewise models (ContOne, ZslopeOne and Linear by default) and picks one by AICc. `--ci` adds confidence intervals for the chosen model's breakpoints, by residual bootstrap or inverted F test (see [`threshold_ci`](api/threshold.md)). |
 | `sars cv DATA [-m MODEL ...] [--ic AICc\|AIC\|BIC] [--warm] [--label-col COL] [--n-jobs N]` | Ranks the models by leave-one-island-out cross-validation (see [`loo_cv`](api/inference.md)). |
 | `sars loss DATA --area A ... (--remaining R ... \| --fraction-lost F ...) [-m MODEL ...] [--n-boot N] [--seed S]` | Species expected to be lost with habitat, with bootstrap intervals (see [`habitat_loss`](api/inference.md)). |
 | `sars many DATA DATA ... \| sars many TABLE --by COL [-m MODEL ...] [--no-threshold] [--n-jobs N]` | Fits the same models to many datasets and summarizes them in one table: best model and weight, log-log z, threshold model (see [`sar_many`](api/inference.md)). |

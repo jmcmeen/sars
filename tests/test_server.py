@@ -92,6 +92,14 @@ def test_each_command_with_inline_data(client, path, body, check):
     assert check(response.json()["result"]["summary"])
 
 
+def test_threshold_ci(client):
+    body = {"dataset": "gala", "ci": {"method": "F"}}
+    response = client.post("/v1/threshold", json=body)
+    assert response.status_code == 200, response.text
+    ci = response.json()["result"]["summary"]["ci"]
+    assert ci["method"] == "F" and ci["breakpoints"][0]["lower_area"] > 0
+
+
 def test_fit_params(client):
     response = client.post("/v1/fit", json={"dataset": "galap", "params": True})
     rows = response.json()["result"]["summary"]["parameters"]["power"]

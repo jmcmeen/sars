@@ -279,7 +279,41 @@ def _cmd_threshold(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
     obj = ops.threshold(
         data, ops.model_names(args.models), interval=args.interval, log_area=not args.no_log_area
     )
-    return _finish(obj, args)
+    result, show = _finish(obj, args)
+    if not args.ci:
+        return result, show
+    intervals = ops.summary(
+        ops.breakpoint_ci(
+            obj,
+            model=args.ci_model,
+            method=args.ci_method,
+            n_boot=args.n_boot,
+            conf=args.conf,
+            seed=args.seed,
+            n_jobs=args.n_jobs,
+        )
+    )
+    result["summary"]["ci"] = intervals
+
+    def show_all(out: Any) -> None:
+        show(out)
+        how = (
+            "inverted F test"
+            if intervals["method"] == "F"
+            else (f"bootstrap of {intervals['n_boot']} resamples")
+        )
+        print(
+            f"\n{intervals['model']} breakpoints, {intervals['conf']:.0%} intervals ({how}):",
+            file=out,
+        )
+        for i, row in enumerate(intervals["breakpoints"], start=1):
+            print(
+                f"  {i}: area {_fmt(row['estimate_area'])} ({_fmt(row['lower_area'])} to "
+                f"{_fmt(row['upper_area'])})",
+                file=out,
+            )
+
+    return result, show_all
 
 
 def _cmd_cv(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
@@ -526,6 +560,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     threshold.add_argument(
         "--no-log-area", action="store_true", help="fit on area rather than log area"
+    )
+    threshold.add_argument(
+        "--ci", action="store_true", help="also give confidence intervals for the breakpoints"
+    )
+    threshold.add_argument(
+        "--ci-model", metavar="NAME", help="the model whose breakpoints (default: the chosen one)"
+    )
+    threshold.add_argument(
+        "--ci-method",
+        choices=["boot", "F"],
+        default="boot",
+        help="residual bootstrap, or inverted F test for ContOne and ZslopeOne (default boot)",
+    )
+    threshold.add_argument(
+        "--n-boot", type=int, default=1000, metavar="N", help="resamples for --ci (default 1000)"
+    )
+    threshold.add_argument("--conf", type=float, default=0.95, help="interval level (default 0.95)")
+    threshold.add_argument("--seed", type=int, help="seed for the resamples")
+    threshold.add_argument(
+        "--n-jobs", type=int, default=1, metavar="N", help="processes to use; -1 for one per core"
     )
     _add_output_args(threshold)
     threshold.set_defaults(handler=_cmd_threshold)

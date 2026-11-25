@@ -218,6 +218,37 @@ def threshold(
     )
 
 
+def breakpoint_ci(
+    fit: Any,
+    model: str | None = None,
+    method: str = "boot",
+    n_boot: int = 1000,
+    conf: float = 0.95,
+    seed: int | None = None,
+    n_jobs: int = 1,
+) -> Any:
+    """Confidence intervals for a threshold fit's breakpoints: its chosen
+    model's, or ``model``'s."""
+    import numpy as np
+
+    import sars
+
+    name = model or fit.best_model
+    if name == "Linear":
+        raise InputError(
+            "The chosen model, Linear, has no breakpoint: name a threshold model for the intervals."
+        )
+    return sars.threshold_ci(
+        fit,
+        model=name,
+        n_boot=n_boot,
+        conf=conf,
+        rng=np.random.default_rng(seed),
+        method=method,
+        n_jobs=n_jobs,
+    )
+
+
 def cv(
     data: Any,
     models: Sequence[str] | None = None,
@@ -477,6 +508,35 @@ def summary(obj: Any) -> dict[str, Any]:
             "conf": obj.conf,
             "ic": obj.average.ic,
             "scenarios": records(obj.table),
+        }
+    if kind == "ThresholdCI":
+        rows = [
+            {
+                "estimate": number(e),
+                "lower": number(lo),
+                "upper": number(hi),
+                "estimate_area": number(ea),
+                "lower_area": number(la),
+                "upper_area": number(ua),
+            }
+            for e, lo, hi, ea, la, ua in zip(
+                obj.estimates,
+                obj.lower,
+                obj.upper,
+                obj.estimates_area,
+                obj.lower_area,
+                obj.upper_area,
+                strict=True,
+            )
+        ]
+        return {
+            "type": kind,
+            "model": obj.model,
+            "method": obj.method,
+            "conf": obj.conf,
+            "n_boot": obj.n_boot,
+            "log_area": obj.log_area,
+            "breakpoints": rows,
         }
     if kind == "ManySARFit":
         return {"type": kind, "datasets": records(obj.summary)}

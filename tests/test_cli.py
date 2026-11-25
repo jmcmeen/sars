@@ -288,6 +288,22 @@ def test_loss(capsys):
     assert code == 2 and "not allowed with" in err
 
 
+def test_threshold_ci(capsys):
+    argv = ["threshold", "gala", "--ci", "--n-boot", "40", "--seed", "1"]
+    code, envelope = run_json(capsys, *argv)
+    ci = envelope["result"]["summary"]["ci"]
+    fit = sars.sar_threshold(sars.load_gala())
+    expected = sars.threshold_ci(fit, n_boot=40, rng=np.random.default_rng(1))
+    assert code == 0 and ci["model"] == fit.best_model == "ZslopeOne"
+    row = ci["breakpoints"][0]
+    assert row["lower_area"] == pytest.approx(expected.lower_area[0])
+    assert row["lower_area"] < row["estimate_area"] < row["upper_area"]
+    code, out, _ = run(capsys, "threshold", "gala", "--ci", "--ci-method", "F")
+    assert code == 0 and "ZslopeOne breakpoints, 95% intervals (inverted F test)" in out
+    code, envelope = run_json(capsys, "threshold", "galap", "--ci", "--n-boot", "10")
+    assert code == 1 and "Linear, has no breakpoint" in envelope["error"]["message"]
+
+
 def test_fit_params(capsys):
     code, envelope = run_json(capsys, "fit", "galap", "-m", "negexpo,power", "--params")
     tables = envelope["result"]["summary"]["parameters"]

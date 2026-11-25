@@ -98,6 +98,68 @@
         "title": "AverageRequest",
         "type": "object"
       },
+      "BreakpointCI": {
+        "properties": {
+          "conf": {
+            "default": 0.95,
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Conf",
+            "type": "number"
+          },
+          "method": {
+            "default": "boot",
+            "enum": [
+              "boot",
+              "F"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "default: the chosen model",
+            "title": "Model"
+          },
+          "n_boot": {
+            "default": 1000,
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "N Boot",
+            "type": "integer"
+          },
+          "n_jobs": {
+            "default": 1,
+            "description": "processes; -1: the server's limit",
+            "maximum": 64.0,
+            "minimum": -1.0,
+            "title": "N Jobs",
+            "type": "integer"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          }
+        },
+        "title": "BreakpointCI",
+        "type": "object"
+      },
       "CIRequest": {
         "properties": {
           "areas": {
@@ -798,6 +860,17 @@
       },
       "ThresholdRequest": {
         "properties": {
+          "ci": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BreakpointCI"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "intervals for the breakpoints"
+          },
           "data": {
             "anyOf": [
               {
