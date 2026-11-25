@@ -13,10 +13,25 @@ The power, average and threshold jobs run on the bundled galap (16 islands)
 and aegean (90) datasets, and on synthetic power-law datasets of 50 to 5,000
 points. Bootstraps take minutes in R, so they run on galap only.
 
+Two options cover what the defaults don't:
+
+- `--large N` adds the all-models job on a synthetic table of N points shaped
+  like a species-accumulation nest of observation records: areas from 10,000
+  to 300,000 km² and richness rising toward 200 species, with noise. Large
+  areas and a curved, noisy relationship are where the nonlinear models are
+  slowest. It's timed once, and not in R (R would take hours); with 100,000
+  points it runs for over an hour on the CPU.
+- `--gpu` times the all-models and bootstrap jobs again with
+  `sars.set_backend("cupy")`, as a "Python GPU" series, when CuPy
+  (`pip install "sars[gpu]"`) finds a GPU; that includes the `--large`
+  table, timed once more on the GPU. The GPU and CuPy version go in
+  `machine.csv`.
+
 ```sh
 uv run python benchmarks/run.py            # Python and, if Rscript and R sars are installed, R
 uv run python benchmarks/run.py --quick    # small datasets, one run, 20 resamples (to <machine>-quick/)
 uv run python benchmarks/run.py --no-r     # Python only
+uv run python benchmarks/run.py --large 100000 --gpu   # add a large table and the GPU series
 uv run python benchmarks/run.py --plot-only   # redraw the figure and speed-ups from saved timings
 ```
 

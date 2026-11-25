@@ -7,6 +7,8 @@ Usage (from the repository root):
 Runs each job (one power fit, all 20 models, the threshold models, bootstrap
 intervals) on the bundled galap and aegean datasets and on synthetic datasets
 of growing size, in Python and, if ``Rscript`` and R sars are installed, in R.
+``--large N`` adds all 20 models on a synthetic table of N points, and
+``--gpu`` times the all-models and bootstrap jobs on a GPU as well.
 Writes the timings, the machine and a figure to ``benchmarks/results/<machine>/``,
 named after the CPU, so runs on different machines sit side by side.
 """
@@ -46,8 +48,11 @@ COLORS = {
     "Python full": "#6baed6",
     "Python all cores": "#08306b",
     "Python full all cores": "#17becf",
+    "Python GPU": "#2ca02c",
+    "Python GPU full": "#98df8a",
     "R": "#ff7f0e",
 }
+GPU_TASKS = ["average", "bootstrap", "bootstrap_full"]  # timed on the GPU with --gpu
 
 
 def synthetic(n: int) -> pd.DataFrame:
@@ -57,6 +62,22 @@ def synthetic(n: int) -> pd.DataFrame:
     area = np.sort(10 ** rng.uniform(-2, 4, n))
     species = np.maximum(1, np.round(10 * area**0.25 * np.exp(rng.normal(0, 0.15, n))))
     return pd.DataFrame({"area": area, "species": species})
+
+
+def synthetic_large(n: int) -> pd.DataFrame:
+    """``n`` samples like a species-accumulation nest: areas drawn uniformly in
+    log over a narrow, high range (10,000 to 300,000 km²), and richness from a
+    saturating curve (up to 200 species) with lognormal noise. Large areas and
+    a curved, noisy relationship are what make the nonlinear models slow."""
+    rng = np.random.default_rng(n)
+    area = np.sort(10 ** rng.uniform(4, np.log10(3e5), n))
+    mean = 200 * (1 - np.exp(-((area / 6e4) ** 0.7)))
+    species = np.maximum(1, np.round(mean * np.exp(rng.normal(0, 0.1, n))))
+    return pd.DataFrame({"area": area, "species": species})
+
+
+def is_large(dataset: str) -> bool:
+    return dataset.startswith("large_")
 
 
 def python_job(task: str, data: pd.DataFrame, n_boot: int) -> Callable[[], str]:
@@ -89,16 +110,20 @@ def python_job(task: str, data: pd.DataFrame, n_boot: int) -> Callable[[], str]:
     return bootstrap
 
 
-def time_python(jobs: pd.DataFrame, datasets: dict, repeats: int, n_boot: int) -> pd.DataFrame:
+def time_python(
+    jobs: pd.DataFrame, datasets: dict, repeats: int, n_boot: int, language: str = "Python"
+) -> pd.DataFrame:
     rows = []
     for job in jobs.itertuples():
         data = datasets[job.dataset]
         run = python_job(job.task, data, n_boot)
-        runs = 1 if job.task.startswith("bootstrap") else repeats
+        # A bootstrap or a large table is long enough to time once, without a warm-up.
+        long_job = job.task.startswith("bootstrap") or is_large(job.dataset)
+        runs = 1 if long_job else repeats
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            if not job.task.startswith("bootstrap"):
-                run()  # warm-up (a bootstrap is long enough without)
+            if not long_job:
+                run()  # warm-up
             times = []
             for _ in range(runs):
                 started = time.perf_counter()
@@ -107,7 +132,7 @@ def time_python(jobs: pd.DataFrame, datasets: dict, repeats: int, n_boot: int) -
         seconds = float(np.median(times))
         rows.append(
             {
-                "language": "Python",
+                "language": language,
                 "task": job.task,
                 "dataset": job.dataset,
                 "n": len(data),
@@ -116,13 +141,28 @@ def time_python(jobs: pd.DataFrame, datasets: dict, repeats: int, n_boot: int) -
                 "result": result,
             }
         )
-        print(f"Python {job.task} {job.dataset}: {seconds:.3f} s", flush=True)
+        print(f"{language} {job.task} {job.dataset}: {seconds:.3f} s", flush=True)
     return pd.DataFrame(rows)
+
+
+def time_gpu(jobs: pd.DataFrame, datasets: dict, repeats: int, n_boot: int) -> pd.DataFrame:
+    """The GPU jobs' timings with the cupy backend, or none if it can't run."""
+    try:
+        sars.set_backend("cupy")
+    except ImportError as err:
+        print(f"No GPU timings: {err}", file=sys.stderr)
+        return pd.DataFrame()
+    try:
+        gpu_jobs = jobs[jobs["task"].isin(GPU_TASKS)]
+        return time_python(gpu_jobs, datasets, repeats, n_boot, language="Python GPU")
+    finally:
+        sars.set_backend("numpy")
 
 
 def time_r(jobs: pd.DataFrame, folder: Path, repeats: int, n_boot: int) -> pd.DataFrame:
     """R sars's timings for the jobs R has (no full or parallel bootstrap)."""
-    r_jobs = jobs[jobs["task"].isin([*TASKS, "bootstrap"])]
+    # A large table would take R hours, so it's timed in Python only.
+    r_jobs = jobs[jobs["task"].isin([*TASKS, "bootstrap"]) & ~jobs["dataset"].map(is_large)]
     r_jobs.to_csv(folder / "jobs.csv", index=False)
     out = folder / "r.csv"
     subprocess.run(
@@ -142,6 +182,7 @@ def time_r(jobs: pd.DataFrame, folder: Path, repeats: int, n_boot: int) -> pd.Da
 def speedups(timings: pd.DataFrame) -> pd.DataFrame:
     """R's time over Python's, per job. R's one bootstrap is set against each
     Python bootstrap; the full method is the like-for-like one."""
+    timings = timings[timings["language"].isin(["Python", "R"])]
     r_boot = timings[(timings["language"] == "R") & (timings["task"] == "bootstrap")]
     variants = timings.loc[
         (timings["language"] == "Python") & timings["task"].str.startswith("bootstrap"), "task"
@@ -208,6 +249,17 @@ def machine() -> dict:
     }
 
 
+def gpu_info() -> dict:
+    """The GPU and CuPy version, for a run with --gpu."""
+    try:
+        import cupy
+
+        name = cupy.cuda.runtime.getDeviceProperties(0)["name"]
+        return {"gpu": name.decode() if isinstance(name, bytes) else name, "cupy": cupy.__version__}
+    except Exception:
+        return {}
+
+
 def slug(text: str) -> str:
     """A folder name from a CPU name: "AMD Ryzen 7 7700 8-Core Processor" ->
     "amd-ryzen-7-7700"."""
@@ -243,7 +295,9 @@ def figure(timings: pd.DataFrame, path: Path) -> None:
             )
         ax.set_xticks(np.arange(len(order)) + 0.4 - width / 2)
         names = rows.drop_duplicates("dataset").set_index("dataset")["n"]
-        short = {d: d.replace("synthetic_", "synthetic\n") for d in order}
+        short = {
+            d: d.replace("synthetic_", "synthetic\n").replace("large_", "large\n") for d in order
+        }
         ax.set_xticklabels(
             [f"{short[d]}\nn={names[d]}" if "\n" not in short[d] else short[d] for d in order],
             fontsize=7,
@@ -265,6 +319,17 @@ def main() -> None:
         "--quick", action="store_true", help="small datasets, one run, 20 resamples"
     )
     parser.add_argument("--no-r", action="store_true", help="time Python only")
+    parser.add_argument(
+        "--large",
+        type=int,
+        metavar="N",
+        help="also fit all 20 models to a synthetic table of N points (Python only; slow)",
+    )
+    parser.add_argument(
+        "--gpu",
+        action="store_true",
+        help="also time the all-models and bootstrap jobs on a GPU (needs sars[gpu])",
+    )
     parser.add_argument("--repeats", type=int, default=3, help="runs per job (median; default 3)")
     parser.add_argument("--n-boot", type=int, default=100, help="bootstrap resamples (default 100)")
     parser.add_argument("--name", help="the machine's folder name (default: from the CPU)")
@@ -290,8 +355,14 @@ def main() -> None:
 
     datasets = {"galap": sars.load_galap(), "aegean": sars.load_aegean()}
     datasets |= {f"synthetic_{n}": synthetic(n) for n in sizes}
+    if args.large:
+        datasets[f"large_{args.large}"] = synthetic_large(args.large)
     jobs = pd.DataFrame(
-        [{"task": t, "dataset": d} for d in datasets for t in TASKS]
+        [
+            {"task": t, "dataset": d}
+            for d in datasets
+            for t in (["average"] if is_large(d) else TASKS)
+        ]
         + [
             {"task": t, "dataset": d}
             for d in BOOTSTRAP_DATASETS
@@ -315,6 +386,11 @@ def main() -> None:
             data[["area", "species"]].to_csv(paths[name], index=False)
         jobs["path"] = jobs["dataset"].map(lambda d: str(paths[d]))
         timings = [time_python(jobs, datasets, repeats, n_boot)]
+        if args.gpu:
+            gpu_timings = time_gpu(jobs, datasets, repeats, n_boot)
+            if len(gpu_timings):  # name the GPU only if it was timed
+                timings.append(gpu_timings)
+                info |= gpu_info()
         if use_r:
             try:
                 timings.append(time_r(jobs, scratch_dir, repeats, n_boot))
