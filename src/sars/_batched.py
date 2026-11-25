@@ -9,8 +9,9 @@ operations over (starts x islands). The arrays can be numpy's or, with
 expressions, which numpy dispatches to CuPy arrays.
 
 The batch only ranks the starts. The best few distinct results go on to the
-tight trust-region polish in ``_fit_nls``, so the reported fits keep that
-precision whichever backend screened them.
+trust-region polish in ``_fit_nls`` (at tight tolerances, except for a full
+bootstrap's resamples), so the reported fits keep that precision whichever
+backend screened them.
 """
 
 from __future__ import annotations
@@ -48,8 +49,9 @@ def set_backend(name: str) -> None:
 
     Every fit tries each model from a grid of starting values. They're run
     as one batch, on numpy (the default) or, for large datasets or many fits,
-    on an NVIDIA GPU through CuPy (``pip install 'sars[gpu]'``). The tight
-    final solve always runs on the CPU, so results agree between backends to
+    on an NVIDIA GPU through CuPy (``pip install 'sars[gpu]'``). The final
+    solve (at tight tolerances, or the defaults for a full bootstrap's
+    resamples) always runs on the CPU, so results agree between backends to
     the solver's tolerance wherever that solve converges.
 
     Parameters

@@ -786,8 +786,9 @@ def _bootstrap_chunk(
 ) -> list[_ResampleOutcome]:
     """Fit and predict a chunk of resamples (rows of indices), in order.
 
-    For the "full" method each model's start grid is screened on every
-    resample of the chunk in one batch (``_screen_many``); each resample's fits
+    For the "full" method each model's start grid (but epm1's and epm2's) is
+    screened on every resample of the chunk in one batch (``_screen_many``);
+    each resample's fits
     then go on from its own screen, as they would alone. Module level, so it
     can run in a worker process.
     """
@@ -871,7 +872,8 @@ def bootstrap_ci(
         parameters as warm starts for each resample (~2000x faster).
         ``"full"`` runs the complete grid search on every resample (slower but
         maximally robust): each model's start grid is screened for many
-        resamples at once, and each resample's fits are polished at the
+        resamples at once (but epm1's and epm2's, fitted on each resample's
+        own area scale), and each resample's fits are polished at the
         solver's default tolerances (a resample needs the fit, not its last
         digits).
     ic : str
@@ -996,7 +998,11 @@ def bootstrap_ci(
 
     # Every resample's rows are drawn here, in order, so the interval doesn't
     # depend on n_jobs: the fits can run anywhere and come back in this order.
-    resamples = [rng.integers(0, n, size=n) for _ in range(n_boot)]
+    # Filled row by row, the same draws as one call per resample, without a
+    # second copy of them all.
+    resamples = np.empty((n_boot, n), dtype=np.int64)
+    for row in resamples:
+        row[:] = rng.integers(0, n, size=n)
     shared = {
         "data": data,
         "method": method,
@@ -1009,7 +1015,7 @@ def bootstrap_ci(
     n_chunks = max(
         n_workers(n_jobs) * 4 if n_workers(n_jobs) > 1 else 1, -(-n_boot // _CHUNK_RESAMPLES)
     )
-    outcomes = map_in_order(_bootstrap_chunk, chunks(np.array(resamples), n_chunks), n_jobs, shared)
+    outcomes = map_in_order(_bootstrap_chunk, chunks(resamples, n_chunks), n_jobs, shared)
     for result in (outcome for chunk in outcomes for outcome in chunk):
         if result.not_fitted is not None:  # the "full" method's multi-model fit ran
             unfitted_in.update(result.not_fitted)

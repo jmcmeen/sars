@@ -13,8 +13,9 @@ reconstructed from the commit history and the
 ### Changed
 
 - The full bootstrap is about 2.3 times faster (20 resamples of galap in
-  9.9 s instead of 23 s; 12 times faster than 0.11.10). Each model's start
-  grid is screened for many resamples in one batch, each resample getting
+  9.9 s instead of 23 s; 12 times faster than 0.11.10). Each model's start grid
+  (all but epm1's and epm2's, which are fitted on each resample's own area
+  scale) is screened for many resamples in one batch, each resample getting
   exactly the screen it would get alone, and each resample's fits are
   polished at the solver's default tolerances rather than tight ones: the
   tight polish was three quarters of a resample's time, and changed no

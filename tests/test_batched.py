@@ -220,11 +220,21 @@ def test_a_fit_from_a_shared_screen_is_the_fit_alone(galap, name):
 
     rng = np.random.default_rng(4)
     datasets = [galap.iloc[rng.integers(0, 16, 16)].reset_index(drop=True) for _ in range(3)]
+    real_screen = _batched.screen
     for data, found in zip(datasets, _screen_many(name, datasets), strict=True):
         if name == "epm1":  # fitted on each dataset's own scale: screened alone
             assert found is None
         alone = _fit_nls(name, data)
-        shared = _fit_nls(name, data, prescreened=found)
+        if found is not None:  # the shared screen is used, not run again
+
+            def no_screen(*args, **kwargs):
+                pytest.fail("screened again")
+
+            _batched.screen = no_screen
+        try:
+            shared = _fit_nls(name, data, prescreened=found)
+        finally:
+            _batched.screen = real_screen
         assert shared.aicc == pytest.approx(alone.aicc, rel=1e-12, nan_ok=True)
         assert shared.params == pytest.approx(alone.params, rel=1e-9, nan_ok=True)
 
@@ -255,9 +265,18 @@ def test_a_failed_shared_screen_leaves_each_dataset_to_itself(galap, monkeypatch
 def test_the_bootstrap_is_the_same_in_any_chunks(galap, monkeypatch):
     from sars import _inference
 
+    sizes = []
+    real_chunk = _inference._bootstrap_chunk
+
+    def chunk(resamples, *args, **kwargs):
+        sizes.append(len(resamples))
+        return real_chunk(resamples, *args, **kwargs)
+
+    monkeypatch.setattr(_inference, "_bootstrap_chunk", chunk)
     whole = sars.bootstrap_ci(galap, n_boot=6, method="full", rng=np.random.default_rng(5))
     monkeypatch.setattr(_inference, "_CHUNK_RESAMPLES", 1)
     one_by_one = sars.bootstrap_ci(galap, n_boot=6, method="full", rng=np.random.default_rng(5))
+    assert sizes == [6] + [1] * 6
     np.testing.assert_array_equal(whole.lower, one_by_one.lower)
     np.testing.assert_array_equal(whole.upper, one_by_one.upper)
     assert whole.convergence_counts == one_by_one.convergence_counts
