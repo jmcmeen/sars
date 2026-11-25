@@ -299,6 +299,14 @@ def test_fit_params(capsys):
     assert code == 0 and "power: parameters, 90% intervals" in out and "ci_lower" in out
     code, envelope = run_json(capsys, "fit", "galap", "--params", "--conf", "1.5")
     assert code == 1 and "between 0 and 1" in envelope["error"]["message"]
+    code, envelope = run_json(capsys, "fit", "galap", "--conf", "0.9")
+    assert code == 1 and "give --params too" in envelope["error"]["message"]
+
+
+def test_a_bad_level_saves_nothing(capsys, tmp_path):
+    saved = tmp_path / "fit.json"
+    code, _ = run_json(capsys, "fit", "galap", "--params", "--conf", "95", "--save", str(saved))
+    assert code == 1 and not saved.exists()
 
 
 def test_many(capsys, tmp_path):

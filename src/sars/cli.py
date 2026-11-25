@@ -234,17 +234,23 @@ def _checks(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _cmd_fit(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
+    # Checked before anything is fitted or saved.
+    if args.conf is not None and not args.params:
+        raise InputError("--conf sets the parameter tables' level: give --params too.")
+    conf = 0.95 if args.conf is None else args.conf
+    if not 0 < conf < 1:
+        raise InputError(f"The interval level must be between 0 and 1, got {conf}.")
     data = _read_data(args.data, args.area_col, args.species_col)
     obj = ops.fit(data, ops.model_names(args.model), **_checks(args))
     result, show = _finish(obj, args)
     if not args.params:
         return result, show
-    tables = ops.parameters(obj, conf=args.conf)
+    tables = ops.parameters(obj, conf=conf)
     result["summary"]["parameters"] = tables
 
     def show_all(out: Any) -> None:
         show(out)
-        _print_parameters(tables, args.conf, out)
+        _print_parameters(tables, conf, out)
 
     return result, show_all
 
@@ -479,9 +485,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="also print each model's parameter table: standard errors, t tests, intervals",
     )
-    fit.add_argument(
-        "--conf", type=float, default=0.95, help="interval level for --params (default 0.95)"
-    )
+    fit.add_argument("--conf", type=float, help="interval level for --params (default 0.95)")
     _add_check_args(fit)
     _add_output_args(fit)
     fit.set_defaults(handler=_cmd_fit)
