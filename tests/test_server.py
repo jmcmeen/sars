@@ -151,7 +151,7 @@ def test_the_committed_openapi_spec_is_current():
 def test_the_dataset_names_match_the_command_line():
     from typing import get_args
 
-    from sars.cli import DATASETS
+    from sars._operations import DATASETS
     from sars.server.app import Dataset
 
     assert set(get_args(Dataset)) == set(DATASETS)
@@ -162,16 +162,13 @@ def test_only_bundled_datasets_are_accepted(client, dataset):
     assert client.post("/v1/fit", json={"dataset": dataset}).status_code == 422
 
 
-def test_labels_with_quotes_commas_and_accents_reach_the_command_intact(tmp_path):
-    import pandas as pd
-
-    from sars.server.app import DataRequest, _data_args
+def test_labels_with_quotes_commas_and_accents_reach_the_operation_intact():
+    from sars.server._handlers import frame
+    from sars.server.app import DataRequest, _data
 
     labels = ['O"Brien, North', "Española", "plain", "tab\there"]
     request = DataRequest(data={"area": [1, 2, 3, 4], "species": [1, 2, 3, 4], "label": labels})
-    assert _data_args(request, tmp_path, labels=True) == ["data.csv", "--label-col", "label"]
-    assert _data_args(request, tmp_path) == ["data.csv"]
-    assert list(pd.read_csv(tmp_path / "data.csv")["label"]) == labels
+    assert frame(_data(request))["label"].tolist() == labels
 
 
 @pytest.mark.parametrize(("n_jobs", "status"), [(-1, 200), (1, 200), (10_000, 422), (-2, 422)])
@@ -197,54 +194,69 @@ def test_a_non_ascii_authorization_header_is_401_not_500():
     assert client.get("/v1/datasets", headers=ok).status_code == 200
 
 
-def _fake_python(tmp_path, envelope, code=1):
-    """An "interpreter" that ignores its arguments and prints an envelope."""
-    script = tmp_path / "python"
-    script.write_text(f"#!/bin/sh\ncat <<'EOF'\n{json.dumps(envelope)}\nEOF\nexit {code}\n")
-    script.chmod(0o755)
-    return str(script)
+@pytest.mark.parametrize(("kind", "status"), [("InputError", 422), ("TypeError", 500)])
+def test_a_bug_in_the_operation_is_500_not_422(kind, status):
+    from sars.server.app import _execute
 
-
-@pytest.mark.skipif(os.name != "posix", reason="a shell-script stand-in for python")
-@pytest.mark.parametrize(
-    ("kind", "status"), [("CLIError", 422), ("UsageError", 422), ("TypeError", 500)]
-)
-def test_a_bug_in_the_command_is_500_not_422(tmp_path, kind, status):
-    envelope = {"ok": False, "error": {"type": kind, "message": "x"}}
-    client = TestClient(create_app(ServerConfig(python=_fake_python(tmp_path, envelope))))
-    assert client.post("/v1/fit", json={"dataset": "galap"}).status_code == status
+    response = _execute(ServerConfig(), "fit", "tests.server_helpers:raises", {"kind": kind})
+    assert response.status_code == status
+    assert json.loads(response.body)["error"]["type"] == kind
 
 
 @pytest.mark.skipif(os.name != "posix", reason="process groups")
-def test_a_timeout_stops_the_commands_worker_processes(tmp_path):
-    """The command's own workers (a stand-in sleeping child here) go too."""
+def test_a_timeout_stops_the_operations_worker_processes(tmp_path):
+    """The operation's own workers (a stand-in sleeping child here) go too."""
     import time
 
+    from fastapi import HTTPException
+
+    from sars.server.app import _execute
+
     marker = tmp_path / "survived"
-    script = tmp_path / "python"
-    script.write_text(f"#!/bin/sh\n(sleep 2; touch {marker}) &\nsleep 30\n")
-    script.chmod(0o755)
-    client = TestClient(create_app(ServerConfig(python=str(script), timeout=0.5)))
-    assert client.post("/v1/fit", json={"dataset": "galap"}).status_code == 504
+    with pytest.raises(HTTPException) as stopped:
+        _execute(
+            ServerConfig(timeout=1.0),
+            "fit",
+            "tests.server_helpers:sleeps_with_a_worker",
+            {"marker": str(marker)},
+        )
+    assert stopped.value.status_code == 504
     time.sleep(2.5)
     assert not marker.exists()
 
 
-def test_the_command_does_not_see_the_token(tmp_path, monkeypatch):
-    from sars.server import app as server_app
-
-    seen = {}
-    real = server_app.subprocess.Popen
-
-    def spy(*args, **kwargs):
-        seen.update(kwargs["env"])
-        seen["argv"] = args[0]
-        return real(*args, **kwargs)
+def test_the_operation_does_not_see_the_token(monkeypatch):
+    from sars.server.app import _execute
 
     monkeypatch.setenv("SARS_SERVER_TOKEN", "s3cret")
-    monkeypatch.setattr(server_app.subprocess, "Popen", spy)
-    TestClient(create_app()).post("/v1/fit", json={"dataset": "galap"})
-    assert "SARS_SERVER_TOKEN" not in seen and seen["argv"][1] == "-P"
+    response = _execute(ServerConfig(), "fit", "tests.server_helpers:environment", {})
+    assert json.loads(response.body)["result"] == {"token": None}
+
+
+def test_a_worker_that_dies_is_500():
+    from fastapi import HTTPException
+
+    from sars.server.app import _execute
+
+    with pytest.raises(HTTPException) as failed:
+        _execute(ServerConfig(), "fit", "tests.server_helpers:dies", {})
+    assert failed.value.status_code == 500
+    assert "exit code 3" in failed.value.detail
+
+
+def test_the_server_does_not_run_the_command_line():
+    """The server and the command line share the operations; the server never
+    goes through the command line (the CLI imports the server only to start
+    it, in `sars serve`)."""
+    import ast
+
+    for file in sorted(
+        (Path(__file__).resolve().parents[1] / "src" / "sars" / "server").glob("*.py")
+    ):
+        tree = ast.parse(file.read_text(encoding="utf-8"))
+        imported = {n.module or "" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
+        imported |= {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
+        assert not any(m.startswith("sars.cli") or m == "subprocess" for m in imported), file
 
 
 def test_serve_refuses_a_timeout_that_is_not_positive(capsys):

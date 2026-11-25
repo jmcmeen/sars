@@ -12,6 +12,16 @@ reconstructed from the commit history and the
 
 ### Changed
 
+- The HTTP server no longer runs the command line. Each command's work is
+  now an operation in the library that both front ends call: the CLI reads
+  its arguments and files, calls it and prints; the server validates a
+  request, runs the same operation in a worker process with the same time
+  limit (stopping it and its workers when time runs out), and returns the
+  same envelope. The endpoints and request bodies are unchanged. An
+  envelope's error type for a bad input is now `InputError` (it was
+  `CLIError`). `python -m sars` no longer reruns the command in worker
+  processes started by spawn.
+
 - With the cupy backend, a fit hands the GPU memory it used back to the
   device when its start-grid screen finishes. CuPy's pool had kept every
   freed block for reuse, so a run of many fits held the most any of them

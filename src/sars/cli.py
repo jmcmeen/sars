@@ -1,13 +1,14 @@
 """The ``sars`` command line: fit, average, threshold, predict and datasets.
 
-Built on the standard library's argparse, so it needs no extra. Every command
+Built on the standard library's argparse, so it needs no extra. The work is
+the library's (``sars._operations``, which the HTTP server calls too): this
+module reads the arguments and the data, calls it and prints. Every command
 can print a JSON envelope (``--json``)::
 
     {"sars": "<version>", "command": "fit", "ok": true,
      "result": {...}, "warnings": [...]}
 
 or, on failure, ``"ok": false`` and ``"error": {"type": ..., "message": ...}``.
-That envelope is the contract scripts and a server use to run the CLI.
 """
 
 from __future__ import annotations
@@ -17,38 +18,14 @@ import io
 import json
 import math
 import sys
-import warnings
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-# The datasets bundled with the package, by the name the CLI takes, and the
-# function that loads each.
-DATASETS = {
-    "galap": "load_galap",
-    "gala": "load_gala",
-    "aegean": "load_aegean",
-    "aegean2": "load_aegean2",
-    "niering": "load_niering",
-    "schrader": "load_schrader",
-    "xu": "load_xu",
-}
+from sars import _operations as ops
+from sars._operations import DATASETS, THRESHOLD_MODELS, InputError
 
-THRESHOLD_MODELS = ["ContOne", "ZslopeOne", "DiscOne", "ContTwo", "ZslopeTwo", "DiscTwo"]
-
-
-class CLIError(Exception):
-    """A problem with what the command was given (a missing file, a column
-    that isn't there): reported as an error, without a traceback."""
-
-
-def _version() -> str:
-    try:
-        from importlib.metadata import version
-
-        return version("sars")
-    except Exception:  # pragma: no cover - only in an uninstalled checkout
-        return "0.0.0.dev0"
+__all__ = ["DATASETS", "THRESHOLD_MODELS", "build_parser", "main"]
 
 
 # ---------------------------------------------------------------------------
@@ -73,14 +50,14 @@ def _read_data(source: str, area_col: str, species_col: str, label_col: str | No
             )
             frame = pd.read_csv(io.StringIO(text))
         except (pd.errors.ParserError, pd.errors.EmptyDataError, UnicodeDecodeError) as exc:
-            raise CLIError(f"Couldn't read {label} as CSV: {exc}") from exc
+            raise InputError(f"Couldn't read {label} as CSV: {exc}") from exc
     elif source in DATASETS:
-        frame = getattr(sars, DATASETS[source])()
+        frame = ops.bundled(source)
     else:
-        raise CLIError(f"No such file: {source} (nor a bundled dataset: {', '.join(DATASETS)}).")
+        raise InputError(f"No such file: {source} (nor a bundled dataset: {', '.join(DATASETS)}).")
     for column in (area_col, species_col):
         if column not in frame.columns:
-            raise CLIError(
+            raise InputError(
                 f"No column {column!r} in {source}; its columns are {list(frame.columns)}. "
                 "Name the columns with --area-col and --species-col."
             )
@@ -92,7 +69,7 @@ def _read_data(source: str, area_col: str, species_col: str, label_col: str | No
             lower = {str(c).lower(): c for c in frame.columns}
             label_col = next((lower[g] for g in _LABEL_GUESSES if g in lower), None)
         elif label_col not in frame.columns:
-            raise CLIError(
+            raise InputError(
                 f"No column {label_col!r} in {source}; its columns are {list(frame.columns)}."
             )
         if label_col is not None and label_col not in data.columns:
@@ -100,120 +77,9 @@ def _read_data(source: str, area_col: str, species_col: str, label_col: str | No
     return data
 
 
-def _model_list(values: Sequence[str] | None) -> list[str] | None:
-    """Model names from repeated or comma-separated options."""
-    if not values:
-        return None
-    names = [name.strip() for value in values for name in value.split(",") if name.strip()]
-    if not names:
-        raise CLIError(f"No model names in {' '.join(repr(v) for v in values)}.")
-    return names
-
-
 # ---------------------------------------------------------------------------
-# Summaries: what each result looks like in the envelope and on screen
+# Printing a result
 # ---------------------------------------------------------------------------
-
-
-def _number(value: Any) -> Any:
-    """A JSON-safe number: None where it's undefined or infinite (an AICc at
-    small n), so the envelope stays standard JSON."""
-    if value is None:
-        return None
-    value = float(value)
-    return value if math.isfinite(value) else None
-
-
-def _records(frame: Any) -> list[dict[str, Any]]:
-    """A table's rows as plain JSON values: whole numbers stay integers,
-    undefined numbers and missing values become None."""
-    return [
-        {key: _cell_value(value) for key, value in row.items()}
-        for row in frame.to_dict(orient="records")
-    ]
-
-
-def _cell_value(value: Any) -> Any:
-    import numpy as np
-    import pandas as pd
-
-    if isinstance(value, (bool, np.bool_)):
-        return bool(value)
-    if isinstance(value, (int, np.integer)):
-        return int(value)
-    if isinstance(value, (float, np.floating)):
-        return _number(value)
-    if value is None or value is pd.NA or value is pd.NaT:
-        return None
-    return value
-
-
-def _summary(obj: Any) -> dict[str, Any]:
-    """The readable part of a result, as plain JSON values."""
-    kind = type(obj).__name__
-    if kind == "SARFit":
-        return {
-            "type": kind,
-            "model": obj.model,
-            "params": {k: _number(v) for k, v in obj.params.items()},
-            "R2": _number(obj.r_squared),
-            "AIC": _number(obj.aic),
-            "AICc": _number(obj.aicc),
-            "BIC": _number(obj.bic),
-            "n": obj.n,
-            "converged": bool(obj.converged),
-        }
-    if kind == "MultiSARFit":
-        return {
-            "type": kind,
-            "best": obj.summary.iloc[0]["model"] if len(obj.summary) else None,
-            "models": _records(obj.summary),
-            "excluded": dict(obj.excluded),
-            "not_fitted": dict(obj.not_fitted),
-        }
-    if kind == "AveragedSAR":
-        return {
-            "type": kind,
-            "ic": obj.ic,
-            "weights": {k: _number(v) for k, v in obj.weights.items()},
-            "models": _records(_averaged_table(obj)),
-            "excluded": dict(obj.multi.excluded),
-            "not_fitted": dict(obj.multi.not_fitted),
-        }
-    if kind == "ThresholdFit":
-        return {
-            "type": kind,
-            "best": obj.best_model,
-            "breakpoints": [_number(b) for b in obj.best_breakpoints],
-            "log_area": obj.log_area,
-            "segments": [{k: _number(v) for k, v in s.items()} for s in obj.best_segments],
-            "models": _records(obj.summary),
-        }
-    if kind == "HabitatLoss":
-        return {
-            "type": kind,
-            "conf": obj.conf,
-            "ic": obj.average.ic,
-            "scenarios": _records(obj.table),
-        }
-    if kind == "LOOCV":
-        return {
-            "type": kind,
-            "best": obj.summary.iloc[0]["model"],
-            "warm_start": obj.warm_start,
-            "models": _records(obj.summary),
-            "not_fitted": dict(obj.multi.not_fitted),
-        }
-    raise CLIError(f"Can't summarise a {kind}.")  # pragma: no cover
-
-
-def _averaged_table(obj: Any) -> Any:
-    """The fitted models ranked by the average's criterion, with its
-    differences and weights (``multi.summary`` is always by AICc)."""
-    table = obj.multi.summary[["model", "R2", "AIC", "AICc", "BIC"]].copy()
-    table[f"delta_{obj.ic}"] = table[obj.ic] - table[obj.ic].min()
-    table["weight"] = table["model"].map(obj.weights).astype(float)
-    return table.sort_values(obj.ic, kind="stable").reset_index(drop=True)
 
 
 def _print_summary(summary: dict[str, Any], out: Any) -> None:
@@ -288,172 +154,98 @@ def _finish(obj: Any, args: argparse.Namespace) -> tuple[dict[str, Any], Printer
 
     if args.save:
         sars.save(obj, args.save)
-    summary = _summary(obj)
-    result = {"summary": summary, "saved": str(args.save) if args.save else None}
-    if args.json:
-        result["object"] = json.loads(sars.to_json(obj))
-    return result, lambda out: _print_summary(summary, out)
+    result = ops.result(obj, include_object=args.json, saved=str(args.save) if args.save else None)
+    return result, lambda out: _print_summary(result["summary"], out)
+
+
+def _checks(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "normality": args.normality,
+        "homoscedasticity": args.homoscedasticity,
+        "neg_check": args.neg_check,
+    }
 
 
 def _cmd_fit(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
-    import sars
-
     data = _read_data(args.data, args.area_col, args.species_col)
-    models = _model_list(args.model) or ["power"]
-    checks = args.normality or args.homoscedasticity or args.neg_check
-    if len(models) == 1 and models[0] != "all" and not checks:
-        from sars._models import _model_spec
-
-        try:
-            _model_spec(models[0])
-        except ValueError as exc:
-            raise CLIError(str(exc)) from exc
-        obj = getattr(sars, f"sar_{models[0]}")(data)
-    else:
-        obj = sars.sar_multi(
-            data,
-            models="all" if models == ["all"] else models,
-            normality=args.normality,
-            homoscedasticity=args.homoscedasticity,
-            neg_check=args.neg_check,
-        )
-        if obj.summary.empty:
-            reasons = {**obj.excluded, **obj.not_fitted}
-            raise CLIError(
-                "No model was fitted"
-                + (" or passed the checks: " if reasons else ".")
-                + "; ".join(f"{m}: {r}" for m, r in reasons.items())
-            )
-    return _finish(obj, args)
+    return _finish(ops.fit(data, ops.model_names(args.model), **_checks(args)), args)
 
 
 def _cmd_average(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
-    import sars
-
     data = _read_data(args.data, args.area_col, args.species_col)
-    models = _model_list(args.models) or ["all"]
-    obj = sars.sar_average(
-        data,
-        models="all" if models == ["all"] else models,
-        ic=args.ic,
-        normality=args.normality,
-        homoscedasticity=args.homoscedasticity,
-        neg_check=args.neg_check,
-    )
+    obj = ops.average(data, ops.model_names(args.models), ic=args.ic, **_checks(args))
     return _finish(obj, args)
 
 
 def _cmd_threshold(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
-    import sars
-
     data = _read_data(args.data, args.area_col, args.species_col)
-    obj = sars.sar_threshold(
-        data,
-        models=_model_list(args.models),
-        interval=args.interval,
-        log_area=not args.no_log_area,
+    obj = ops.threshold(
+        data, ops.model_names(args.models), interval=args.interval, log_area=not args.no_log_area
     )
     return _finish(obj, args)
 
 
 def _cmd_cv(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
-    import sars
-
-    data = _read_data(
-        args.data, args.area_col, args.species_col, label_col=args.label_col or "auto"
-    )
-    models = _model_list(args.models) or ["all"]
-    obj = sars.loo_cv(
+    label = args.label_col or "auto"
+    data = _read_data(args.data, args.area_col, args.species_col, label_col=label)
+    obj = ops.cv(
         data,
-        models="all" if models == ["all"] else models,
-        warm_start=args.warm,
+        ops.model_names(args.models),
+        warm=args.warm,
         ic=args.ic,
-        label=args.label_col or "auto",
+        label=label,
         n_jobs=args.n_jobs,
     )
     return _finish(obj, args)
 
 
 def _cmd_loss(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
-    import numpy as np
-
-    import sars
-
     data = _read_data(args.data, args.area_col, args.species_col)
-    models = _model_list(args.models) or ["all"]
-    obj = sars.habitat_loss(
+    obj = ops.loss(
         data,
         area=args.area,
         remaining=args.remaining,
         fraction_lost=args.fraction_lost,
-        models="all" if models == ["all"] else models,
+        models=ops.model_names(args.models),
         ic=args.ic,
         n_boot=args.n_boot,
         conf=args.conf,
-        rng=np.random.default_rng(args.seed),
+        seed=args.seed,
         n_jobs=args.n_jobs,
     )
     return _finish(obj, args)
 
 
 def _cmd_predict(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
-    import numpy as np
-
     import sars
 
     try:
         obj = sars.load(args.fit)
     except FileNotFoundError as exc:
-        raise CLIError(f"No such file: {args.fit}") from exc
-    if not hasattr(obj, "predict"):
-        raise CLIError(
-            f"A saved {type(obj).__name__} doesn't predict; save a single fit, an "
-            "average or a threshold fit instead."
-        )
-    areas = np.asarray(args.areas, dtype=float)
-    if not np.isfinite(areas).all():
-        raise CLIError("Areas must be finite numbers.")
-    species = np.asarray(obj.predict(areas), dtype=float)
-    rows = [{"area": float(a), "species": _number(s)} for a, s in zip(areas, species, strict=True)]
-    result = {"type": type(obj).__name__, "predictions": rows}
+        raise InputError(f"No such file: {args.fit}") from exc
+    result = ops.predict(obj, args.areas)
 
     def show(out: Any) -> None:
-        for row in rows:
+        for row in result["predictions"]:
             print(f"{row['area']:.6g}\t{_fmt(row['species'])}", file=out)
 
     return result, show
 
 
 def _cmd_datasets(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
-    import sars
-
     if args.name is None:
-        names = []
-        for name, loader in DATASETS.items():
-            frame = getattr(sars, loader)()
-            names.append(
-                {
-                    "name": name,
-                    "n": len(frame),
-                    "area_min": float(frame["area"].min()),
-                    "area_max": float(frame["area"].max()),
-                    "columns": [str(c) for c in frame.columns],
-                }
-            )
+        result = ops.datasets()
 
         def show(out: Any) -> None:
-            for row in names:
+            for row in result["datasets"]:
                 print(
                     f"{row['name']:<10} {row['n']:>4} sites  area {row['area_min']:.4g} to "
                     f"{row['area_max']:.4g}",
                     file=out,
                 )
 
-        return {"datasets": names}, show
-    if args.name not in DATASETS:
-        raise CLIError(f"No bundled dataset {args.name!r}; choose from {', '.join(DATASETS)}.")
-    frame = getattr(sars, DATASETS[args.name])()
-    text = frame.to_csv(index=False)
+        return result, show
+    text = ops.bundled(args.name).to_csv(index=False)
     return {"name": args.name, "csv": text}, lambda out: out.write(text)
 
 
@@ -514,7 +306,7 @@ class _Parser(argparse.ArgumentParser):
 def build_parser() -> argparse.ArgumentParser:
     """The ``sars`` argument parser."""
     parser = _Parser(prog="sars", description="Fit species-area relationship models.")
-    parser.add_argument("--version", action="version", version=f"sars {_version()}")
+    parser.add_argument("--version", action="version", version=f"sars {ops.version()}")
     commands = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")
 
     fit = commands.add_parser(
@@ -726,57 +518,42 @@ def main(argv: Sequence[str] | None = None) -> int:
         if "--json" in argv:
             command = next((a for a in argv if not a.startswith("-")), None)
             usage: dict[str, Any] = {
-                "sars": _version(),
+                "sars": ops.version(),
                 "command": command,
                 "ok": False,
                 "error": {"type": "UsageError", "message": str(exc)},
                 "warnings": [],
             }
-            print(json.dumps(usage, indent=2))
+            print(ops.envelope_json(usage))
         else:
             parser.print_usage(sys.stderr)
             print(f"error: {exc}", file=sys.stderr)
         return 2
     if args.command == "serve":
         return _serve(args)
-    envelope: dict[str, Any] = {"sars": _version(), "command": args.command}
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        try:
-            result, show = args.handler(args)
-        except Exception as exc:
-            expected = (CLIError, ValueError, KeyError, RuntimeError, OSError)
-            if not args.json and not isinstance(exc, expected):
-                raise  # a bug: keep the traceback for the report
-            message = str(exc.args[0]) if isinstance(exc, KeyError) and exc.args else str(exc)
-            envelope.update(ok=False, error={"type": type(exc).__name__, "message": message})
-            result, show = None, None
-    if show is not None:
-        envelope.update(ok=True, result=result)
-    seen: list[str] = []
-    for warning in caught:
-        text = str(warning.message)
-        if text not in seen:
-            seen.append(text)
-    envelope["warnings"] = seen
+    shown: list[Printer] = []
+
+    def call() -> dict[str, Any]:
+        result, show = args.handler(args)
+        shown.append(show)
+        return result
+
+    # Without --json, an error that isn't the input's fault (a bug) keeps its
+    # traceback for the report.
+    envelope = ops.envelope(args.command, call, reraise_bugs=not args.json)
     if args.json:
-        try:
-            output = json.dumps(envelope, indent=2, allow_nan=False)
-        except (TypeError, ValueError) as exc:  # a value JSON can't hold: report it
-            envelope = {key: envelope[key] for key in ("sars", "command", "warnings")}
-            envelope.update(ok=False, error={"type": type(exc).__name__, "message": str(exc)})
-            output = json.dumps(envelope, indent=2)
+        output = ops.envelope_json(envelope)  # may report a value JSON can't hold
         print(output)
-        return 0 if envelope["ok"] else 1
-    for text in seen:
+        return 0 if json.loads(output)["ok"] else 1
+    for text in envelope["warnings"]:
         print(f"warning: {text}", file=sys.stderr)
-    if show is None:
+    if not envelope["ok"]:
         print(f"sars {args.command}: {envelope['error']['message']}", file=sys.stderr)
-    else:
-        show(sys.stdout)
-        if result.get("saved"):
-            print(f"saved to {result['saved']}", file=sys.stderr)
-    return 0 if envelope["ok"] else 1
+        return 1
+    shown[0](sys.stdout)
+    if envelope["result"].get("saved"):
+        print(f"saved to {envelope['result']['saved']}", file=sys.stderr)
+    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover

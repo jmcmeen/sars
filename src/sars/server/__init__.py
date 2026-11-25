@@ -1,7 +1,8 @@
-"""sars.server: the `sars` command line over HTTP.
+"""sars.server: the library's operations over HTTP.
 
 Install with ``pip install "sars[server]"`` and start with ``sars serve``. Each
-endpoint runs one ``sars`` command and returns its JSON envelope.
+endpoint runs one operation, the same ones the command line runs, and returns
+its JSON envelope.
 """
 
 from sars._extras import require_extra
