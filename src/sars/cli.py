@@ -496,6 +496,12 @@ class _Parser(argparse.ArgumentParser):
         raise _UsageError(f"{self.prog}: {message}")
 
 
+def _backend_default() -> str:
+    """--backend's default: $SARS_BACKEND if it names a backend, else numpy
+    (a bad value is reported when the command runs)."""
+    return os.environ.get("SARS_BACKEND", "").strip() or "numpy"
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The ``sars`` argument parser."""
     parser = _Parser(prog="sars", description="Fit species-area relationship models.")
@@ -503,7 +509,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--backend",
         choices=["numpy", "cupy"],
-        default=os.environ.get("SARS_BACKEND") or "numpy",
+        default=_backend_default(),
         help="array library for the start-grid screens: numpy, or cupy on an NVIDIA GPU "
         "(needs the [gpu] extra; default: $SARS_BACKEND, else numpy)",
     )
@@ -843,8 +849,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         try:
             sars.set_backend(args.backend)
-        except ImportError as exc:
-            if args.json:
+        except (ImportError, ValueError) as exc:  # no GPU, or a bad $SARS_BACKEND
+            if getattr(args, "json", False):  # serve has no --json
                 failed = {
                     "sars": ops.version(),
                     "command": args.command,

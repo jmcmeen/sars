@@ -303,6 +303,14 @@ def test_the_backend_is_chosen_and_recorded(capsys, monkeypatch):
     monkeypatch.setenv("SARS_BACKEND", "cupy")
     code, out, err = run(capsys, "fit", "galap")
     assert code == 1 and "no GPU here" in err
+    code, out, err = run(capsys, "serve")  # serve has no --json
+    assert code == 1 and "no GPU here" in err
+
+
+def test_a_bad_backend_in_the_environment_is_reported(capsys, monkeypatch):
+    monkeypatch.setenv("SARS_BACKEND", "CUPY")
+    code, envelope = run_json(capsys, "datasets")
+    assert code == 1 and "backend must be one of" in envelope["error"]["message"]
 
 
 def test_threshold_ci(capsys):
