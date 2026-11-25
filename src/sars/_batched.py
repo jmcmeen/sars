@@ -156,9 +156,11 @@ def screen(
         return _screen(xp, func, area, species, starts, lower, upper, log_idx, groups)
     try:
         result = _screen(xp, func, area, species, starts, lower, upper, log_idx, groups)
-    except Exception as err:
+    except BaseException as err:  # an interrupt too
         # The traceback holds the screen's frames, and with them its arrays:
-        # let them go, so the pool can free their memory.
+        # let them go, so the pool can free their memory. At this point it
+        # holds only this frame (still running, so left alone) and the ones
+        # below it, none of the callers'.
         traceback.clear_frames(err.__traceback__)
         _release(xp)
         raise

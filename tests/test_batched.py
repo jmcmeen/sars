@@ -356,3 +356,30 @@ def test_the_bootstrap_is_the_same_in_any_chunks(galap, monkeypatch):
     np.testing.assert_allclose(whole.lower, one_by_one.lower, rtol=1e-7)
     np.testing.assert_allclose(whole.upper, one_by_one.upper, rtol=1e-7)
     assert whole.convergence_counts == one_by_one.convergence_counts
+
+
+def test_a_failed_gpu_screen_leaves_the_fit_able_to_carry_on(galap, monkeypatch, caplog):
+    """Clearing a failed screen's frames, to free its GPU arrays, touches none of
+    its callers': the fit logs the failure by name and fits on the CPU."""
+    from sars import _models
+    from sars._models import _fit_nls
+
+    alone = _fit_nls("power", galap)
+    fake = FakeCupy()
+    monkeypatch.setattr(_batched, "_xp", lambda: fake)
+    monkeypatch.setattr(_batched, "_backend", "cupy")
+    real = _models._MODEL_REGISTRY["power"].func
+    calls = []
+
+    def flaky(a, *params):  # fails inside the screen only
+        calls.append(1)
+        if np.ndim(params[0]) == 2:
+            raise RuntimeError("out of memory")
+        return real(a, *params)
+
+    monkeypatch.setattr(_models._MODEL_REGISTRY["power"], "func", flaky)
+    with caplog.at_level(logging.WARNING, logger="sars"):
+        fit = _fit_nls("power", galap)
+    assert "Model 'power': the batched screen on cupy failed (out of memory)" in caplog.text
+    assert fake.freed == 1
+    assert fit.aicc == pytest.approx(alone.aicc, rel=1e-9)
