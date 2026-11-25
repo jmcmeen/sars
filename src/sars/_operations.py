@@ -38,6 +38,19 @@ DATASETS = {
 THRESHOLD_MODELS = ["ContOne", "ZslopeOne", "DiscOne", "ContTwo", "ZslopeTwo", "DiscTwo"]
 
 
+# The most resample indices a bootstrap may hold at once (resamples times
+# islands): 200 million, 1.6 GB, so a request can't exhaust the machine.
+MAX_RESAMPLE_VALUES = 200_000_000
+
+
+def _check_resamples(n_boot: int, n: int) -> None:
+    if n_boot * n > MAX_RESAMPLE_VALUES:
+        raise InputError(
+            f"{n_boot} resamples of {n} islands is more than the {MAX_RESAMPLE_VALUES:,} "
+            "resampled values a bootstrap here may hold; use fewer resamples."
+        )
+
+
 class InputError(Exception):
     """A problem with what an operation was given (a missing column, an
     unknown dataset, no model fitted): reported as an error, without a
@@ -238,6 +251,8 @@ def loss(
 
     import sars
 
+    _check_resamples(n_boot, len(data))
+
     return sars.habitat_loss(
         data,
         area=list(area),
@@ -278,6 +293,7 @@ def ci(
     if not 0 < conf < 1:
         raise InputError(f"The interval level must be between 0 and 1, got {conf}.")
     _validate_data(data)  # before the default areas are taken from it
+    _check_resamples(n_boot, len(data))
     if areas is None:
         at = np.geomspace(float(data["area"].min()), float(data["area"].max()), 10)
     else:

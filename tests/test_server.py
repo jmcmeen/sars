@@ -20,6 +20,22 @@ INLINE = {
 }
 
 
+def _inline_ci_lower():
+    """bootstrap_ci on the inline data, as the /v1/ci test asks for it."""
+    import numpy as np
+    import pandas as pd
+
+    data = sars.from_df(pd.DataFrame({"area": INLINE["area"], "species": INLINE["species"]}))
+    ci = sars.bootstrap_ci(
+        data,
+        models=["power"],
+        n_boot=20,
+        area_grid=np.array([1.0, 100.0]),
+        rng=np.random.default_rng(1),
+    )
+    return list(ci.lower)
+
+
 @pytest.fixture(scope="module")
 def client():
     return TestClient(create_app())
@@ -52,7 +68,7 @@ def test_fit_a_bundled_dataset(client):
         (
             "/v1/ci",
             {"areas": [1, 100], "models": ["power"], "n_boot": 20, "seed": 1},
-            lambda s: s["intervals"][1]["lower"] < s["intervals"][1]["upper"],
+            lambda s: [r["lower"] for r in s["intervals"]] == pytest.approx(_inline_ci_lower()),
         ),
         (
             "/v1/loss",

@@ -312,6 +312,18 @@ def test_ci(capsys):
         assert code == 1 and message in envelope["error"]["message"]
 
 
+def test_a_bootstrap_too_big_to_hold_is_refused(capsys, monkeypatch):
+    from sars import _operations
+
+    monkeypatch.setattr(_operations, "MAX_RESAMPLE_VALUES", 1000)
+    code, envelope = run_json(capsys, "ci", "galap", "--n-boot", "100")
+    assert code == 1 and "fewer resamples" in envelope["error"]["message"]
+    code, envelope = run_json(
+        capsys, "loss", "galap", "--area", "100", "--fraction-lost", "0.5", "--n-boot", "100"
+    )
+    assert code == 1 and "fewer resamples" in envelope["error"]["message"]
+
+
 def test_ci_checks_the_data_first(capsys, tmp_path):
     path = tmp_path / "zero.csv"
     path.write_text("area,species\n0,3\n2,5\n4,8\n")
