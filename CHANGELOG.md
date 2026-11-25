@@ -10,6 +10,17 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Changed
+
+- The full bootstrap is about 2.3 times faster (20 resamples of galap in
+  9.9 s instead of 23 s; 12 times faster than 0.11.10). Each model's start
+  grid is screened for many resamples in one batch, each resample getting
+  exactly the screen it would get alone, and each resample's fits are
+  polished at the solver's default tolerances rather than tight ones: the
+  tight polish was three quarters of a resample's time, and changed no
+  resample's AICc by more than a few parts in ten million. `n_jobs` gives
+  each worker process chunks of resamples to batch.
+
 ### Fixed
 
 - epm1 and epm2 could miss their least-squares optimum on large areas.

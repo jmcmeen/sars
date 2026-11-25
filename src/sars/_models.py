@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import warnings
+from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from itertools import product
@@ -839,6 +840,8 @@ def _fit_nls(
     data: pd.DataFrame,
     start_from: dict[str, float] | None = None,
     allow_zero_species: bool = False,
+    prescreened: tuple[np.ndarray, np.ndarray] | None = None,
+    quick_polish: bool = False,
 ) -> SARFit:
     """Fit a model from the registry using multi-start NLS.
 
@@ -855,6 +858,12 @@ def _fit_nls(
     allow_zero_species : bool
         Accept islands with no species. Least squares on the arithmetic scale
         has no trouble with them; the public fitting functions reject them.
+    prescreened : (x, cost), optional
+        The start grid's screen, already run (``_screen_many``, for many
+        datasets at once), as ``_batched.screen`` returns it.
+    quick_polish : bool
+        Polish at the solver's default tolerances rather than tight ones: for a
+        bootstrap resample, which needs the fit, not its last digits.
 
     Returns
     -------
@@ -1042,9 +1051,7 @@ def _fit_nls(
         for cost, x0 in top:
             if cost > 10 * best_cost:  # a penalty-cost start, nowhere near the fit
                 continue
-            polished = _solve(
-                residuals, jacobian, x0, lower, upper, ftol=1e-14, xtol=1e-14, gtol=1e-14
-            )
+            polished = _solve(residuals, jacobian, x0, lower, upper, **polish_tol)
             if polished is not None and polished.cost <= best_result.cost:
                 best_result = polished
                 polished_any = True
@@ -1065,15 +1072,10 @@ def _fit_nls(
     # ranks them; the best few distinct results get the tight polish. A model
     # whose function doesn't broadcast over a batch of parameters, and the
     # bootstrap's single warm start, are fitted one start at a time.
-    screened = None
-    if used_grid:
-        grid = np.array(
-            [
-                np.clip(_to_search_scale(s, log_idx), lower, upper)
-                for s in product(*spec.start_grid)
-            ],
-            dtype=float,
-        )
+    polish_tol = {} if quick_polish else {"ftol": 1e-14, "xtol": 1e-14, "gtol": 1e-14}
+    screened = prescreened if used_grid else None
+    if used_grid and screened is None:
+        grid = _search_grid(spec, log_idx, lower, upper)
         try:
             with np.errstate(over="ignore", invalid="ignore", divide="ignore", under="ignore"):
                 screened = _batched.screen(func, area_s, species_s, grid, lower, upper, log_idx)
@@ -1106,7 +1108,7 @@ def _fit_nls(
             # start found one, the start-by-start search below runs instead.
             if np.isfinite(costs[i]) and costs[i] < _PENALTY_COST:
                 top = _keep_best_distinct(top, float(costs[i]), xs[i])
-        logger.debug("Model '%s': screened %d starts in one batch", name, len(grid))
+        logger.debug("Model '%s': screened %d starts in one batch", name, len(xs))
         converged = False
         searched = None
         if top:
@@ -1177,6 +1179,84 @@ def _fit_nls(
         converged=True,
         data=data,
     )
+
+
+def _search_grid(
+    spec: _ModelSpec, log_idx: list[int], lower: Sequence[float], upper: Sequence[float]
+) -> np.ndarray:
+    """A model's start grid on the search scale, within its bounds."""
+    return np.array(
+        [np.clip(_to_search_scale(s, log_idx), lower, upper) for s in product(*spec.start_grid)],
+        dtype=float,
+    )
+
+
+def _screen_many(
+    name: str, datasets: Sequence[pd.DataFrame]
+) -> list[tuple[np.ndarray, np.ndarray] | None]:
+    """Screen one model's start grid on many datasets of the same size at once
+    (``_batched.screen`` with a data row per dataset), for ``_fit_nls``'s
+    ``prescreened``. Each dataset is rescaled as ``_fit_nls`` rescales it, so
+    its result is what its own screen would give. None for a dataset left to
+    screen itself: one ``_fit_nls`` would reject or can't rescale, every one
+    of a model fitted in a form of its own on each dataset's scale, or all of
+    them if the batch fails."""
+    out: list[tuple[np.ndarray, np.ndarray] | None] = [None] * len(datasets)
+    if name in _SCALED_FORM or not datasets:
+        return out
+    try:
+        return _screen_many_batch(name, datasets)
+    except Exception as err:
+        # Each dataset screens itself instead, which is far slower on a GPU.
+        log = logger.debug if _batched.get_backend() == "numpy" else logger.warning
+        log(
+            "Model '%s': the batched screen of %d datasets on %s failed (%s); "
+            "screening each on its own",
+            name,
+            len(datasets),
+            _batched.get_backend(),
+            err,
+            exc_info=logger.isEnabledFor(logging.DEBUG),
+        )
+        return out
+
+
+def _screen_many_batch(
+    name: str, datasets: Sequence[pd.DataFrame]
+) -> list[tuple[np.ndarray, np.ndarray] | None]:
+    """``_screen_many``'s work, raising if the batch fails."""
+    spec = _MODEL_REGISTRY[name]
+    out: list[tuple[np.ndarray, np.ndarray] | None] = [None] * len(datasets)
+    log_idx = [spec.param_names.index(p) for p in spec.log_params]
+    lower = _to_search_scale(spec.bounds_lower, log_idx)
+    upper = _to_search_scale(spec.bounds_upper, log_idx)
+    valid: list[tuple[int, np.ndarray, np.ndarray]] = []
+    for i, data in enumerate(datasets):
+        try:
+            _validate_data(data)
+        except ValueError:
+            continue
+        valid.append(
+            (i, np.asarray(data["area"], dtype=float), np.asarray(data["species"], dtype=float))
+        )
+    if not valid:
+        return out
+    # A batch holds datasets of one size: the most common one's.
+    size = Counter(len(area) for _, area, _ in valid).most_common(1)[0][0]
+    usable = [i for i, area, _ in valid if len(area) == size]
+    areas = [area / np.exp(np.mean(np.log(area))) for _, area, _ in valid if len(area) == size]
+    richness = [sp / np.max(sp) for _, area, sp in valid if len(area) == size]
+    grid = _search_grid(spec, log_idx, lower, upper)
+    starts = np.tile(grid, (len(usable), 1))
+    groups = np.repeat(np.arange(len(usable)), len(grid))
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore", under="ignore"):
+        xs, costs = _batched.screen(
+            spec.func, np.array(areas), np.array(richness), starts, lower, upper, log_idx, groups
+        )
+    for j, i in enumerate(usable):
+        part = slice(j * len(grid), (j + 1) * len(grid))
+        out[i] = (xs[part], costs[part])
+    return out
 
 
 def _keep_best_distinct(

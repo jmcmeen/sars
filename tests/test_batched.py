@@ -184,3 +184,80 @@ def test_a_screen_of_only_penalized_points_isnt_a_fit(galap, monkeypatch):
     fit = _fit_nls("power", galap)
     assert fit.converged
     assert fit.aicc == pytest.approx(alone.aicc, rel=1e-9)
+
+
+@pytest.mark.parametrize("block", [None, 40 * 16])
+def test_a_grouped_screen_matches_screening_each_dataset_alone(galap, monkeypatch, block):
+    """Many datasets in one batch: each gets what its own screen gives, the cut
+    included (the best starts of each dataset, not of the batch), and so in
+    small blocks (the warm-up and the carry-on both in chunks of rows)."""
+    spec, log_idx, lower, upper, grid = grid_for("chapman")
+    rng = np.random.default_rng(3)
+    datasets = [galap] + [galap.iloc[rng.integers(0, 16, 16)] for _ in range(3)]
+    scaled = [rescaled(d) for d in datasets]
+    alone = [_batched.screen(spec.func, a, s, grid, lower, upper, log_idx) for a, s in scaled]
+    if block:
+        monkeypatch.setattr(_batched, "_BLOCK", block)
+    together = _batched.screen(
+        spec.func,
+        np.array([a for a, _ in scaled]),
+        np.array([s for _, s in scaled]),
+        np.tile(grid, (len(datasets), 1)),
+        lower,
+        upper,
+        log_idx,
+        np.repeat(np.arange(len(datasets)), len(grid)),
+    )
+    for i, (x, cost) in enumerate(alone):
+        part = slice(i * len(grid), (i + 1) * len(grid))
+        np.testing.assert_allclose(together[1][part], cost, rtol=1e-12)
+        np.testing.assert_allclose(together[0][part], x, rtol=1e-12, atol=1e-14)
+
+
+@pytest.mark.parametrize("name", ["power", "chapman", "epm1", "betap"])
+def test_a_fit_from_a_shared_screen_is_the_fit_alone(galap, name):
+    from sars._models import _fit_nls, _screen_many
+
+    rng = np.random.default_rng(4)
+    datasets = [galap.iloc[rng.integers(0, 16, 16)].reset_index(drop=True) for _ in range(3)]
+    for data, found in zip(datasets, _screen_many(name, datasets), strict=True):
+        if name == "epm1":  # fitted on each dataset's own scale: screened alone
+            assert found is None
+        alone = _fit_nls(name, data)
+        shared = _fit_nls(name, data, prescreened=found)
+        assert shared.aicc == pytest.approx(alone.aicc, rel=1e-12, nan_ok=True)
+        assert shared.params == pytest.approx(alone.params, rel=1e-9, nan_ok=True)
+
+
+def test_a_dataset_the_fit_would_reject_screens_alone(galap):
+    from sars._models import _screen_many
+
+    bad = galap.assign(species=0)
+    short = galap.iloc[:10]
+    found = _screen_many("power", [short, galap, bad, galap.iloc[::-1]])
+    # The batch takes the datasets of the most common size.
+    assert [f is not None for f in found] == [False, True, False, True]
+
+
+def test_a_failed_shared_screen_leaves_each_dataset_to_itself(galap, monkeypatch, caplog):
+    from sars._models import _screen_many
+
+    def broken(*args, **kwargs):
+        raise MemoryError("no room for the batch")
+
+    monkeypatch.setattr(_batched, "screen", broken)
+    monkeypatch.setattr(_batched, "_backend", "cupy")
+    with caplog.at_level(logging.WARNING, logger="sars"):
+        assert _screen_many("power", [galap, galap]) == [None, None]
+    assert "batched screen of 2 datasets on cupy failed (no room for the batch)" in caplog.text
+
+
+def test_the_bootstrap_is_the_same_in_any_chunks(galap, monkeypatch):
+    from sars import _inference
+
+    whole = sars.bootstrap_ci(galap, n_boot=6, method="full", rng=np.random.default_rng(5))
+    monkeypatch.setattr(_inference, "_CHUNK_RESAMPLES", 1)
+    one_by_one = sars.bootstrap_ci(galap, n_boot=6, method="full", rng=np.random.default_rng(5))
+    np.testing.assert_array_equal(whole.lower, one_by_one.lower)
+    np.testing.assert_array_equal(whole.upper, one_by_one.upper)
+    assert whole.convergence_counts == one_by_one.convergence_counts

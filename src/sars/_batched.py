@@ -133,6 +133,7 @@ def screen(
     lower: Sequence[float],
     upper: Sequence[float],
     log_idx: list[int],
+    groups: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Fit ``species ~ func(area, *params)`` from every row of ``starts`` at once.
 
@@ -140,6 +141,12 @@ def screen(
     ``lower`` and ``upper``. Returns each start's end point and cost (half the
     sum of squared residuals), as numpy arrays. Starts dropped after the
     warm-up keep the point and cost they had then.
+
+    With ``groups``, ``area`` and ``species`` hold one dataset per row (all of
+    the same length), and ``groups[i]`` is the dataset start ``i`` fits: many
+    fits, each from its own grid, in one batch. Every start's iterations are
+    its own, and the warm-up keeps the most promising starts of each dataset,
+    so each dataset's results are those it would get screened alone.
     """
     xp = _xp()
     area_d = xp.asarray(area, dtype=float)
@@ -148,8 +155,9 @@ def screen(
     hi = xp.asarray(upper, dtype=float)
     x = xp.clip(xp.asarray(starts, dtype=float), lo, hi)
     n_starts, k = x.shape
-    n = area_d.shape[0]
+    n = area_d.shape[-1]
     eye = xp.eye(k)
+    g_all = xp.zeros(n_starts, dtype=xp.int64) if groups is None else xp.asarray(groups)
 
     def natural(p: Any) -> Any:
         if not log_idx:
@@ -158,31 +166,38 @@ def screen(
         p[:, log_idx] = xp.exp(p[:, log_idx])
         return p
 
-    def residuals(p: Any) -> Any:
+    def data_for(g: Any) -> tuple[Any, Any]:
+        """Each row's area and richness: broadcast when the data are shared."""
+        if groups is None:
+            return area_d[None, :], species_d[None, :]
+        return area_d[g], species_d[g]
+
+    def residuals(p: Any, g: Any) -> Any:
         """Residuals of each row of p: (rows, islands)."""
         values = natural(p)
-        pred = func(area_d[None, :], *(values[:, j : j + 1] for j in range(k)))
-        res = species_d[None, :] - xp.broadcast_to(pred, (p.shape[0], n))
+        a, sp = data_for(g)  # gathered copies when grouped (see the block size below)
+        pred = func(a, *(values[:, j : j + 1] for j in range(k)))
+        res = sp - xp.broadcast_to(pred, (p.shape[0], n))
         return xp.where(xp.isfinite(res), res, _PENALTY)
 
     def cost_of(res: Any) -> Any:
         return 0.5 * xp.sum(res * res, axis=1)
 
-    def normal_equations(p: Any, res: Any) -> tuple[Any, Any]:
+    def normal_equations(p: Any, res: Any, g: Any) -> tuple[Any, Any]:
         """J'J and J'r for each row, with a forward-difference J."""
         h = fd_steps(xp, p, lo, hi)
         rows = p.shape[0]
         stepped = p[:, None, :] + h[:, None, :] * eye[None, :, :]  # (rows, k, k)
-        res_step = residuals(stepped.reshape(rows * k, k)).reshape(rows, k, n)
+        res_step = residuals(stepped.reshape(rows * k, k), xp.repeat(g, k)).reshape(rows, k, n)
         jac = (res_step - res[:, None, :]) / h[:, :, None]  # (rows, k, n): J transposed
         return jac @ xp.swapaxes(jac, 1, 2), (jac @ res[:, :, None])[:, :, 0]
 
-    def run(x: Any, iterations: int) -> tuple[Any, Any, Any]:
+    def run(x: Any, g: Any, iterations: int) -> tuple[Any, Any, Any]:
         """Levenberg-Marquardt on every row of x for up to ``iterations``
         steps. Returns the end points, their costs and which rows are still
         improving."""
         x = x.copy()
-        res = _blocked(xp, residuals, x, n, 1)
+        res = _blocked(xp, residuals, (x, g), n, 1)
         cost = cost_of(res)
         damping = xp.full(x.shape[0], 1e-3)
         active = xp.isfinite(cost)
@@ -190,8 +205,8 @@ def screen(
             rows = xp.nonzero(active)[0]
             if rows.shape[0] == 0:
                 break
-            p, r, c, lam = x[rows], res[rows], cost[rows], damping[rows]
-            jtj, jtr = _blocked_pair(xp, normal_equations, p, r, n, k + 1)
+            p, r, c, lam, gr = x[rows], res[rows], cost[rows], damping[rows], g[rows]
+            jtj, jtr = _blocked_pair(xp, normal_equations, (p, r, gr), n, k + 1)
             diag = xp.maximum(xp.diagonal(jtj, axis1=1, axis2=2), 1e-12)
             system = jtj + (lam[:, None] * diag)[:, :, None] * eye
             try:
@@ -201,7 +216,7 @@ def screen(
                     [_solve_or_zero(xp, a, -b) for a, b in zip(system, jtr, strict=True)]
                 )
             trial = xp.clip(p + delta, lo, hi)
-            trial_res = _blocked(xp, residuals, trial, n, 1)
+            trial_res = _blocked(xp, residuals, (trial, gr), n, 1)
             trial_cost = cost_of(trial_res)
             better = xp.isfinite(trial_cost) & (trial_cost < c)
             gain = xp.where(better, (c - trial_cost) / xp.maximum(c, 1e-300), 0.0)
@@ -215,26 +230,36 @@ def screen(
         return x, cost, active
 
     with np.errstate(over="ignore", invalid="ignore", divide="ignore", under="ignore"):
-        if n_starts <= _KEEP:
-            x, cost, _ = run(x, _MAX_ITER)
-        else:
-            # Every start's iterations are independent of the others', so the
-            # warm-up can run a chunk of starts at a time, holding only that
-            # chunk's residuals; then the most promising starts still improving
-            # carry on together.
-            size = max(_KEEP, _rows_per_block(n, 1))
-            warmup = min(_WARMUP, _MAX_ITER)
-            parts = [run(x[i : i + size], warmup) for i in range(0, n_starts, size)]
-            x = xp.concatenate([part[0] for part in parts])
-            cost = xp.concatenate([part[1] for part in parts])
-            active = xp.concatenate([part[2] for part in parts])
-            keep = xp.argsort(xp.where(active, cost, xp.inf))[:_KEEP]
-            keep = keep[active[keep]]
-            if keep.shape[0]:
-                x[keep], cost[keep], _ = run(x[keep], _MAX_ITER - warmup)
+        # Every start's iterations are independent of the others', so the
+        # warm-up can run a chunk of starts at a time, holding only that
+        # chunk's residuals; then the most promising starts of each dataset
+        # that are still improving carry on, a chunk at a time again (with
+        # many datasets, they're many rows). A grouped screen gathers each
+        # row's data as well, two more arrays of a row's size.
+        size = max(_KEEP, _rows_per_block(n, 1 if groups is None else 3))
+        warmup = min(_WARMUP, _MAX_ITER)
+        parts = [
+            run(x[i : i + size], g_all[i : i + size], warmup) for i in range(0, n_starts, size)
+        ]
+        x = xp.concatenate([part[0] for part in parts])
+        cost = xp.concatenate([part[1] for part in parts])
+        active = xp.concatenate([part[2] for part in parts])
+        keep = _best_of_each(xp, g_all, xp.where(active, cost, xp.inf), _KEEP)
+        keep = keep[active[keep]]
+        for i in range(0, keep.shape[0], size):
+            rows = keep[i : i + size]
+            x[rows], cost[rows], _ = run(x[rows], g_all[rows], _MAX_ITER - warmup)
     if xp is not np:
         return xp.asnumpy(x), xp.asnumpy(cost)
     return x, cost
+
+
+def _best_of_each(xp: ModuleType, groups: Any, cost: Any, count: int) -> Any:
+    """Indices of the ``count`` lowest costs in each group."""
+    order = xp.lexsort(xp.stack([cost, groups]))  # by group, then cost
+    sorted_groups = groups[order]
+    rank = xp.arange(order.shape[0]) - xp.searchsorted(sorted_groups, sorted_groups, side="left")
+    return order[rank < count]
 
 
 def _solve_or_zero(xp: ModuleType, a: Any, b: Any) -> Any:
@@ -248,24 +273,27 @@ def _rows_per_block(n: int, per_row: int) -> int:
     return max(1, _BLOCK // max(1, n * per_row))
 
 
-def _blocked(xp: ModuleType, fn: Callable[[Any], Any], p: Any, n: int, per_row: int) -> Any:
-    """fn over the rows of p, a block of rows at a time."""
+def _blocked(
+    xp: ModuleType, fn: Callable[..., Any], arrays: tuple[Any, ...], n: int, per_row: int
+) -> Any:
+    """fn over the rows of the arrays, a block of rows at a time."""
     size = _rows_per_block(n, per_row)
-    if p.shape[0] <= size:
-        return fn(p)
-    return xp.concatenate([fn(p[i : i + size]) for i in range(0, p.shape[0], size)])
+    rows = arrays[0].shape[0]
+    if rows <= size:
+        return fn(*arrays)
+    return xp.concatenate([fn(*(a[i : i + size] for a in arrays)) for i in range(0, rows, size)])
 
 
 def _blocked_pair(
     xp: ModuleType,
-    fn: Callable[[Any, Any], tuple[Any, Any]],
-    p: Any,
-    r: Any,
+    fn: Callable[..., tuple[Any, Any]],
+    arrays: tuple[Any, ...],
     n: int,
     per_row: int,
 ) -> tuple[Any, Any]:
     size = _rows_per_block(n, per_row)
-    if p.shape[0] <= size:
-        return fn(p, r)
-    parts = [fn(p[i : i + size], r[i : i + size]) for i in range(0, p.shape[0], size)]
+    rows = arrays[0].shape[0]
+    if rows <= size:
+        return fn(*arrays)
+    parts = [fn(*(a[i : i + size] for a in arrays)) for i in range(0, rows, size)]
     return xp.concatenate([a for a, _ in parts]), xp.concatenate([b for _, b in parts])
