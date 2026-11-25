@@ -12,6 +12,12 @@ reconstructed from the commit history and the
 
 ### Added
 
+- A primer on species-area relationships in the documentation, for readers
+  new to them: what a SAR is, the power model and its two fits, shapes,
+  choosing among models, uncertainty, thresholds, habitat loss and its
+  cautions, sampling effort, and models beyond area.
+- `examples/cli/`: six commented shell scripts of command-line workflows on
+  the bundled data, run by the tests.
 - `sars --backend numpy|cupy` (or `SARS_BACKEND`) chooses the array library
   for the start-grid screens, and `sars serve` passes it to every request
   (`ServerConfig.backend`); every envelope records the backend used.
@@ -60,6 +66,13 @@ reconstructed from the commit history and the
   each worker process chunks of resamples to batch.
 
 ### Fixed
+
+- The models page gave too many starting points for loga, linear (25, not
+  at least 36), powerR and asymp (80, not at least 100), described fitting
+  as scipy alone (the start grid is screened in one batch, then polished),
+  and left out the other ways a fit fails; it now says which parameters are
+  fitted positive, that ln is the natural log, and where epm1's z bound
+  applies.
 
 - epm1 and epm2 could miss their least-squares optimum on large areas.
   Both were fitted in the data's own area units, where their parameters

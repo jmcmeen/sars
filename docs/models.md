@@ -22,8 +22,8 @@ on arithmetic axes, and classified by how its slope changes:
 
 Each test allows a departure of a thousandth of the curve's range of richness, so a bend
 or a dip too small to see doesn't change the label. The two columns can differ. A sigmoid model whose inflection point lies below the smallest island
-is `convex` over the data, and a model that can turn down at large areas (p1, epm1, epm2)
-is `none` when its fit does.
+is `convex` over the data, and a model that can turn down at large areas (p1, epm1 and
+epm2, or ratio, linear, power and powerR with a falling fit) is `none` when its fit does.
 
 `sars.lin_pow()` fits the power model the traditional way instead, as a straight line
 on log-log axes (log S = log c + z log A) by ordinary least squares, and returns a
@@ -40,13 +40,15 @@ ones (epm2, p2) have an inflection point but no asymptote.
 |----------|---------|------------|-------|
 | `sar_power` | S = c &middot; A^z | c, z | convex |
 | `sar_powerR` | S = f + c &middot; A^z | f, c, z | convex |
-| `sar_loga` | S = c + z &middot; log(A) | c, z | convex |
-| `sar_koba` | S = c &middot; log(1 + A/z) | c, z | convex |
+| `sar_loga` | S = c + z &middot; ln(A) | c, z | convex |
+| `sar_koba` | S = c &middot; ln(1 + A/z) | c, z | convex |
 | `sar_linear` | S = c + m &middot; A | c, m | linear |
 | `sar_epm1` | S = c &middot; A^(z &middot; A^-d) | c, z, d | convex/sigmoid |
 | `sar_epm2` | S = c &middot; A^(z - d / A) | c, z (0 to 1), d | sigmoid |
 | `sar_p1` | S = c &middot; A^z &middot; exp(-d &middot; A) | c, z, d | convex/sigmoid |
 | `sar_p2` | S = c &middot; A^z &middot; exp(-d / A) | c, z, d | sigmoid |
+
+p1 is fitted with d &ge; 0, so it can peak and fall rather than grow exponentially.
 
 ## Asymptotic models
 
@@ -68,14 +70,24 @@ These models approach a finite asymptote as area increases.
 
 R `sars` writes asymp as S = d - c &middot; z^A, so R's z is exp(-z) here.
 
+The asymptote d and the rate z are fitted positive, so each curve rises to its asymptote;
+asymp's c, ratio's d and heleg's c and f are positive too, and weibull3 and weibull4 fit
+c &ge; 0. ln is the natural logarithm.
+
 ## Fitting details
 
-All models are fitted using nonlinear least squares (scipy `least_squares`)
-with a multi-start grid of initial values to avoid local minima:
+Each model is fitted by nonlinear least squares from a grid of starting values, so that a
+fit doesn't depend on one lucky guess:
 
-- **2-parameter models**: &ge;36 starting points
-- **3-parameter models**: &ge;100 starting points
-- **4-parameter models**: &ge;200 starting points
+- **2-parameter models**: 25 to 48 starting points (loga and linear 25, power 48)
+- **3-parameter models**: 80 to 240 (powerR and asymp 80; epm1 240)
+- **4-parameter models**: 450 (weibull4) and 500 (betap)
+
+The whole grid is screened as one batch, a projected Levenberg-Marquardt over every start
+at once (on numpy, or with `set_backend("cupy")` on a GPU). The best few distinct results
+are then polished by scipy's trust-region `least_squares` at tight tolerances. If no
+polish converges, as along a long flat ridge, the starts are also fitted one at a time and
+the better fit is kept (see [Speed and the GPU](getting-started.md#speed-and-the-gpu)).
 
 The fit runs on rescaled data: area divided by its geometric mean and richness by its
 maximum, with the parameters converted back afterwards. The starting values and bounds
@@ -83,13 +95,16 @@ are therefore near 1 whatever your units, and every model except epm1 and epm2 g
 same fit in km² or m², for tens of species or thousands. epm1 and epm2 are the exception
 because their exponent depends on area itself, so a change of area units changes the
 model, and with it the fit. They're still fitted on the rescaled area, in parameters that
-describe exactly the same curve: the richness and the exponent at the mean area. In the
+describe exactly the same curve: the richness and the exponent at the mean area, with d.
+epm1's bound on z (between -50 and 50) is applied in the data's own units, as R `sars`
+applies it. In the
 data's own units their parameters are badly scaled on large areas; on 169,000
 observation records with areas of 17,000 to 315,000 km², epm1's best fit has
 z = 1.3 × 10⁻⁶⁴ and d = −11.4, far from any starting value in those units.
 
-If fitting fails for all starting values, a `SARFit` with `converged=False`
-is returned rather than raising an exception.
+If no solve converges, or the fitted parameters overflow when converted back to the
+data's units, a `SARFit` with `converged=False` (its parameters and criteria `NaN`) is
+returned rather than raising an exception.
 
 `SARFit.param_table()` gives the parameters' standard errors, t tests and confidence
 intervals, with `NaN` for parameters the data don't identify (see

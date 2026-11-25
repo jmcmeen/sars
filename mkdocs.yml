@@ -65,6 +65,7 @@ plugins:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - A SAR primer: primer.md
   - Models: models.md
   - Datasets: datasets.md
   - Validation: validation.md
