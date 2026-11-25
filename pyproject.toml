@@ -59,6 +59,8 @@ server = ["fastapi>=0.110", "uvicorn>=0.29", "pydantic>=2"]
 # An NVIDIA GPU for the start-grid screen (sars.set_backend("cupy")): CuPy for
 # CUDA 13, with its CUDA libraries. For CUDA 12, install cupy-cuda12x instead.
 gpu = ["cupy-cuda13x[ctk]>=14.0"]
+# The Bayesian hierarchical log-log model (lin_pow_bayes): PyMC, with ArviZ.
+bayes = ["pymc>=5.10"]
 all = ["sars[geo]", "sars[server]"]
 
 [project.urls]
@@ -125,5 +127,5 @@ warn_redundant_casts = true
 
 [[tool.mypy.overrides]]
 # No type information published for these.
-module = ["scipy.*", "geopandas.*", "shapely.*", "matplotlib.*", "cupy", "cupy.*"]
+module = ["scipy.*", "geopandas.*", "shapely.*", "matplotlib.*", "cupy", "cupy.*", "pymc", "pymc.*", "arviz", "arviz.*"]
 ignore_missing_imports = true

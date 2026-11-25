@@ -138,6 +138,46 @@ def _profiled(
     return float(criterion), {"beta": beta, "sigma2": sigma2, "xtvx": xtvx, "g": g}
 
 
+def _prepare(
+    datasets: Mapping[str, pd.DataFrame] | pd.DataFrame,
+    by: str | None,
+    con: float,
+    kind: str = "mixed model",
+) -> tuple[list[tuple[str, np.ndarray, np.ndarray]], float]:
+    """The archipelagos' areas and richness, checked, and the constant added
+    to richness before taking logs (``con`` if any island has no species,
+    else 0): the input of the pooled log-log models."""
+    if isinstance(con, bool) or not isinstance(con, Real) or not np.isfinite(con):
+        raise ValueError(f"'con' must be a finite number, got {con!r}")
+    named = _named_datasets(datasets, by)
+    if len(named) < 3:
+        raise ValueError(
+            f"A {kind} needs at least 3 archipelagos to estimate how they vary, not {len(named)}."
+        )
+    cleaned = []
+    for name, frame in named.items():
+        missing = [c for c in ("area", "species") if c not in frame.columns]
+        if missing:
+            raise ValueError(f"{name!r} has no column(s) {missing}.")
+        area = pd.to_numeric(frame["area"], errors="coerce").to_numpy(dtype=float)
+        species = pd.to_numeric(frame["species"], errors="coerce").to_numpy(dtype=float)
+        if not (np.all(np.isfinite(area)) and np.all(np.isfinite(species))):
+            raise ValueError(f"{name!r} has missing or non-numeric areas or richness.")
+        if np.any(area <= 0) or np.any(species < 0):
+            raise ValueError(f"{name!r} needs positive areas and richness of 0 or more.")
+        if len(area) < 2 or np.ptp(area) == 0:
+            raise ValueError(f"{name!r} needs at least two islands of different areas.")
+        cleaned.append((name, area, species))
+    # As lin_pow does, con is added only if some island has no species; here
+    # to every archipelago, so that all are on the same log scale.
+    added = 0.0
+    if any(np.any(sp == 0) for _, _, sp in cleaned):
+        if not con > 0:
+            raise ValueError("Some islands have no species: con must be positive to take logs.")
+        added = float(con)
+    return cleaned, added
+
+
 def lin_pow_mixed(
     datasets: Mapping[str, pd.DataFrame] | pd.DataFrame,
     by: str | None = None,
@@ -196,34 +236,7 @@ def lin_pow_mixed(
     """
     from scipy.optimize import minimize
 
-    if isinstance(con, bool) or not isinstance(con, Real) or not np.isfinite(con):
-        raise ValueError(f"'con' must be a finite number, got {con!r}")
-    named = _named_datasets(datasets, by)
-    if len(named) < 3:
-        raise ValueError(
-            f"A mixed model needs at least 3 archipelagos to estimate how they vary, not {len(named)}."
-        )
-    cleaned = []
-    for name, frame in named.items():
-        missing = [c for c in ("area", "species") if c not in frame.columns]
-        if missing:
-            raise ValueError(f"{name!r} has no column(s) {missing}.")
-        area = pd.to_numeric(frame["area"], errors="coerce").to_numpy(dtype=float)
-        species = pd.to_numeric(frame["species"], errors="coerce").to_numpy(dtype=float)
-        if not (np.all(np.isfinite(area)) and np.all(np.isfinite(species))):
-            raise ValueError(f"{name!r} has missing or non-numeric areas or richness.")
-        if np.any(area <= 0) or np.any(species < 0):
-            raise ValueError(f"{name!r} needs positive areas and richness of 0 or more.")
-        if len(area) < 2 or np.ptp(area) == 0:
-            raise ValueError(f"{name!r} needs at least two islands of different areas.")
-        cleaned.append((name, area, species))
-    # As lin_pow does, con is added only if some island has no species; here
-    # to every archipelago, so that all are on the same log scale.
-    added = 0.0
-    if any(np.any(sp == 0) for _, _, sp in cleaned):
-        if not con > 0:
-            raise ValueError("Some islands have no species: con must be positive to take logs.")
-        added = float(con)
+    cleaned, added = _prepare(datasets, by, con)
     blocks = []
     stats = []
     rows = []

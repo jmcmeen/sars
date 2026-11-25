@@ -12,6 +12,11 @@ reconstructed from the commit history and the
 
 ### Added
 
+- `lin_pow_bayes` (the new `bayes` extra, PyMC): the hierarchical log-log
+  model of `lin_pow_mixed`, fitted by Bayesian sampling, with posterior
+  summaries for the group's mean intercept and slope, their spread and
+  correlation, and every archipelago's curve, convergence diagnostics, and
+  the full posterior for ArviZ.
 - A primer on species-area relationships in the documentation, for readers
   new to them: what a SAR is, the power model and its two fits, shapes,
   choosing among models, uncertainty, thresholds, habitat loss and its

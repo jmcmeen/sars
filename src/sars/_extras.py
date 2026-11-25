@@ -8,6 +8,7 @@ import importlib.util
 EXTRAS: dict[str, tuple[str, ...]] = {
     "geo": ("geopandas", "shapely"),
     "server": ("fastapi", "uvicorn"),
+    "bayes": ("pymc", "arviz"),
 }
 
 

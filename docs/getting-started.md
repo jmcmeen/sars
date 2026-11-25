@@ -117,6 +117,30 @@ the mean curve, and `fit.predict(area, group="xu")` an archipelago's own. As wit
 before taking logs. That happens here because of Schrader's empty islets, and it applies
 to all six archipelagos, so that they share one log scale.
 
+The same model can be fitted by Bayesian sampling instead, with the `bayes` extra
+(`pip install "sars[bayes]"`, which installs PyMC). `lin_pow_bayes` gives every quantity a
+full posterior: the group's mean intercept and slope, how much archipelagos vary and how
+their deviations correlate, and each archipelago's own curve, pulled toward the group as
+far as its data allow. Its priors are weakly informative, so with a reasonable amount of
+data its posterior means sit close to `lin_pow_mixed`'s estimates; with only a few
+archipelagos, its intervals for the spread between them are honest about how little the
+data say, where REML can report a spread of zero.
+
+```python
+fit = sars.lin_pow_bayes(archipelagos, seed=1)   # the same mapping as above
+fit.summary          # logc, z, sd_logc, sd_z, corr, sigma: mean, sd, interval, r_hat, ess
+fit.groups           # each archipelago's logc, c and z, with intervals, and z_alone
+fit.converged        # every r-hat below 1.01 and no divergent transitions
+fit.idata            # the full posterior, for ArviZ
+```
+
+On the six archipelagos above (about 15 seconds on a desktop CPU), the group's mean
+slope is 0.33 with a 95% interval of 0.23 to 0.42, against REML's 0.33 ± 0.03, and the
+spread between archipelagos' slopes 0.10 (0.05 to 0.22), against REML's 0.08: the
+posterior says plainly how loosely six archipelagos pin that spread down. Each
+archipelago's posterior slope sits beside its own `z_alone`, pulled toward the mean
+as `lin_pow_mixed`'s is.
+
 ## Parameter uncertainty
 
 `param_table()` gives each parameter's standard error, a t test against zero, and a
