@@ -176,6 +176,8 @@ class ManyRequest(BaseModel):
             raise ValueError("give exactly one of datasets and bundled")
         if len(given[0]) < 2:
             raise ValueError("give two or more datasets")
+        if self.bundled is not None and len(set(self.bundled)) != len(self.bundled):
+            raise ValueError("give each bundled dataset once")
         return self
 
 

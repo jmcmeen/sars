@@ -101,6 +101,7 @@ def test_many(client):
     inline = {"datasets": {"one": INLINE, "two": INLINE}, "models": ["power"], "threshold": False}
     assert client.post("/v1/many", json=inline).status_code == 200
     assert client.post("/v1/many", json={"bundled": ["galap"]}).status_code == 422
+    assert client.post("/v1/many", json={"bundled": ["galap", "galap"]}).status_code == 422
 
 
 def test_inline_data_match_the_python_api(client):

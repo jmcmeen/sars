@@ -97,11 +97,17 @@ def _print_summary(summary: dict[str, Any], out: Any) -> None:
         shown += ["breakpoint_area"]
         if table["error"].fillna("").astype(bool).any():
             shown.append("error")
+        notes = pd.DataFrame(summary["datasets"])
         table = table[[c for c in shown if c in table.columns]].copy()
         for column in table.columns:
-            if column not in ("dataset", "best_model", "threshold_model", "error"):
+            if column not in ("dataset", "n", "best_model", "threshold_model", "error"):
                 table[column] = [_cell(v) for v in table[column]]
         print(table.fillna("").to_string(index=False), file=out)
+        for row in notes.to_dict(orient="records"):
+            for model in row.get("not_fitted") or []:
+                print(f"{row['dataset']}: not fitted: {model}", file=out)
+            for text in row.get("warnings") or []:
+                print(f"{row['dataset']}: warning: {text}", file=out)
         return
     if kind == "LinPowFit":
         log = "log" if summary["log_base"] == "e" else f"log{summary['log_base']}"
@@ -304,9 +310,11 @@ def _cmd_many(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
         raise InputError("Give two or more datasets, or one table and --by COLUMN.")
     datasets: dict[str, Any] = {}
     for source in args.data:
-        name = source if source in DATASETS else Path(source).stem or source
-        if name in datasets:  # the same name twice (two folders' islands.csv)
-            name = f"{name}_{len(datasets) + 1}"
+        base = source if source in DATASETS else Path(source).stem or source
+        name, count = base, 1
+        while name in datasets:  # the same name twice (two folders' islands.csv)
+            count += 1
+            name = f"{base}_{count}"
         datasets[name] = sars.from_df(
             _read_data(source, args.area_col, args.species_col)[["area", "species"]]
         )

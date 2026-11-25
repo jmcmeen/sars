@@ -311,6 +311,19 @@ def test_many(capsys, tmp_path):
     assert code == 0 and out.split()[0] == "dataset"
     code, envelope = run_json(capsys, "many", "galap")
     assert code == 1 and "two or more" in envelope["error"]["message"]
+    # Files sharing a name each get one of their own, never another's.
+    for folder in ("a", "b"):
+        (tmp_path / folder).mkdir()
+        sars.load_galap().to_csv(tmp_path / folder / "x.csv", index=False)
+    sars.load_gala().to_csv(tmp_path / "x_2.csv", index=False)
+    files = [
+        str(tmp_path / "x_2.csv"),
+        str(tmp_path / "a" / "x.csv"),
+        str(tmp_path / "b" / "x.csv"),
+    ]
+    code, envelope = run_json(capsys, "many", *files, "-m", "power", "--no-threshold")
+    names = [r["dataset"] for r in envelope["result"]["summary"]["datasets"]]
+    assert code == 0 and len(set(names)) == 3
     code, envelope = run_json(capsys, "many", str(path), "--by", "nope")
     assert code == 1 and "No column 'nope'" in envelope["error"]["message"]
 
