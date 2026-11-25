@@ -3,18 +3,18 @@ returns its JSON envelope.
 
 The operations (``sars._operations``) are the ones the command line runs; the
 two front ends share them and nothing else. Each request runs its operation in
-a fresh worker process (``sars.server._handlers``), with a time limit: the
-request's values are passed as data, nothing is evaluated and no shell runs.
+a fresh worker process (``python -m sars._server_worker``, through
+``sars._server_handlers``) with a time limit: the request's values reach it as
+JSON data, nothing is evaluated and no shell runs.
 """
 
 from __future__ import annotations
 
 import hmac
-import importlib
 import json
-import multiprocessing
 import os
 import signal
+import subprocess
 import sys
 import threading
 from dataclasses import dataclass, field
@@ -55,8 +55,8 @@ class ServerConfig:
         Seconds a request may run before it is stopped, with any worker
         processes it started.
     python : str
-        The interpreter each request's worker process runs (this one by
-        default).
+        The interpreter that runs each request's worker,
+        ``-m sars._server_worker`` (this one by default).
     max_jobs : int
         The most processes one request's ``n_jobs`` may use (this machine's
         cores by default; -1 in a request means this many).
@@ -167,25 +167,6 @@ class PredictRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _work(command: str, target: str, kwargs: dict[str, Any], conn: Any) -> None:
-    """In the worker process: run ``target`` (a handler's name, or
-    ``module:function``) and send back the envelope, as JSON."""
-    if os.name == "posix":
-        os.setsid()  # a process group of its own, with any workers it starts
-    os.environ.pop("SARS_SERVER_TOKEN", None)  # the work never sees the token
-    from sars import _operations as ops
-
-    if ":" in target:
-        module, name = target.split(":")
-        function = getattr(importlib.import_module(module), name)
-    else:
-        from sars.server import _handlers
-
-        function = getattr(_handlers, target)
-    conn.send(ops.envelope_json(ops.envelope(command, lambda: function(**kwargs))))
-    conn.close()
-
-
 def _status(envelope: dict[str, Any]) -> int:
     """200 when the operation succeeded; 422 when the request was at fault (an
     unknown model, data it couldn't fit); 500 for any other failure (a bug)."""
@@ -197,49 +178,63 @@ def _status(envelope: dict[str, Any]) -> int:
 
 
 def _execute(
-    config: ServerConfig, command: str, target: str, kwargs: dict[str, Any]
+    config: ServerConfig,
+    command: str,
+    target: str,
+    kwargs: dict[str, Any],
+    handlers: str = "sars._server_handlers",
 ) -> JSONResponse:
-    """Run one request's operation in a worker process and return its
-    envelope (see ``_status``); 500 if the worker ended without one, 504 if it
-    ran out of time, after which it and any worker processes it started are
-    stopped."""
-    context = multiprocessing.get_context("spawn")
-    if config.python != sys.executable:
-        context.set_executable(config.python)
-    receive, send = context.Pipe(duplex=False)
-    worker = context.Process(target=_work, args=(command, target, kwargs, send))
-    worker.start()
-    send.close()
-    try:
-        if not receive.poll(config.timeout):
-            _stop(worker)
+    """Run one request's handler (``handlers.target``) in a worker process,
+    ``python -m sars._server_worker``, and return its envelope (see
+    ``_status``): 500 if the worker printed none, 504 if it ran out of time,
+    after which it and any processes it started are stopped. ``handlers`` is
+    chosen by the server (tests give stand-ins), never by a request."""
+    request = json.dumps(
+        {"command": command, "handlers": handlers, "target": target, "kwargs": kwargs}
+    )
+    # -P: the working directory isn't put on sys.path. The worker's own
+    # environment: without the token.
+    env = {k: v for k, v in os.environ.items() if k != "SARS_SERVER_TOKEN"}
+    env["PYTHONWARNINGS"] = "default"
+    posix = os.name == "posix"
+    with subprocess.Popen(
+        [config.python, "-P", "-m", "sars._server_worker"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+        start_new_session=posix,  # its own process group, with its workers
+    ) as worker:
+        try:
+            stdout, stderr = worker.communicate(request, timeout=config.timeout)
+        except subprocess.TimeoutExpired:
+            _stop(worker, posix)
+            worker.communicate()
             raise HTTPException(
                 504, f"The request took longer than {config.timeout:g} s and was stopped."
-            )
-        try:
-            text = receive.recv()
-        except EOFError:
-            text = None
-    finally:
-        receive.close()
-        worker.join()
-    if text is None:
+            ) from None
+    try:
+        envelope = json.loads(stdout)
+    except json.JSONDecodeError:
+        tail = (stderr or stdout).strip().splitlines()[-1:] or ["no output"]
         raise HTTPException(
-            500, f"The request's worker ended without a result (exit code {worker.exitcode})."
-        )
-    envelope = json.loads(text)
+            500,
+            f"The request's worker ended without a result (exit code {worker.returncode}): "
+            f"{tail[0]}",
+        ) from None
     return JSONResponse(envelope, status_code=_status(envelope))
 
 
-def _stop(worker: Any) -> None:
+def _stop(worker: subprocess.Popen[str], posix: bool) -> None:
     """Stop a worker process and the processes it started."""
-    if os.name == "posix":
+    if posix:
         try:
             os.killpg(worker.pid, signal.SIGKILL)
             return
-        except (ProcessLookupError, PermissionError):  # not yet in its own group
+        except ProcessLookupError:
             pass
-    worker.kill()
+    worker.kill()  # pragma: no cover - Windows, or already gone
 
 
 def _data(request: DataRequest) -> dict[str, Any]:

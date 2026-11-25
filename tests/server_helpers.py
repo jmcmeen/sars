@@ -13,12 +13,13 @@ def raises(kind):
     raise {"InputError": InputError, "TypeError": TypeError}[kind]("x")
 
 
-def sleeps_with_a_worker(marker):
-    """Start a process of its own that leaves ``marker`` if it survives, then
-    sleep past any timeout."""
-    code = f"import time, pathlib; time.sleep(2); pathlib.Path({str(marker)!r}).touch()"
+def sleeps_with_a_worker(started, marker):
+    """Start a process of its own that leaves ``marker`` if it survives, say
+    so in ``started``, then sleep past any timeout."""
+    code = f"import time, pathlib; time.sleep(8); pathlib.Path({str(marker)!r}).touch()"
     subprocess.Popen([sys.executable, "-c", code])
-    time.sleep(30)
+    open(started, "w").close()
+    time.sleep(60)
 
 
 def environment():

@@ -163,12 +163,13 @@ def test_only_bundled_datasets_are_accepted(client, dataset):
 
 
 def test_labels_with_quotes_commas_and_accents_reach_the_operation_intact():
-    from sars.server._handlers import frame
+    from sars._server_handlers import frame
     from sars.server.app import DataRequest, _data
 
     labels = ['O"Brien, North', "Española", "plain", "tab\there"]
     request = DataRequest(data={"area": [1, 2, 3, 4], "species": [1, 2, 3, 4], "label": labels})
-    assert frame(_data(request))["label"].tolist() == labels
+    assert frame(_data(request), labels=True)["label"].tolist() == labels
+    assert list(frame(_data(request)).columns) == ["area", "species"]
 
 
 @pytest.mark.parametrize(("n_jobs", "status"), [(-1, 200), (1, 200), (10_000, 422), (-2, 422)])
@@ -194,17 +195,28 @@ def test_a_non_ascii_authorization_header_is_401_not_500():
     assert client.get("/v1/datasets", headers=ok).status_code == 200
 
 
+@pytest.fixture
+def stand_ins(monkeypatch):
+    """Let the worker import tests.server_helpers (it runs with -P, so the
+    repository isn't on its path otherwise)."""
+    root = str(Path(__file__).resolve().parents[1])
+    monkeypatch.setenv(
+        "PYTHONPATH", os.pathsep.join(filter(None, [root, os.environ.get("PYTHONPATH")]))
+    )
+    return "tests.server_helpers"
+
+
 @pytest.mark.parametrize(("kind", "status"), [("InputError", 422), ("TypeError", 500)])
-def test_a_bug_in_the_operation_is_500_not_422(kind, status):
+def test_a_bug_in_the_operation_is_500_not_422(stand_ins, kind, status):
     from sars.server.app import _execute
 
-    response = _execute(ServerConfig(), "fit", "tests.server_helpers:raises", {"kind": kind})
+    response = _execute(ServerConfig(), "fit", "raises", {"kind": kind}, handlers=stand_ins)
     assert response.status_code == status
     assert json.loads(response.body)["error"]["type"] == kind
 
 
 @pytest.mark.skipif(os.name != "posix", reason="process groups")
-def test_a_timeout_stops_the_operations_worker_processes(tmp_path):
+def test_a_timeout_stops_the_operations_worker_processes(stand_ins, tmp_path):
     """The operation's own workers (a stand-in sleeping child here) go too."""
     import time
 
@@ -212,36 +224,56 @@ def test_a_timeout_stops_the_operations_worker_processes(tmp_path):
 
     from sars.server.app import _execute
 
-    marker = tmp_path / "survived"
+    started, marker = tmp_path / "started", tmp_path / "survived"
     with pytest.raises(HTTPException) as stopped:
         _execute(
-            ServerConfig(timeout=1.0),
+            ServerConfig(timeout=4.0),
             "fit",
-            "tests.server_helpers:sleeps_with_a_worker",
-            {"marker": str(marker)},
+            "sleeps_with_a_worker",
+            {"started": str(started), "marker": str(marker)},
+            handlers=stand_ins,
         )
     assert stopped.value.status_code == 504
-    time.sleep(2.5)
+    assert started.exists()  # the child process was running when time ran out
+    time.sleep(6)  # past when the child would have left its marker (8 s in)
     assert not marker.exists()
 
 
-def test_the_operation_does_not_see_the_token(monkeypatch):
+def test_the_operation_does_not_see_the_token(stand_ins, monkeypatch):
     from sars.server.app import _execute
 
     monkeypatch.setenv("SARS_SERVER_TOKEN", "s3cret")
-    response = _execute(ServerConfig(), "fit", "tests.server_helpers:environment", {})
+    response = _execute(ServerConfig(), "fit", "environment", {}, handlers=stand_ins)
     assert json.loads(response.body)["result"] == {"token": None}
 
 
-def test_a_worker_that_dies_is_500():
+def test_a_worker_that_dies_is_500(stand_ins):
     from fastapi import HTTPException
 
     from sars.server.app import _execute
 
     with pytest.raises(HTTPException) as failed:
-        _execute(ServerConfig(), "fit", "tests.server_helpers:dies", {})
+        _execute(ServerConfig(), "fit", "dies", {}, handlers=stand_ins)
     assert failed.value.status_code == 500
     assert "exit code 3" in failed.value.detail
+
+
+def test_a_result_json_cant_hold_is_500():
+    from sars._operations import envelope_json
+    from sars.server.app import _status
+
+    text = envelope_json({"sars": "x", "command": "fit", "ok": True, "result": float("nan")})
+    assert _status(json.loads(text)) == 500
+
+
+def test_the_data_stored_in_a_result_match_the_command_line(client, capsys):
+    """Only area and species, as the CLI stores them (gala has more columns)."""
+    from sars.cli import main
+
+    served = client.post("/v1/fit", json={"dataset": "gala"}).json()["result"]["object"]
+    main(["fit", "gala", "--json"])
+    printed = json.loads(capsys.readouterr().out)["result"]["object"]
+    assert served == printed
 
 
 def test_the_server_does_not_run_the_command_line():
@@ -256,7 +288,7 @@ def test_the_server_does_not_run_the_command_line():
         tree = ast.parse(file.read_text(encoding="utf-8"))
         imported = {n.module or "" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
         imported |= {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
-        assert not any(m.startswith("sars.cli") or m == "subprocess" for m in imported), file
+        assert not any(m.startswith("sars.cli") for m in imported), file
 
 
 def test_serve_refuses_a_timeout_that_is_not_positive(capsys):

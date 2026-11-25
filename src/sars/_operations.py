@@ -434,7 +434,8 @@ def envelope_json(env: dict[str, Any]) -> str:
     slipped through) is reported as the envelope's error instead."""
     try:
         return json.dumps(env, indent=2, allow_nan=False)
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError) as exc:  # a bug, not the request's fault
         failed = {key: env.get(key) for key in ("sars", "command", "warnings")}
-        failed.update(ok=False, error={"type": type(exc).__name__, "message": str(exc)})
+        message = f"The result can't be written as JSON: {exc}"
+        failed.update(ok=False, error={"type": "SerializationError", "message": message})
         return json.dumps(failed, indent=2)
