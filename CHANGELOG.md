@@ -12,6 +12,8 @@ reconstructed from the commit history and the
 
 ### Added
 
+- `sars loglog`: the log-log power model by least squares (`lin_pow`), with
+  standard errors, t tests and p values, and `POST /v1/loglog`.
 - `sars ci`: the model-averaged richness at given areas (ten spread over the
   data's range by default), with bootstrap intervals, by the fast or full
   method; and the same as `POST /v1/ci` on the HTTP server.

@@ -473,6 +473,64 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "LogLogRequest": {
+        "properties": {
+          "compare": {
+            "default": false,
+            "title": "Compare",
+            "type": "boolean"
+          },
+          "con": {
+            "default": 1.0,
+            "description": "added to every richness when an island has none",
+            "title": "Con",
+            "type": "number"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Data"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "enum": [
+                  "galap",
+                  "gala",
+                  "aegean",
+                  "aegean2",
+                  "niering",
+                  "schrader",
+                  "xu"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "a bundled dataset (GET /v1/datasets)",
+            "title": "Dataset"
+          },
+          "log_base": {
+            "default": "e",
+            "enum": [
+              "e",
+              "2",
+              "10"
+            ],
+            "title": "Log Base",
+            "type": "string"
+          }
+        },
+        "title": "LogLogRequest",
+        "type": "object"
+      },
       "LossRequest": {
         "properties": {
           "area": {
@@ -1034,6 +1092,64 @@
           }
         },
         "summary": "Fit",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/v1/loglog": {
+      "post": {
+        "description": "The log-log power model, by least squares (as `sars loglog`).",
+        "operationId": "loglog_v1_loglog_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogLogRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Loglog",
         "tags": [
           "models"
         ]

@@ -155,6 +155,12 @@ class LossRequest(DataRequest):
         return self
 
 
+class LogLogRequest(DataRequest):
+    log_base: Literal["e", "2", "10"] = "e"
+    con: float = Field(default=1.0, description="added to every richness when an island has none")
+    compare: bool = False
+
+
 class CIRequest(DataRequest, Checks):
     areas: Numbers | None = Field(
         default=None, description="areas to predict at (default: ten over the data's range)"
@@ -373,6 +379,17 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
             conf=request.conf,
             seed=request.seed,
             n_jobs=jobs(request.n_jobs),
+        )
+
+    @app.post("/v1/loglog", tags=["models"], dependencies=guarded)
+    def loglog(request: LogLogRequest) -> JSONResponse:
+        """The log-log power model, by least squares (as `sars loglog`)."""
+        return run(
+            "loglog",
+            data=_data(request),
+            log_base=request.log_base,
+            con=request.con,
+            compare=request.compare,
         )
 
     @app.post("/v1/ci", tags=["models"], dependencies=guarded)

@@ -287,6 +287,21 @@ def test_loss(capsys):
     assert code == 2 and "not allowed with" in err
 
 
+def test_loglog(capsys):
+    code, envelope = run_json(capsys, "loglog", "galap", "--compare")
+    summary = envelope["result"]["summary"]
+    expected = sars.lin_pow(sars.load_galap())
+    assert code == 0 and summary["type"] == "LinPowFit"
+    assert summary["z"] == pytest.approx(expected.z) and summary["z_se"] == pytest.approx(
+        expected.z_se
+    )
+    assert summary["power"]["params"]["z"] == pytest.approx(
+        sars.sar_power(sars.load_galap()).params["z"]
+    )
+    code, out, _ = run(capsys, "loglog", "galap", "--log-base", "10")
+    assert code == 0 and out.startswith("log10 S = log10 c + z log10 A")
+
+
 def test_ci(capsys):
     argv = ["ci", "galap", "--area", "1", "100", "-m", "power", "--n-boot", "40", "--seed", "2"]
     code, envelope = run_json(capsys, *argv)

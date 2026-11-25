@@ -65,6 +65,7 @@ def test_fit_a_bundled_dataset(client):
             {"models": ["power", "loga"], "warm": True},
             lambda s: s["models"][0]["worst"] in INLINE["label"],
         ),
+        ("/v1/loglog", {"log_base": "10"}, lambda s: s["log_base"] == "10" and s["z_se"] > 0),
         (
             "/v1/ci",
             {"areas": [1, 100], "models": ["power"], "n_boot": 20, "seed": 1},

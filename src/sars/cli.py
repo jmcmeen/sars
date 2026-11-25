@@ -86,6 +86,31 @@ def _print_summary(summary: dict[str, Any], out: Any) -> None:
     import pandas as pd
 
     kind = summary["type"]
+    if kind == "LinPowFit":
+        log = "log" if summary["log_base"] == "e" else f"log{summary['log_base']}"
+        print(f"{log} S = {log} c + z {log} A, by least squares:", file=out)
+        print(
+            f"  c = {_fmt(summary['c'])} (SE {_fmt(summary['c_se'])})  "
+            f"{log} c = {_fmt(summary['logc'])} (SE {_fmt(summary['logc_se'])}, "
+            f"p = {_fmt(summary['logc_p'])})",
+            file=out,
+        )
+        print(
+            f"  z = {_fmt(summary['z'])} (SE {_fmt(summary['z_se'])}, t = "
+            f"{_fmt(summary['z_t'])}, p = {_fmt(summary['z_p'])})",
+            file=out,
+        )
+        print(
+            f"R2 = {_fmt(summary['R2'])}  adjusted R2 = {_fmt(summary['adj_R2'])}  "
+            f"sigma = {_fmt(summary['sigma'])}  n = {summary['n']}",
+            file=out,
+        )
+        if summary["power"] is not None:
+            power = summary["power"]["params"]
+            print(
+                f"nonlinear power model: c = {_fmt(power['c'])}  z = {_fmt(power['z'])}", file=out
+            )
+        return
     if kind == "BootstrappedCI":
         table = pd.DataFrame(summary["intervals"])
         print(
@@ -226,6 +251,12 @@ def _cmd_loss(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
         seed=args.seed,
         n_jobs=args.n_jobs,
     )
+    return _finish(obj, args)
+
+
+def _cmd_loglog(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
+    data = _read_data(args.data, args.area_col, args.species_col)
+    obj = ops.loglog(data, log_base=args.log_base, con=args.con, compare=args.compare)
     return _finish(obj, args)
 
 
@@ -458,6 +489,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_output_args(loss)
     loss.set_defaults(handler=_cmd_loss)
+
+    loglog = commands.add_parser(
+        "loglog",
+        help="the log-log power model, by least squares",
+        description="Fit log S = log c + z log A by ordinary least squares, with standard "
+        "errors, t tests and p values (see lin_pow).",
+    )
+    _add_data_args(loglog)
+    loglog.add_argument(
+        "--log-base", choices=["e", "2", "10"], default="e", help="base of the logs (default: e)"
+    )
+    loglog.add_argument(
+        "--con",
+        type=float,
+        default=1.0,
+        help="added to every richness when an island has none (default 1)",
+    )
+    loglog.add_argument(
+        "--compare", action="store_true", help="also fit the nonlinear power model, to compare"
+    )
+    _add_output_args(loglog)
+    loglog.set_defaults(handler=_cmd_loglog)
 
     ci = commands.add_parser(
         "ci",

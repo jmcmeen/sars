@@ -316,6 +316,13 @@ def ci(
     )
 
 
+def loglog(data: Any, log_base: str = "e", con: float = 1.0, compare: bool = False) -> Any:
+    """The log-log power model, log S = log c + z log A, by least squares."""
+    import sars
+
+    return sars.lin_pow(data, con=con, log_base=log_base, compare=compare)
+
+
 def predict(obj: Any, areas: Sequence[float]) -> dict[str, Any]:
     """Predicted richness at ``areas`` from a fitted result."""
     import numpy as np
@@ -440,6 +447,19 @@ def summary(obj: Any) -> dict[str, Any]:
             "ic": obj.average.ic,
             "scenarios": records(obj.table),
         }
+    if kind == "LinPowFit":
+        names = ("logc", "c", "z", "logc_se", "c_se", "z_se", "logc_t", "z_t", "logc_p", "z_p")
+        out = {"type": kind, **{name: number(getattr(obj, name)) for name in names}}
+        out.update(
+            R2=number(obj.r_squared),
+            adj_R2=number(obj.adj_r_squared),
+            sigma=number(obj.sigma),
+            n=obj.n,
+            log_base=obj.log_base,
+            con=number(obj.con),
+            power=None if obj.power is None else summary(obj.power),
+        )
+        return out
     if kind == "BootstrappedCI":
         rows = [
             {
