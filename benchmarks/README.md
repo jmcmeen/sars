@@ -66,20 +66,45 @@ several machines sit side by side and a re-run replaces only its own folder:
 - `machine.csv`: the CPU, system and package versions, repeats and resamples;
 - `timings.webp`: the times, one panel per job.
 
-## On an AMD Ryzen 7 7700
+## Results on three machines
 
-sars 0.11.8 against R 4.5.2 with sars 2.1.1, on one core unless noted
-(`results/amd-ryzen-7-7700/`):
+sars as of this README (unreleased, after 0.11.11) against R 4.5 with sars 2.1.1, on
+one core unless noted, 100 resamples per bootstrap:
 
-| Job | sars | R sars | R ÷ sars |
+| Machine | `results/` |
+| --- | --- |
+| AMD Ryzen 7 7700 (8 cores), RTX 5060 Ti, Linux | `amd-ryzen-7-7700/` |
+| Intel Core i5-12400F (6 cores), RTX 3060, Linux | `12th-gen-intel-core-i5-12400f/` |
+| Apple M5 Pro, macOS (no NVIDIA GPU) | `apple-m5-pro/` |
+
+How many times faster sars is than R sars, by job (the range over the datasets):
+
+| Job | Ryzen 7 7700 | i5-12400F | M5 Pro |
 | --- | --- | --- | --- |
-| One power fit | 0.04-0.10 s | 0.17-0.64 s | 3-11× |
-| All 20 models | 4.2 s (galap) to 24 s (5,000 points) | 9.7 s to 55 s | 1.7-2.3× |
-| Threshold models | 1 ms (galap) to 89 ms (5,000 points) | 0.5 s to 1.7 s | 19-720× |
-| Bootstrap, 100 resamples, full | 613 s | 983 s | 1.6× |
-| Bootstrap, 100 resamples, fast | 17 s | | 58× |
-| Bootstrap, 100 resamples, full, all 16 threads | 79 s | | 12× |
+| One power fit | 33-124× | 14-112× | 16-130× |
+| All 20 models | 2.8-37× | 1.8-25× | 1.5-25× |
+| Threshold models | 33-765× | 19-596× | 28-704× |
+| Bootstrap, full | 29× | 22× | 22× |
+| Bootstrap, fast | 95× | 79× | 87× |
+| Bootstrap, full, all cores | 174× | 103× | 179× |
 
-Both packages agree on every result but one: on the 1,000-point synthetic
-dataset R's chapman fit stops at an AICc of 8194.6, where sars finds 6279.9,
-so R's best model there is p1 (6279.97) and sars's is chapman.
+All 20 models take 0.2 to 0.4 s on galap (R 5 to 10 s) and 18 to 38 s on 5,000 points
+(R 31 to 67 s). The full bootstrap, R's own method, takes 23 to 44 s where R takes 522
+to 985 s. The speed-up is smallest on the largest synthetic dataset, where the final
+solve of each fit dominates.
+
+The large table (`--large 100000`) and the GPU (`--gpu`), all 20 models:
+
+| Machine | CPU | GPU |
+| --- | --- | --- |
+| Ryzen 7 7700, RTX 5060 Ti | 207 s | 76 s |
+| i5-12400F, RTX 3060 | 471 s | 167 s |
+| M5 Pro | 162 s | |
+
+The GPU pays off on large tables, 2.7 to 2.8 times faster here. On the small datasets
+and the galap bootstraps it's slower than the CPU (about 1 s against 0.3 s for all 20
+models on galap): a few hundred islands don't keep it busy.
+
+Both packages agree on every result but one: on the 1,000-point synthetic dataset R's
+chapman fit stops short of the optimum sars finds, so R's best model there is p1 and
+sars's is chapman.

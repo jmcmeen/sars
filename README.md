@@ -34,8 +34,9 @@ pip install "sars[gpu]"     # start grids screened on an NVIDIA GPU: CuPy (CUDA 
 - **Threshold models**: piecewise regression for breakpoints (the small-island effect),
   with breakpoint intervals by bootstrap or inverted F test
 - **Fast**: each model's start grid is fitted as one batch of array operations, and
-  optionally on an NVIDIA GPU (`sars.set_backend("cupy")`); see the
-  [benchmarks](benchmarks/) against R `sars`
+  optionally on an NVIDIA GPU (`sars.set_backend("cupy")`). Against R `sars`, all 20
+  models fit 1.5 to 37 times faster and the full bootstrap 22 to 29 times faster, on
+  three machines; see the [benchmarks](benchmarks/)
 
 **Comparing models and their uncertainty**
 
