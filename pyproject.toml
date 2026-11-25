@@ -109,6 +109,7 @@ addopts = "-n logical --cov=sars --cov-report=term-missing"
 markers = [
     "notebook: runs an example notebook end to end (CI runs these in a job of their own)",
     "slow: fits many published datasets (CI runs these in a job of their own)",
+    "bayes: samples with PyMC, the bayes extra (CI runs these in a job of their own)",
 ]
 filterwarnings = [
     # Starlette's test client (tests/test_server.py) warns that it will move from httpx to

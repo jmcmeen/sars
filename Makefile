@@ -42,7 +42,7 @@ test: ## Run the full test suite
 	$(UV) run --extra dev pytest
 
 test-fast: ## Run tests, skipping the example notebooks and the 34-dataset check
-	$(UV) run --extra dev pytest -m "not notebook and not slow"
+	$(UV) run --extra dev pytest -m "not notebook and not slow and not bayes"
 
 cov: ## Run tests with coverage report
 	$(UV) run --extra dev pytest --cov --cov-report=term-missing

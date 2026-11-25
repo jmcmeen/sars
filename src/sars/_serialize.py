@@ -52,7 +52,7 @@ def to_json(obj: Any, indent: int | None = None) -> str:
     Works for every result the package returns (`SARFit`, `MultiSARFit`,
     `AveragedSAR`, `BootstrappedCI`, `LinPowFit`, `ThresholdFit`,
     `ThresholdCI`, `ManySARFit`, `LOOCV`, `HabitatLoss`, `HabitatFit`, `CountrysideFit`, `MixedLinPowFit`), with its data, parameters and
-    settings. The
+    settings; but not `BayesLinPowFit`, whose posterior ArviZ saves. The
     text is standard JSON: NaN and infinite numbers (an AICc that is
     undefined, say) are written as strings and read back as numbers. It
     records the format version and the sars version that wrote it.

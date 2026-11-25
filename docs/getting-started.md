@@ -127,9 +127,11 @@ archipelagos, its intervals for the spread between them are honest about how lit
 data say, where REML can report a spread of zero.
 
 ```python
+# Sampling runs the chains in worker processes, which import the main script: in a
+# script, call it under `if __name__ == "__main__":` (or pass cores=1).
 fit = sars.lin_pow_bayes(archipelagos, seed=1)   # the same mapping as above
 fit.summary          # logc, z, sd_logc, sd_z, corr, sigma: mean, sd, interval, r_hat, ess
-fit.groups           # each archipelago's logc, c and z, with intervals, and z_alone
+fit.groups           # by archipelago: logc, c and z, with intervals, and z_alone
 fit.converged        # every r-hat below 1.01 and no divergent transitions
 fit.idata            # the full posterior, for ArviZ
 ```

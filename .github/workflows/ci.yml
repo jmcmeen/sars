@@ -142,6 +142,24 @@ jobs:
       - name: pytest
         run: uv run --frozen --no-sync pytest -m slow --no-cov --durations=5
 
+  bayes:
+    name: bayes extra
+    # lin_pow_bayes with PyMC (the bayes extra), once: sampling is slow and the
+    # extra is heavy, so the other jobs don't install it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # tags, for the hatch-vcs version
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - run: uv sync --frozen --extra dev --extra bayes
+      - name: pytest
+        run: uv run --frozen --no-sync pytest tests/test_bayes.py -m "bayes or not bayes" --no-cov --durations=5
+
   minimums:
     name: minimum dependencies
     # The oldest numpy, scipy, pandas and matplotlib pyproject.toml allows (its
