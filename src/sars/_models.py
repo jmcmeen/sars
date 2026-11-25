@@ -966,12 +966,12 @@ def _fit_nls(
                         max_nfev=5000,
                         **grid_tol,
                     )
-                if not result.success or np.all(result.fun == _PENALTY):
+                if not result.success or result.cost >= _PENALTY_COST:
                     # Stopped on max_nfev or similar: not a converged solution,
                     # so it may neither win on cost nor count as a stale run.
-                    # A start where the model is undefined everywhere (all
-                    # penalty) "converges" at once on its flat cost; it's no
-                    # solution either.
+                    # A point where the model is undefined at some island
+                    # (penalized) is no solution either: on a flat all-penalty
+                    # plateau the solver "converges" at once.
                     n_unsuccessful += 1
                     continue
                 top = _keep_best_distinct(top, float(result.cost), result.x)
@@ -1102,7 +1102,9 @@ def _fit_nls(
         xs, costs = screened
         top = []
         for i in np.argsort(costs):
-            if np.isfinite(costs[i]):
+            # Not a point where the model is undefined at some island: if no
+            # start found one, the start-by-start search below runs instead.
+            if np.isfinite(costs[i]) and costs[i] < _PENALTY_COST:
                 top = _keep_best_distinct(top, float(costs[i]), xs[i])
         logger.debug("Model '%s': screened %d starts in one batch", name, len(grid))
         converged = False
@@ -1192,6 +1194,9 @@ def _keep_best_distinct(
 
 # Residual given to the solver where the model overflows or is undefined.
 _PENALTY = 1e10
+# A cost this high has at least one penalized residual: no valid fit (the
+# rescaled richness is at most 1, so a fit's cost is at most a few times n).
+_PENALTY_COST = 0.5 * _PENALTY**2
 
 
 def _penalized(res: np.ndarray) -> np.ndarray:
@@ -1406,7 +1411,7 @@ def _epm1_onto_z_bound(
         xtol=1e-14,
         gtol=1e-14,
     )
-    if on_bound is None or not on_bound.cost < best.cost:
+    if on_bound is None or not on_bound.success or not on_bound.cost < best.cost:
         return best
     lc, d = (float(v) for v in on_bound.x)
     return OptimizeResult(x=np.array([lc, u_for(d), d]), cost=on_bound.cost, success=True)

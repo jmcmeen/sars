@@ -256,7 +256,7 @@ def test_epm1_reaches_an_optimum_on_its_z_bound(seed, aicc):
     species = 50 * (1 - np.exp(-area / np.median(area))) * np.exp(rng.normal(0, 0.15, 30))
     fit = sars.sar_epm1(pd.DataFrame({"area": area, "species": species}))
     assert fit.params["z"] == pytest.approx(-50.0, rel=1e-10)
-    assert fit.aicc <= aicc + 1e-5
+    assert fit.aicc == pytest.approx(aicc, abs=1e-5)
     values = np.array([fit.params[k] for k in ("c", "z", "d")])
     assert _on_bound("epm1", values, area, species).tolist() == [False, True, False]
 

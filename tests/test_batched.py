@@ -168,3 +168,19 @@ class TestGPU:
         a = cpu.summary.set_index("model")["AICc"]
         b = gpu.summary.set_index("model")["AICc"]
         np.testing.assert_allclose(b.loc[a.index], a, rtol=1e-6)
+
+
+def test_a_screen_of_only_penalized_points_isnt_a_fit(galap, monkeypatch):
+    """Points where the model is undefined at some island are never taken as a
+    fit: with nothing else from the screen, the start-by-start search runs."""
+    from sars._models import _PENALTY_COST, _fit_nls
+
+    alone = _fit_nls("power", galap)
+
+    def undefined_everywhere(func, area, species, starts, *rest, **kw):
+        return starts, np.full(len(starts), 2 * _PENALTY_COST)
+
+    monkeypatch.setattr(_batched, "screen", undefined_everywhere)
+    fit = _fit_nls("power", galap)
+    assert fit.converged
+    assert fit.aicc == pytest.approx(alone.aicc, rel=1e-9)
