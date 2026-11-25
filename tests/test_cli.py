@@ -288,6 +288,19 @@ def test_loss(capsys):
     assert code == 2 and "not allowed with" in err
 
 
+def test_fit_params(capsys):
+    code, envelope = run_json(capsys, "fit", "galap", "-m", "negexpo,power", "--params")
+    tables = envelope["result"]["summary"]["parameters"]
+    expected = sars.sar_negexpo(sars.load_galap()).param_table()
+    assert code == 0 and set(tables) == {"negexpo", "power"}
+    rows = {row["parameter"]: row for row in tables["negexpo"]}
+    assert rows["d"]["std_error"] == pytest.approx(expected.loc["d", "std_error"])
+    code, out, _ = run(capsys, "fit", "galap", "--params", "--conf", "0.9")
+    assert code == 0 and "power: parameters, 90% intervals" in out and "ci_lower" in out
+    code, envelope = run_json(capsys, "fit", "galap", "--params", "--conf", "1.5")
+    assert code == 1 and "between 0 and 1" in envelope["error"]["message"]
+
+
 def test_many(capsys, tmp_path):
     code, envelope = run_json(capsys, "many", "galap", "gala", "-m", "power,loga", "--no-threshold")
     rows = envelope["result"]["summary"]["datasets"]

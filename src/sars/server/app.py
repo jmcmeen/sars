@@ -117,6 +117,8 @@ class Checks(BaseModel):
 
 class FitRequest(DataRequest, Checks):
     models: Models = Field(default=["power"], description='one model, several, or ["all"]')
+    params: bool = Field(default=False, description="add each model's parameter table")
+    conf: float = Field(default=0.95, gt=0, lt=1, description="the parameter tables' level")
 
 
 class AverageRequest(DataRequest, Checks):
@@ -354,7 +356,14 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
     @app.post("/v1/fit", tags=["models"], dependencies=guarded)
     def fit(request: FitRequest) -> JSONResponse:
         """Fit one model, or several ranked by AICc (as `sars fit`)."""
-        return run("fit", data=_data(request), models=request.models, **_checks(request))
+        return run(
+            "fit",
+            data=_data(request),
+            models=request.models,
+            params=request.params,
+            conf=request.conf,
+            **_checks(request),
+        )
 
     @app.post("/v1/average", tags=["models"], dependencies=guarded)
     def average(request: AverageRequest) -> JSONResponse:

@@ -340,6 +340,20 @@ def many(
     )
 
 
+def parameters(obj: Any, conf: float = 0.95) -> dict[str, list[dict[str, Any]]]:
+    """Each fitted model's parameter table (standard errors, t tests and
+    confidence intervals), by model name: one model, or every model of a
+    multi-model fit."""
+    if not 0 < conf < 1:
+        raise InputError(f"The interval level must be between 0 and 1, got {conf}.")
+    fits = obj.fits if type(obj).__name__ == "MultiSARFit" else [obj]
+    tables = {}
+    for fit in fits:
+        table = fit.param_table(conf=conf).reset_index()
+        tables[fit.model] = records(table)
+    return tables
+
+
 def predict(obj: Any, areas: Sequence[float]) -> dict[str, Any]:
     """Predicted richness at ``areas`` from a fitted result."""
     import numpy as np

@@ -12,6 +12,9 @@ reconstructed from the commit history and the
 
 ### Added
 
+- `sars fit --params` (and `"params": true` on `POST /v1/fit`): each fitted
+  model's parameter table, with standard errors, t tests and confidence
+  intervals at `--conf`.
 - `sars many`: the same models on several datasets (CSVs or bundled names),
   or on one long table split by `--by COLUMN`, summarized in one table, and
   `POST /v1/many`.

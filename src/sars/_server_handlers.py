@@ -36,8 +36,14 @@ def datasets() -> dict[str, Any]:
     return ops.datasets()
 
 
-def fit(data: dict[str, Any], **options: Any) -> dict[str, Any]:
-    return ops.result(ops.fit(frame(data), **options), include_object=True)
+def fit(
+    data: dict[str, Any], params: bool = False, conf: float = 0.95, **options: Any
+) -> dict[str, Any]:
+    obj = ops.fit(frame(data), **options)
+    result = ops.result(obj, include_object=True)
+    if params:
+        result["summary"]["parameters"] = ops.parameters(obj, conf=conf)
+    return result
 
 
 def average(data: dict[str, Any], **options: Any) -> dict[str, Any]:

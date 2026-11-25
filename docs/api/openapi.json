@@ -374,6 +374,14 @@
       },
       "FitRequest": {
         "properties": {
+          "conf": {
+            "default": 0.95,
+            "description": "the parameter tables' level",
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Conf",
+            "type": "number"
+          },
           "data": {
             "anyOf": [
               {
@@ -455,6 +463,12 @@
               }
             ],
             "title": "Normality"
+          },
+          "params": {
+            "default": false,
+            "description": "add each model's parameter table",
+            "title": "Params",
+            "type": "boolean"
           }
         },
         "title": "FitRequest",

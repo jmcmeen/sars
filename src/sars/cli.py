@@ -235,7 +235,30 @@ def _checks(args: argparse.Namespace) -> dict[str, Any]:
 
 def _cmd_fit(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
     data = _read_data(args.data, args.area_col, args.species_col)
-    return _finish(ops.fit(data, ops.model_names(args.model), **_checks(args)), args)
+    obj = ops.fit(data, ops.model_names(args.model), **_checks(args))
+    result, show = _finish(obj, args)
+    if not args.params:
+        return result, show
+    tables = ops.parameters(obj, conf=args.conf)
+    result["summary"]["parameters"] = tables
+
+    def show_all(out: Any) -> None:
+        show(out)
+        _print_parameters(tables, args.conf, out)
+
+    return result, show_all
+
+
+def _print_parameters(tables: dict[str, list[dict[str, Any]]], conf: float, out: Any) -> None:
+    import pandas as pd
+
+    for model, rows in tables.items():
+        print(f"\n{model}: parameters, {conf:.0%} intervals", file=out)
+        table = pd.DataFrame(rows)
+        for column in table.columns:
+            if column != "parameter":
+                table[column] = [_cell(v) for v in table[column]]
+        print(table.to_string(index=False), file=out)
 
 
 def _cmd_average(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
@@ -450,6 +473,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         metavar="NAME",
         help="a model, or several (repeated or comma-separated), or `all`",
+    )
+    fit.add_argument(
+        "--params",
+        action="store_true",
+        help="also print each model's parameter table: standard errors, t tests, intervals",
+    )
+    fit.add_argument(
+        "--conf", type=float, default=0.95, help="interval level for --params (default 0.95)"
     )
     _add_check_args(fit)
     _add_output_args(fit)

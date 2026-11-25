@@ -92,6 +92,12 @@ def test_each_command_with_inline_data(client, path, body, check):
     assert check(response.json()["result"]["summary"])
 
 
+def test_fit_params(client):
+    response = client.post("/v1/fit", json={"dataset": "galap", "params": True})
+    rows = response.json()["result"]["summary"]["parameters"]["power"]
+    assert [r["parameter"] for r in rows] == ["c", "z"] and rows[1]["std_error"] > 0
+
+
 def test_many(client):
     body = {"bundled": ["galap", "gala"], "models": ["power"], "threshold": False}
     response = client.post("/v1/many", json=body)
