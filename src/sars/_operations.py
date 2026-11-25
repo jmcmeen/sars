@@ -271,7 +271,13 @@ def ci(
     import numpy as np
 
     import sars
+    from sars._models import _validate_data
 
+    if n_boot < 1:
+        raise InputError(f"The number of resamples must be at least 1, got {n_boot}.")
+    if not 0 < conf < 1:
+        raise InputError(f"The interval level must be between 0 and 1, got {conf}.")
+    _validate_data(data)  # before the default areas are taken from it
     if areas is None:
         at = np.geomspace(float(data["area"].min()), float(data["area"].max()), 10)
     else:

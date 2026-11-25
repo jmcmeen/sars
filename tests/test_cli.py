@@ -307,6 +307,16 @@ def test_ci(capsys):
     assert len(envelope["result"]["summary"]["intervals"]) == 10  # the default areas
     code, envelope = run_json(capsys, "ci", "galap", "--area", "-1", "--n-boot", "10")
     assert code == 1 and "positive" in envelope["error"]["message"]
+    for bad, message in [("--n-boot=0", "at least 1"), ("--conf=95", "between 0 and 1")]:
+        code, envelope = run_json(capsys, "ci", "galap", bad)
+        assert code == 1 and message in envelope["error"]["message"]
+
+
+def test_ci_checks_the_data_first(capsys, tmp_path):
+    path = tmp_path / "zero.csv"
+    path.write_text("area,species\n0,3\n2,5\n4,8\n")
+    code, envelope = run_json(capsys, "ci", str(path), "--n-boot", "5")
+    assert code == 1 and "positive" in envelope["error"]["message"]
 
 
 def test_cv_labels_islands_by_a_named_column(capsys, tmp_path):
