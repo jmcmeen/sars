@@ -15,40 +15,66 @@ Species-area relationship curve fitting in Python. A conceptual mirror of the R 
 pip install sars
 ```
 
-sars needs Python 3.11 or later. `from_geodataframe`, which computes site areas from
-polygons, needs the `geo` extra (geopandas and shapely):
+sars needs Python 3.11 or later. Optional extras add:
 
 ```bash
-pip install "sars[geo]"
+pip install "sars[geo]"     # site areas from polygons (from_geodataframe): geopandas, shapely
+pip install "sars[server]"  # sars serve, the HTTP API: FastAPI, uvicorn
+pip install "sars[gpu]"     # start grids screened on an NVIDIA GPU: CuPy (CUDA 13)
 ```
-
-`sars serve`, an HTTP API over the command line, needs the `server` extra (FastAPI and
-uvicorn): `pip install "sars[server]"`.
 
 ## Features
 
-- **20 SAR models** — power, logarithmic, asymptotic, sigmoid, and more
-- **Log-log power model** — the classic straight-line fit of log S on log A, with standard errors and p values
-- **Multi-model inference** — fit all models at once, ranked by AICc with Akaike weights
-- **Habitat loss** — species expected to be lost with habitat, with model-averaged bootstrap intervals
-- **Cross-validation** — rank models by how well they predict a left-out island, beside AICc
-- **Save and reload results** — any fit or result as standard JSON, data and settings included
-- **Many archipelagos at once** — a mixed-effects log-log model pooling z across archipelagos (matches lme4)
-- **Sampling effort** — richness standardised to equal sample coverage or size (as iNEXT) before fitting
-- **Habitat models** — the choros, jigsaw and Kallimanis models of area and habitat diversity, and the countryside model for multi-habitat landscapes
-- **HTTP server** — the command line as a small JSON API (`sars serve`, optional extra)
-- **Command line** — `sars fit|average|threshold|cv|loss|predict|datasets`, with JSON output for scripts
-- **Many datasets at once** — the same models fitted to many datasets, summarised in one table, in parallel if you like
-- **Parameter uncertainty** — standard errors, t tests and confidence intervals for each fitted parameter
-- **Model averaging** — weighted-average predictions across candidate models
-- **Prediction** — a table of predicted richness at any areas, from any fit
-- **Residual checks** — normality, homoscedasticity and negative-prediction checks on each fit, optionally leaving out the models that fail before averaging
-- **Bootstrap confidence intervals** — percentile-based CIs for averaged predictions
-- **Threshold models** — piecewise regression for detecting breakpoints (small island effect), with confidence intervals for the breakpoints by bootstrap or by inverted F test
-- **Random placement** — Coleman's null model for richness from a species-by-site abundance table, with a calibrated simulation test
-- **General dynamic model** — richness as a function of island area and a hump in island age (Whittaker et al. 2008), with nested-model comparison
-- **Bundled datasets** — seven published island datasets: `load_galap`, `load_gala`, `load_aegean`, `load_aegean2`, `load_niering`, `load_schrader`, `load_xu`
-- **R-validated** — fits, AICc weights, model averaging, threshold models, random placement and the general dynamic model are checked against R `sars` reference output, with every known difference listed in `tests/test_r_reference.py`
+**Fitting**
+
+- **20 SAR models**: power, logarithmic, asymptotic, sigmoid and more, each from a grid
+  of starting values, so a fit doesn't hang on one lucky guess
+- **Log-log power model**: the classic straight-line fit of log S on log A, with
+  standard errors and p values
+- **Threshold models**: piecewise regression for breakpoints (the small-island effect),
+  with breakpoint intervals by bootstrap or inverted F test
+- **Fast**: each model's start grid is fitted as one batch of array operations, and
+  optionally on an NVIDIA GPU (`sars.set_backend("cupy")`); see the
+  [benchmarks](benchmarks/) against R `sars`
+
+**Comparing models and their uncertainty**
+
+- **Multi-model inference**: all models ranked by AICc, with Akaike weights
+- **Model averaging**: weighted-average predictions across the candidate models
+- **Cross-validation**: models ranked by how well they predict a left-out island
+- **Residual checks**: normality, homoscedasticity and negative predictions, optionally
+  leaving out the models that fail before averaging
+- **Parameter uncertainty**: standard errors, t tests and confidence intervals
+- **Bootstrap intervals** on averaged predictions, by a fast or a full method
+
+**Applications and other models**
+
+- **Habitat loss**: species expected to be lost with habitat, with model-averaged
+  bootstrap intervals
+- **Sampling effort**: richness standardized to equal sample coverage or size (as iNEXT)
+  before fitting
+- **Many datasets at once**: the same models on many datasets in one table, and a
+  mixed-effects log-log model pooling z across archipelagos (matches lme4)
+- **Habitat models**: the choros, jigsaw and Kallimanis models of area and habitat
+  diversity, and the countryside model for multi-habitat landscapes
+- **Random placement**: Coleman's null model, with a calibrated simulation test
+- **General dynamic model**: richness from island area and age (Whittaker et al. 2008)
+
+**Using it**
+
+- **Command line**: `sars fit`, `average`, `ci`, `threshold`, `cv`, `loss`, `loglog`,
+  `many`, `predict` and `datasets`, with JSON output for scripts; see the
+  [example scripts](examples/cli/)
+- **HTTP server**: the same operations as a small JSON API (`sars serve`)
+- **Save and reload**: any fit or result as standard JSON, data and settings included
+- **Bundled datasets**: seven published island datasets (`sars datasets`)
+- **R-validated**: fits, weights, averages, thresholds, random placement and the general
+  dynamic model are checked against R `sars` output, every known difference listed in
+  `tests/test_r_reference.py`
+
+New to species-area relationships? The documentation's
+[primer](https://jmcmeen.github.io/sars/primer/) explains the ideas, and the tools above,
+in plain terms.
 
 ## Quick start
 
@@ -73,6 +99,15 @@ predictions = avg.predict([1.0, 10.0, 100.0])
 
 # Bootstrap confidence intervals
 ci = sars.bootstrap_ci(galap, n_boot=100)
+```
+
+The same from the command line:
+
+```console
+$ sars fit galap -m all          # all 20 models, ranked by AICc
+$ sars average galap             # the weighted average
+$ sars ci galap --n-boot 100     # bootstrap intervals on the averaged curve
+$ sars --help                    # every command
 ```
 
 For a complete analysis of these data, see the

@@ -67,6 +67,9 @@ reconstructed from the commit history and the
 
 ### Fixed
 
+- The README lists the `gpu` extra, groups its features (fitting, comparing
+  models, applications, using it), and shows the command line beside the
+  Python quick start.
 - The models page gave too many starting points for loga, linear (25, not
   at least 36), powerR and asymp (80, not at least 100), described fitting
   as scipy alone (the start grid is screened in one batch, then polished),
