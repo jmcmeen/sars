@@ -33,6 +33,7 @@ with `--json`: `{sars, command, ok, result | error, warnings}`. The envelope's
 | `POST /v1/threshold` | `sars threshold` |
 | `POST /v1/cv` | `sars cv` |
 | `POST /v1/loss` | `sars loss` |
+| `POST /v1/ci` | `sars ci` |
 | `POST /v1/predict` | `sars predict`, from a saved result |
 
 The request bodies are in the [OpenAPI document](api/openapi.json), which a running server

@@ -10,6 +10,12 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- `sars ci`: the model-averaged richness at given areas (ten spread over the
+  data's range by default), with bootstrap intervals, by the fast or full
+  method; and the same as `POST /v1/ci` on the HTTP server.
+
 ### Changed
 
 - The HTTP server no longer runs the command line. Each command's work is

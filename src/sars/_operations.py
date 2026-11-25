@@ -252,6 +252,48 @@ def loss(
     )
 
 
+def ci(
+    data: Any,
+    areas: Sequence[float] | None = None,
+    models: Sequence[str] | None = None,
+    ic: str = "AICc",
+    method: str = "fast",
+    n_boot: int = 1000,
+    conf: float = 0.95,
+    seed: int | None = None,
+    n_jobs: int = 1,
+    normality: str | None = None,
+    homoscedasticity: str | None = None,
+    neg_check: bool = False,
+) -> Any:
+    """Bootstrap intervals on the model-averaged curve at ``areas`` (by
+    default ten areas spread evenly in log over the data's range)."""
+    import numpy as np
+
+    import sars
+
+    if areas is None:
+        at = np.geomspace(float(data["area"].min()), float(data["area"].max()), 10)
+    else:
+        at = np.asarray(areas, dtype=float)
+        if not (np.isfinite(at).all() and (at > 0).all()):
+            raise InputError("Areas must be positive, finite numbers.")
+    return sars.bootstrap_ci(
+        data,
+        models=_models(models, "all"),
+        n_boot=n_boot,
+        conf=conf,
+        area_grid=at,
+        rng=np.random.default_rng(seed),
+        method=method,
+        ic=ic,
+        normality=normality,
+        homoscedasticity=homoscedasticity,
+        neg_check=neg_check,
+        n_jobs=n_jobs,
+    )
+
+
 def predict(obj: Any, areas: Sequence[float]) -> dict[str, Any]:
     """Predicted richness at ``areas`` from a fitted result."""
     import numpy as np
@@ -375,6 +417,27 @@ def summary(obj: Any) -> dict[str, Any]:
             "conf": obj.conf,
             "ic": obj.average.ic,
             "scenarios": records(obj.table),
+        }
+    if kind == "BootstrappedCI":
+        rows = [
+            {
+                "area": number(a),
+                "mean": number(m),
+                "median": number(md),
+                "lower": number(lo),
+                "upper": number(hi),
+            }
+            for a, m, md, lo, hi in zip(
+                obj.area_grid, obj.mean, obj.median, obj.lower, obj.upper, strict=True
+            )
+        ]
+        return {
+            "type": kind,
+            "conf": obj.conf,
+            "n_boot": obj.n_boot,
+            "n_models_attempted": obj.n_models_attempted,
+            "dropped": dict(obj.dropped),
+            "intervals": rows,
         }
     if kind == "LOOCV":
         return {

@@ -98,6 +98,162 @@
         "title": "AverageRequest",
         "type": "object"
       },
+      "CIRequest": {
+        "properties": {
+          "areas": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 1000,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "areas to predict at (default: ten over the data's range)",
+            "title": "Areas"
+          },
+          "conf": {
+            "default": 0.95,
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Conf",
+            "type": "number"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Data"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "enum": [
+                  "galap",
+                  "gala",
+                  "aegean",
+                  "aegean2",
+                  "niering",
+                  "schrader",
+                  "xu"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "a bundled dataset (GET /v1/datasets)",
+            "title": "Dataset"
+          },
+          "homoscedasticity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "cor.fitted",
+                  "cor.area"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Homoscedasticity"
+          },
+          "ic": {
+            "default": "AICc",
+            "enum": [
+              "AICc",
+              "AIC",
+              "BIC"
+            ],
+            "title": "Ic",
+            "type": "string"
+          },
+          "method": {
+            "default": "fast",
+            "enum": [
+              "fast",
+              "full"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "models": {
+            "default": [
+              "all"
+            ],
+            "items": {
+              "maxLength": 32,
+              "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Models",
+            "type": "array"
+          },
+          "n_boot": {
+            "default": 1000,
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "N Boot",
+            "type": "integer"
+          },
+          "n_jobs": {
+            "default": 1,
+            "description": "processes; -1: the server's limit",
+            "maximum": 64.0,
+            "minimum": -1.0,
+            "title": "N Jobs",
+            "type": "integer"
+          },
+          "neg_check": {
+            "default": false,
+            "title": "Neg Check",
+            "type": "boolean"
+          },
+          "normality": {
+            "anyOf": [
+              {
+                "enum": [
+                  "shapiro",
+                  "lillie",
+                  "kolmogorov"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normality"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          }
+        },
+        "title": "CIRequest",
+        "type": "object"
+      },
       "CVRequest": {
         "properties": {
           "data": {
@@ -656,6 +812,64 @@
           }
         },
         "summary": "Average",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/v1/ci": {
+      "post": {
+        "description": "Bootstrap intervals on the model-averaged curve (as `sars ci`).",
+        "operationId": "ci_v1_ci_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CIRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ci",
         "tags": [
           "models"
         ]

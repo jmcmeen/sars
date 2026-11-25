@@ -155,6 +155,19 @@ class LossRequest(DataRequest):
         return self
 
 
+class CIRequest(DataRequest, Checks):
+    areas: Numbers | None = Field(
+        default=None, description="areas to predict at (default: ten over the data's range)"
+    )
+    models: Models = Field(default=["all"])
+    ic: IC = "AICc"
+    method: Literal["fast", "full"] = "fast"
+    n_boot: int = Field(default=1000, ge=1, le=100_000)
+    conf: float = Field(default=0.95, gt=0, lt=1)
+    seed: int | None = None
+    n_jobs: Jobs = 1
+
+
 class PredictRequest(BaseModel):
     result: dict[str, Any] = Field(
         description="a result saved by --save, or an envelope's result.object"
@@ -360,6 +373,23 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
             conf=request.conf,
             seed=request.seed,
             n_jobs=jobs(request.n_jobs),
+        )
+
+    @app.post("/v1/ci", tags=["models"], dependencies=guarded)
+    def ci(request: CIRequest) -> JSONResponse:
+        """Bootstrap intervals on the model-averaged curve (as `sars ci`)."""
+        return run(
+            "ci",
+            data=_data(request),
+            areas=request.areas,
+            models=request.models,
+            ic=request.ic,
+            method=request.method,
+            n_boot=request.n_boot,
+            conf=request.conf,
+            seed=request.seed,
+            n_jobs=jobs(request.n_jobs),
+            **_checks(request),
         )
 
     @app.post("/v1/predict", tags=["models"], dependencies=guarded)

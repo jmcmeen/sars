@@ -57,5 +57,9 @@ def loss(data: dict[str, Any], **options: Any) -> dict[str, Any]:
     return ops.result(ops.loss(frame(data), **options), include_object=True)
 
 
+def ci(data: dict[str, Any], **options: Any) -> dict[str, Any]:
+    return ops.result(ops.ci(frame(data), **options), include_object=True)
+
+
 def predict(result: dict[str, Any], areas: list[float]) -> dict[str, Any]:
     return ops.predict(ops.from_saved(result), areas)

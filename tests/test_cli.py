@@ -287,6 +287,28 @@ def test_loss(capsys):
     assert code == 2 and "not allowed with" in err
 
 
+def test_ci(capsys):
+    argv = ["ci", "galap", "--area", "1", "100", "-m", "power", "--n-boot", "40", "--seed", "2"]
+    code, envelope = run_json(capsys, *argv)
+    summary = envelope["result"]["summary"]
+    expected = sars.bootstrap_ci(
+        sars.load_galap(),
+        models=["power"],
+        n_boot=40,
+        area_grid=np.array([1.0, 100.0]),
+        rng=np.random.default_rng(2),
+    )
+    assert code == 0 and summary["type"] == "BootstrappedCI" and summary["n_boot"] == 40
+    assert [row["lower"] for row in summary["intervals"]] == pytest.approx(list(expected.lower))
+    assert [row["upper"] for row in summary["intervals"]] == pytest.approx(list(expected.upper))
+    code, out, _ = run(capsys, *argv)
+    assert code == 0 and out.startswith("Model-averaged richness, 95% bootstrap intervals")
+    code, envelope = run_json(capsys, "ci", "galap", "-m", "power", "--n-boot", "10")
+    assert len(envelope["result"]["summary"]["intervals"]) == 10  # the default areas
+    code, envelope = run_json(capsys, "ci", "galap", "--area", "-1", "--n-boot", "10")
+    assert code == 1 and "positive" in envelope["error"]["message"]
+
+
 def test_cv_labels_islands_by_a_named_column(capsys, tmp_path):
     path = tmp_path / "gala.csv"
     sars.load_gala().rename(columns={"island": "Site_Name"}).to_csv(path, index=False)

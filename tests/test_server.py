@@ -50,6 +50,11 @@ def test_fit_a_bundled_dataset(client):
             lambda s: s["models"][0]["worst"] in INLINE["label"],
         ),
         (
+            "/v1/ci",
+            {"areas": [1, 100], "models": ["power"], "n_boot": 20, "seed": 1},
+            lambda s: s["intervals"][1]["lower"] < s["intervals"][1]["upper"],
+        ),
+        (
             "/v1/loss",
             {"area": [800], "fraction_lost": [0.5], "models": ["power"], "n_boot": 20, "seed": 1},
             lambda s: s["scenarios"][0]["lost_lower"] < s["scenarios"][0]["species_lost"],

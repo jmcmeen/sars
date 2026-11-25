@@ -86,6 +86,19 @@ def _print_summary(summary: dict[str, Any], out: Any) -> None:
     import pandas as pd
 
     kind = summary["type"]
+    if kind == "BootstrappedCI":
+        table = pd.DataFrame(summary["intervals"])
+        print(
+            f"Model-averaged richness, {summary['conf']:.0%} bootstrap intervals "
+            f"({summary['n_boot']} resamples):",
+            file=out,
+        )
+        for column in table.columns:
+            table[column] = [_cell(v) for v in table[column]]
+        print(table.to_string(index=False), file=out)
+        for reason, count in summary["dropped"].items():
+            print(f"dropped: {count} resamples: {reason}", file=out)
+        return
     if kind == "HabitatLoss":
         table = pd.DataFrame(summary["scenarios"])
         print(
@@ -212,6 +225,23 @@ def _cmd_loss(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
         conf=args.conf,
         seed=args.seed,
         n_jobs=args.n_jobs,
+    )
+    return _finish(obj, args)
+
+
+def _cmd_ci(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
+    data = _read_data(args.data, args.area_col, args.species_col)
+    obj = ops.ci(
+        data,
+        areas=args.area,
+        models=ops.model_names(args.models),
+        ic=args.ic,
+        method=args.method,
+        n_boot=args.n_boot,
+        conf=args.conf,
+        seed=args.seed,
+        n_jobs=args.n_jobs,
+        **_checks(args),
     )
     return _finish(obj, args)
 
@@ -428,6 +458,40 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_output_args(loss)
     loss.set_defaults(handler=_cmd_loss)
+
+    ci = commands.add_parser(
+        "ci",
+        help="bootstrap intervals on the model-averaged curve",
+        description="The model-averaged richness at the given areas, with bootstrap "
+        "intervals (see bootstrap_ci). The fast method refits each resample from the "
+        "original fits; the full method searches every model's start grid on each.",
+    )
+    _add_data_args(ci)
+    ci.add_argument(
+        "--area",
+        type=float,
+        nargs="+",
+        metavar="A",
+        help="areas to predict at (default: ten spread over the data's range)",
+    )
+    ci.add_argument(
+        "-m", "--models", action="append", metavar="NAME", help="models to average (default: all)"
+    )
+    ci.add_argument("--ic", choices=["AICc", "AIC", "BIC"], default="AICc")
+    ci.add_argument(
+        "--method", choices=["fast", "full"], default="fast", help="refits per resample"
+    )
+    ci.add_argument(
+        "--n-boot", type=int, default=1000, metavar="N", help="resamples (default 1000)"
+    )
+    ci.add_argument("--conf", type=float, default=0.95, help="interval level (default 0.95)")
+    ci.add_argument("--seed", type=int, help="seed for the resamples, for reproducible intervals")
+    ci.add_argument(
+        "--n-jobs", type=int, default=1, metavar="N", help="processes to use; -1 for one per core"
+    )
+    _add_check_args(ci)
+    _add_output_args(ci)
+    ci.set_defaults(handler=_cmd_ci)
 
     predict = commands.add_parser(
         "predict",
