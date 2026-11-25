@@ -81,8 +81,12 @@ The fit runs on rescaled data: area divided by its geometric mean and richness b
 maximum, with the parameters converted back afterwards. The starting values and bounds
 are therefore near 1 whatever your units, and every model except epm1 and epm2 gives the
 same fit in km² or m², for tens of species or thousands. epm1 and epm2 are the exception
-because their exponent depends on area itself, so a change of area units changes their
-fit; only their richness is rescaled.
+because their exponent depends on area itself, so a change of area units changes the
+model, and with it the fit. They're still fitted on the rescaled area, in parameters that
+describe exactly the same curve: the richness and the exponent at the mean area. In the
+data's own units their parameters are badly scaled on large areas; on 169,000
+observation records with areas of 17,000 to 315,000 km², epm1's best fit has
+z = 1.3 × 10⁻⁶⁴ and d = −11.4, far from any starting value in those units.
 
 If fitting fails for all starting values, a `SARFit` with `converged=False`
 is returned rather than raising an exception.

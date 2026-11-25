@@ -633,7 +633,11 @@ def _register(spec: _ModelSpec) -> _ModelSpec:
 # in km2 or m2, for tens of species or thousands. Each entry maps rescaled
 # parameters p' to the data's units, and back, in the spec's parameter order.
 # epm1 and epm2 change form with the area units (their exponent depends on A
-# itself), so only their richness is rescaled.
+# itself), so a change of units changes their fit. They're still fitted on the
+# rescaled area, in parameters that keep the model exact: the richness and the
+# exponent at the mean area (see _epm1_scaled, _epm2_scaled). In the data's own
+# units their parameters were badly scaled and strongly correlated on large
+# areas, and the optimum could lie far outside any start grid.
 _Rescale = Callable[[np.ndarray, float, float], list[float]]
 _RESCALE: dict[str, tuple[_Rescale, _Rescale]] = {
     # S = c A^z: c = s c' a^-z
@@ -656,14 +660,25 @@ _RESCALE: dict[str, tuple[_Rescale, _Rescale]] = {
         lambda p, a, s: [s * p[0], s * p[1] / a],
         lambda p, a, s: [p[0] / s, p[1] * a / s],
     ),
-    # epm1 and epm2: c = s c' (richness only)
+    # epm1, fitted as S' = c' exp(w A'^-d ln A - w ln a) with w = W0 sinh(u)
+    # (see _epm1_scaled): c = s c' a^-w, z = w a^d
     "epm1": (
-        lambda p, a, s: [s * p[0], p[1], p[2]],
-        lambda p, a, s: [p[0] / s, p[1], p[2]],
+        lambda p, a, s: [
+            s * p[0] * a ** -_epm1_w(p[1]),
+            _epm1_w(p[1]) * a ** p[2],
+            p[2],
+        ],
+        lambda p, a, s: [
+            p[0] * a ** (p[1] * a ** -p[2]) / s,
+            np.arcsinh(p[1] * a ** -p[2] / _EPM1_W0),
+            p[2],
+        ],
     ),
+    # epm2, fitted as S' = c' exp((z - d'/A') ln A - (z - d') ln a) (see
+    # _epm2_scaled): c = s c' a^-(z - d'), d = a d'
     "epm2": (
-        lambda p, a, s: [s * p[0], p[1], p[2]],
-        lambda p, a, s: [p[0] / s, p[1], p[2]],
+        lambda p, a, s: [s * p[0] * a ** -(p[1] - p[2]), p[1], a * p[2]],
+        lambda p, a, s: [p[0] * a ** (p[1] - p[2] / a) / s, p[1], p[2] / a],
     ),
     # S = c A^z exp(-d A): c = s c' a^-z, d = d' / a
     "p1": (
@@ -736,8 +751,18 @@ _RESCALE: dict[str, tuple[_Rescale, _Rescale]] = {
         lambda p, a, s: [p[0] * a ** p[2] / s, p[1] * a ** p[2], p[2]],
     ),
 }
-# Models whose area isn't rescaled (see above).
-_AREA_UNSCALED = {"epm1", "epm2"}
+# epm1's z is bounded in the data's units, as R sars bounds it. Its search runs
+# on w = z a^-d, so the bound is checked on z itself (see _epm1_scaled).
+_EPM1_Z_LIMIT = 50.0
+# epm1's exponent at the mean area, w, is searched as u = asinh(w / _EPM1_W0):
+# like log |w| at either sign, and smooth through 0. On large areas with d < 0,
+# w falls by orders of magnitude as d falls (ln w ~ -d ln A'), a ridge that's
+# straight in (u, d) but bends sharply in (w, d), where the solver crawls.
+_EPM1_W0 = 1e-12
+
+
+def _epm1_w(u):
+    return _EPM1_W0 * np.sinh(u)
 
 
 # ---------------------------------------------------------------------------
@@ -847,16 +872,18 @@ def _fit_nls(
         return _failed_fit(name, spec.param_names, n, data)
 
     # The fit runs on rescaled data (see _RESCALE).
-    a_scale = 1.0 if name in _AREA_UNSCALED else float(np.exp(np.mean(np.log(area))))
+    a_scale = float(np.exp(np.mean(np.log(area))))
     s_scale = float(np.max(species))
     to_natural, to_scaled = _RESCALE[name]
     area_s, species_s = area / a_scale, species / s_scale
+    # The model as the search fits it, of the rescaled area and parameters.
+    func = _SCALED_FORM[name](a_scale) if name in _SCALED_FORM else spec.func
 
     log_idx = [spec.param_names.index(p) for p in spec.log_params]
     lower = _to_search_scale(spec.bounds_lower, log_idx)
     upper = _to_search_scale(spec.bounds_upper, log_idx)
 
-    residuals, jacobian = _objective(spec, area_s, species_s, log_idx, lower, upper)
+    residuals, jacobian = _objective(spec, area_s, species_s, log_idx, lower, upper, func)
 
     best_cost = np.inf
     best_result: Any = None
@@ -939,9 +966,12 @@ def _fit_nls(
                         max_nfev=5000,
                         **grid_tol,
                     )
-                if not result.success:
+                if not result.success or np.all(result.fun == _PENALTY):
                     # Stopped on max_nfev or similar: not a converged solution,
                     # so it may neither win on cost nor count as a stale run.
+                    # A start where the model is undefined everywhere (all
+                    # penalty) "converges" at once on its flat cost; it's no
+                    # solution either.
                     n_unsuccessful += 1
                     continue
                 top = _keep_best_distinct(top, float(result.cost), result.x)
@@ -1046,9 +1076,7 @@ def _fit_nls(
         )
         try:
             with np.errstate(over="ignore", invalid="ignore", divide="ignore", under="ignore"):
-                screened = _batched.screen(
-                    spec.func, area_s, species_s, grid, lower, upper, log_idx
-                )
+                screened = _batched.screen(func, area_s, species_s, grid, lower, upper, log_idx)
         except Exception as err:
             # Expected on numpy only for a model that doesn't broadcast; on a
             # GPU it's a failure the user should hear about (out of memory,
@@ -1115,6 +1143,9 @@ def _fit_nls(
             logger.info("Model '%s': no solve from the screened starts succeeded", name)
             return _failed_fit(name, spec.param_names, n, data)
 
+    if name == "epm1":
+        best_result = _epm1_onto_z_bound(best_result, area_s, species_s, a_scale, log_idx)
+
     with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
         values = np.array(
             to_natural(_to_natural_scale(best_result.x, log_idx), a_scale, s_scale), dtype=float
@@ -1174,6 +1205,7 @@ def _objective(
     log_idx: list[int],
     lower: Sequence[float],
     upper: Sequence[float],
+    func: _SARFunc | None = None,
 ) -> tuple[Callable[[np.ndarray], np.ndarray], Callable[[np.ndarray], np.ndarray]]:
     """The residuals a fit minimizes, on the search scale, and their Jacobian.
 
@@ -1183,7 +1215,9 @@ def _objective(
     parameter's step in one call of the model: the solver's own per-call
     overhead was most of the cost of a fit. A model that doesn't broadcast
     over a matrix of parameters is stepped one parameter at a time instead.
+    ``func`` is the model in the search's parameters, if not ``spec.func``.
     """
+    model = spec.func if func is None else func
     lb, ub = np.asarray(lower, dtype=float), np.asarray(upper, dtype=float)
 
     def natural(p: np.ndarray) -> np.ndarray:
@@ -1193,7 +1227,7 @@ def _objective(
         return p
 
     def residuals(p: np.ndarray) -> np.ndarray:
-        return _penalized(species_s - spec.func(area_s, *natural(p)))
+        return _penalized(species_s - model(area_s, *natural(p)))
 
     def jacobian(p: np.ndarray) -> np.ndarray:
         p = np.asarray(p, dtype=float)
@@ -1202,11 +1236,11 @@ def _objective(
         points = np.vstack([p, p + np.diag(h)])  # the base point, then one row per step
         values = natural(points)
         try:
-            pred = spec.func(area_s[None, :], *(values[:, j : j + 1] for j in range(k)))
+            pred = model(area_s[None, :], *(values[:, j : j + 1] for j in range(k)))
             if np.shape(pred) != (k + 1, len(area_s)):
                 raise ValueError("the model didn't broadcast over the parameters")
         except Exception:  # a model that doesn't broadcast
-            pred = np.array([spec.func(area_s, *row) for row in values])
+            pred = np.array([model(area_s, *row) for row in values])
         res = _penalized(species_s[None, :] - pred)
         return ((res[1:] - res[0]) / h[:, None]).T
 
@@ -1318,19 +1352,84 @@ def _epm1_func(a, c, z, d):
     return c * a ** (z * a ** (-d))
 
 
+def _epm1_scaled(a: float) -> _SARFunc:
+    """epm1 of the rescaled area x = A / a, in the search's parameters: the
+    richness c' at the mean area, u for the exponent there (w = W0 sinh(u),
+    z = w a^d), and d."""
+    log_a = float(np.log(a))
+
+    def func(x, c, u, d):
+        w = _epm1_w(u)
+        z = np.where(w == 0, 0.0, w * a**d)  # not 0 * inf where a^d overflows
+        pred = c * np.exp(w * x ** (-d) * (np.log(x) + log_a) - w * log_a)
+        # A point on the bound itself (_epm1_onto_z_bound) may round a hair past it.
+        return np.where(np.abs(z) <= _EPM1_Z_LIMIT * (1 + 1e-12), pred, np.nan)
+
+    return func
+
+
+def _epm1_onto_z_bound(
+    best: Any, area_s: np.ndarray, species_s: np.ndarray, a: float, log_idx: list[int]
+) -> Any:
+    """An epm1 fit near its bound on z, solved again on the bound.
+
+    In the search's parameters the bound |z| <= 50 is a curved wall (the model
+    is undefined past it), which the solver can't slide along: a fit whose
+    optimum lies on the bound stops short of it. With z held at the bound, c'
+    and d are a fit of their own, and the better of the two is kept.
+    """
+    lc, u, d = (float(v) for v in best.x)
+    with np.errstate(all="ignore"):
+        z = float(_epm1_w(u) * a**d)
+    if not np.isfinite(z) or abs(z) < 0.9 * _EPM1_Z_LIMIT:
+        return best
+    z_bound = float(np.copysign(_EPM1_Z_LIMIT, z))
+    func = _epm1_scaled(a)
+
+    def u_for(d: float) -> float:
+        return float(np.arcsinh(z_bound * a**-d / _EPM1_W0))
+
+    def residuals(q: np.ndarray) -> np.ndarray:
+        c = np.exp(q[0]) if log_idx else q[0]
+        return _penalized(species_s - func(area_s, c, u_for(q[1]), q[1]))
+
+    spec = _MODEL_REGISTRY["epm1"]
+    lower = [_to_search_scale(spec.bounds_lower, log_idx)[0], spec.bounds_lower[2]]
+    upper = [_to_search_scale(spec.bounds_upper, log_idx)[0], spec.bounds_upper[2]]
+    on_bound = _solve(
+        residuals,
+        "2-point",
+        np.clip([lc, d], lower, upper),
+        lower,
+        upper,
+        ftol=1e-14,
+        xtol=1e-14,
+        gtol=1e-14,
+    )
+    if on_bound is None or not on_bound.cost < best.cost:
+        return best
+    lc, d = (float(v) for v in on_bound.x)
+    return OptimizeResult(x=np.array([lc, u_for(d), d]), cost=on_bound.cost, success=True)
+
+
 _register(
     _ModelSpec(
         name="epm1",
         func=_epm1_func,
         param_names=["c", "z", "d"],
-        bounds_lower=[0.0, -50.0, -50.0],
-        bounds_upper=[np.inf, 50.0, 50.0],
+        # On the search's parameters (see _epm1_scaled): c', u and d. z's own
+        # bound, +-50 in the data's units, is checked by the model function.
+        bounds_lower=[0.0, -np.inf, -50.0],
+        bounds_upper=[np.inf, np.inf, 50.0],
         start_grid=[
-            [1e-08, 1e-05, 0.001, 0.03, 0.3],
-            [0.05, 0.3, 1.0, 3.0, 8.0],
+            [0.05, 0.2, 0.5, 1.0, 2.0],
+            # u for w = -1, -1e-3, 1e-6, 1e-3, 0.05, 0.3, 1 and 3
+            [
+                float(np.arcsinh(w / _EPM1_W0))
+                for w in (-1.0, -1e-3, 1e-6, 1e-3, 0.05, 0.3, 1.0, 3.0)
+            ],
             [-1.0, -0.3, 0.0, 0.1, 0.5, 1.0],
         ],
-        # c spans dozens of orders of magnitude with the area units (1e-49 in m²).
         log_params=("c",),
     )
 )
@@ -1343,20 +1442,41 @@ def _epm2_func(a, c, z, d):
     return c * a ** (z - d / a)
 
 
+def _epm2_scaled(a: float) -> _SARFunc:
+    """epm2 of the rescaled area x = A / a, in the search's parameters: the
+    richness c' at the mean area, z, and d' = d / a."""
+    log_a = float(np.log(a))
+
+    def func(x, c, z, d):
+        return c * np.exp((z - d / x) * (np.log(x) + log_a) - (z - d) * log_a)
+
+    return func
+
+
 _register(
     _ModelSpec(
         name="epm2",
         func=_epm2_func,
         param_names=["c", "z", "d"],
+        # On the search's parameters (see _epm2_scaled): c', z and d'.
         bounds_lower=[0.0, 0.0, -np.inf],
         bounds_upper=[np.inf, 1.0, np.inf],
         start_grid=[
-            [0.002, 0.02, 0.06, 0.15, 0.3],
+            [0.05, 0.2, 0.5, 1.0, 2.0],
             [0.05, 0.25, 0.5, 0.9],
-            [-10.0, -1.0, 0.0, 0.5, 1.0, 10.0],
+            [-3.0, -1.0, -0.3, 0.0, 0.3, 1.0, 3.0],
         ],
     )
 )
+
+
+# Models fitted in a form of their own on the rescaled data, rather than as
+# spec.func of the rescaled area: name -> a function of the area scale giving
+# the model of the rescaled area in the search's parameters.
+_SCALED_FORM: dict[str, Callable[[float], _SARFunc]] = {
+    "epm1": _epm1_scaled,
+    "epm2": _epm2_scaled,
+}
 
 
 # 7. p1: S = c * A^z * exp(-d * A)  (Persistence function 1)
@@ -2127,7 +2247,7 @@ def _on_bound(name: str, values: np.ndarray, area: np.ndarray, species: np.ndarr
     spec = _MODEL_REGISTRY[name]
     if name not in _RESCALE:  # a model registered by hand, as tests do
         return np.zeros(len(values), dtype=bool)
-    a_scale = 1.0 if name in _AREA_UNSCALED else float(np.exp(np.mean(np.log(area))))
+    a_scale = float(np.exp(np.mean(np.log(area))))
     s_scale = float(np.max(species))
     with np.errstate(all="ignore"):
         scaled = np.array(_RESCALE[name][1](values, a_scale, s_scale), dtype=float)
@@ -2138,6 +2258,8 @@ def _on_bound(name: str, values: np.ndarray, area: np.ndarray, species: np.ndarr
             (v,) = _to_search_scale([v], [0]) if v > 0 else (-np.inf,)
             lo, hi = _to_search_scale([lo, hi], [0, 1])
         found[i] = any(np.isfinite(b) and abs(v - b) <= 1e-6 * max(1.0, abs(b)) for b in (lo, hi))
+    if name == "epm1":  # z's bound is on the reported value (see _EPM1_Z_LIMIT)
+        found[1] = abs(abs(values[1]) - _EPM1_Z_LIMIT) <= 1e-6 * _EPM1_Z_LIMIT
     return found
 
 

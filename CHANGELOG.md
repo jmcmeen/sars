@@ -10,6 +10,20 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Fixed
+
+- epm1 and epm2 could miss their least-squares optimum on large areas.
+  Both were fitted in the data's own area units, where their parameters
+  are badly scaled and strongly correlated once areas reach thousands of
+  km², and the optimum can lie far from every starting value: on a table of
+  169,000 samples with areas of 17,000 to 315,000 km², epm1 ended at AICc
+  1,017,688 after 26 minutes, where its optimum is at 974,112 (z = 1.3e-64,
+  d = -11.4). They're now fitted on the rescaled area, like the other
+  models, in parameters that keep the model exact (the richness and the
+  exponent at the mean area), and the parameters reported are in the data's
+  units as before. epm1 finds that optimum in about a minute. Every epm1 and
+  epm2 fit on the bundled datasets is unchanged.
+
 ## [0.11.11] - 2026-11-23
 
 ### Added
