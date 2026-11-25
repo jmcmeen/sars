@@ -84,6 +84,9 @@ seconds (600 by default) is stopped, with any worker processes it started, and t
 returns 504. Cold cross-validation of every model, or many bootstrap resamples, can take
 minutes.
 
+`sars --backend cupy serve` (or `ServerConfig(backend="cupy")`) runs every request's
+start-grid screens on the GPU; the server checks CuPy works when it starts.
+
 Four requests run at once; further requests wait their turn. A request's `n_jobs` is
 capped at the machine's core count, and `-1` means that many.
 

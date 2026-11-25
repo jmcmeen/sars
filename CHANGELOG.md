@@ -12,6 +12,9 @@ reconstructed from the commit history and the
 
 ### Added
 
+- `sars --backend numpy|cupy` (or `SARS_BACKEND`) chooses the array library
+  for the start-grid screens, and `sars serve` passes it to every request
+  (`ServerConfig.backend`); every envelope records the backend used.
 - `sars threshold --ci` (and `ci` on `POST /v1/threshold`): confidence
   intervals for the chosen model's breakpoints, by residual bootstrap or
   inverted F test.

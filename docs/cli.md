@@ -39,6 +39,11 @@ $ sars datasets xu > xu.csv
 | `sars serve [--host H] [--port P] [--token-file F] [--timeout S]` | Serves the same operations over HTTP; needs the `server` extra (see [HTTP server](server.md)). |
 | `sars datasets [NAME]` | Lists the bundled datasets, or writes one as CSV. |
 
+Every command takes `--backend numpy|cupy` before its name (`sars --backend cupy fit
+...`), or the `SARS_BACKEND` environment variable, to screen start grids on an NVIDIA GPU
+(needs the `gpu` extra; see [Speed and the GPU](getting-started.md#speed-and-the-gpu)).
+The JSON envelope records the backend used.
+
 `fit`, `average` and `ci` also take the residual checks of [`sar_multi`](api/inference.md):
 `--normality shapiro|lillie|kolmogorov`, `--homoscedasticity cor.fitted|cor.area` and
 `--neg-check`. `sars COMMAND --help` lists every option.

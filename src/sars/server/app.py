@@ -62,6 +62,9 @@ class ServerConfig:
         cores by default; -1 in a request means this many).
     max_concurrent : int
         How many requests run at once; further requests wait.
+    backend : {"numpy", "cupy"}
+        The array library each request's start-grid screens run on (see
+        ``sars.set_backend``); "cupy" is checked when the app is created.
     """
 
     token: str | None = None
@@ -69,6 +72,7 @@ class ServerConfig:
     python: str = sys.executable
     max_jobs: int = field(default_factory=lambda: os.cpu_count() or 1)
     max_concurrent: int = 4
+    backend: str = "numpy"
 
 
 # ---------------------------------------------------------------------------
@@ -247,7 +251,13 @@ def _execute(
     after which it and any processes it started are stopped. ``handlers`` is
     chosen by the server (tests give stand-ins), never by a request."""
     request = json.dumps(
-        {"command": command, "handlers": handlers, "target": target, "kwargs": kwargs}
+        {
+            "command": command,
+            "handlers": handlers,
+            "target": target,
+            "kwargs": kwargs,
+            "backend": config.backend,
+        }
     )
     # -P: the working directory isn't put on sys.path. The worker's own
     # environment: without the token.
@@ -318,6 +328,12 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
     """The FastAPI application."""
     config = config or ServerConfig()
     from sars import __version__
+    from sars._batched import _check_cupy
+
+    if config.backend not in ("numpy", "cupy"):
+        raise ValueError(f"backend must be numpy or cupy, got {config.backend!r}")
+    if config.backend == "cupy":
+        _check_cupy()  # fail now, not on every request
 
     slots = threading.BoundedSemaphore(config.max_concurrent)
 

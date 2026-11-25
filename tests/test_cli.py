@@ -288,6 +288,23 @@ def test_loss(capsys):
     assert code == 2 and "not allowed with" in err
 
 
+def test_the_backend_is_chosen_and_recorded(capsys, monkeypatch):
+    code, envelope = run_json(capsys, "fit", "galap")
+    assert code == 0 and envelope["backend"] == "numpy"
+    chosen = []
+
+    def refuse(name):
+        chosen.append(name)
+        raise ImportError("no GPU here")
+
+    monkeypatch.setattr(sars, "set_backend", refuse)
+    code, envelope = run_json(capsys, "--backend", "cupy", "fit", "galap")
+    assert code == 1 and chosen == ["cupy"] and envelope["error"]["message"] == "no GPU here"
+    monkeypatch.setenv("SARS_BACKEND", "cupy")
+    code, out, err = run(capsys, "fit", "galap")
+    assert code == 1 and "no GPU here" in err
+
+
 def test_threshold_ci(capsys):
     argv = ["threshold", "gala", "--ci", "--n-boot", "40", "--seed", "1"]
     code, envelope = run_json(capsys, *argv)

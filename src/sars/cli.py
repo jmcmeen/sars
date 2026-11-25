@@ -17,6 +17,7 @@ import argparse
 import io
 import json
 import math
+import os
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -499,6 +500,13 @@ def build_parser() -> argparse.ArgumentParser:
     """The ``sars`` argument parser."""
     parser = _Parser(prog="sars", description="Fit species-area relationship models.")
     parser.add_argument("--version", action="version", version=f"sars {ops.version()}")
+    parser.add_argument(
+        "--backend",
+        choices=["numpy", "cupy"],
+        default=os.environ.get("SARS_BACKEND") or "numpy",
+        help="array library for the start-grid screens: numpy, or cupy on an NVIDIA GPU "
+        "(needs the [gpu] extra; default: $SARS_BACKEND, else numpy)",
+    )
     commands = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")
 
     fit = commands.add_parser(
@@ -803,7 +811,7 @@ def _serve(args: argparse.Namespace) -> int:
             "fits on this machine. Use --token-file, or reach it through an SSH tunnel.",
             file=sys.stderr,
         )
-    app = create_app(ServerConfig(token=token, timeout=args.timeout))
+    app = create_app(ServerConfig(token=token, timeout=args.timeout, backend=args.backend))
     uvicorn.run(app, host=args.host, port=args.port)
     return 0
 
@@ -830,6 +838,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.print_usage(sys.stderr)
             print(f"error: {exc}", file=sys.stderr)
         return 2
+    if args.backend != "numpy":
+        import sars
+
+        try:
+            sars.set_backend(args.backend)
+        except ImportError as exc:
+            if args.json:
+                failed = {
+                    "sars": ops.version(),
+                    "command": args.command,
+                    "backend": args.backend,
+                    "ok": False,
+                    "error": {"type": "InputError", "message": str(exc)},
+                    "warnings": [],
+                }
+                print(ops.envelope_json(failed))
+            else:
+                print(f"sars: {exc}", file=sys.stderr)
+            return 1
     if args.command == "serve":
         return _serve(args)
     shown: list[Printer] = []

@@ -605,7 +605,9 @@ def envelope(
     its outcome: the result, or the error it raised, and every distinct
     warning. An error that isn't the request's fault (a bug) is re-raised with
     ``reraise_bugs``, to keep its traceback."""
-    out: dict[str, Any] = {"sars": version(), "command": command}
+    from sars._batched import get_backend
+
+    out: dict[str, Any] = {"sars": version(), "command": command, "backend": get_backend()}
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         try:
@@ -632,7 +634,7 @@ def envelope_json(env: dict[str, Any]) -> str:
     try:
         return json.dumps(env, indent=2, allow_nan=False)
     except (TypeError, ValueError) as exc:  # a bug, not the request's fault
-        failed = {key: env.get(key) for key in ("sars", "command", "warnings")}
+        failed = {key: env.get(key) for key in ("sars", "command", "backend", "warnings")}
         message = f"The result can't be written as JSON: {exc}"
         failed.update(ok=False, error={"type": "SerializationError", "message": message})
         return json.dumps(failed, indent=2)

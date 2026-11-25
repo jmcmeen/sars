@@ -19,6 +19,11 @@ def main() -> None:
     from sars import _operations as ops
 
     request = json.loads(sys.stdin.read())
+    backend = request.get("backend", "numpy")
+    if backend != "numpy":
+        import sars
+
+        sars.set_backend(backend)  # checked when the server started
     handlers = importlib.import_module(request.get("handlers", "sars._server_handlers"))
     function = getattr(handlers, request["target"])
     envelope = ops.envelope(request["command"], lambda: function(**request["kwargs"]))

@@ -92,6 +92,13 @@ def test_each_command_with_inline_data(client, path, body, check):
     assert check(response.json()["result"]["summary"])
 
 
+def test_the_backend_reaches_the_worker_and_the_envelope(client):
+    envelope = client.post("/v1/fit", json={"dataset": "galap"}).json()
+    assert envelope["backend"] == "numpy"
+    with pytest.raises(ValueError, match="numpy or cupy"):
+        create_app(ServerConfig(backend="torch"))
+
+
 def test_threshold_ci(client):
     body = {"dataset": "gala", "ci": {"method": "F"}}
     response = client.post("/v1/threshold", json=body)
