@@ -12,6 +12,13 @@ reconstructed from the commit history and the
 
 ### Changed
 
+- With the cupy backend, a fit hands the GPU memory it used back to the
+  device when its start-grid screen finishes. CuPy's pool had kept every
+  freed block for reuse, so a run of many fits held the most any of them
+  needed (2.2 GiB after all 20 models on 169,000 samples, where one screen
+  needs at most 1.3 GiB), shown as in use and unavailable to other
+  programs. Fits take the same time.
+
 - The full bootstrap is about 2.3 times faster (20 resamples of galap in
   9.9 s instead of 23 s; 12 times faster than 0.11.10). Each model's start grid
   (all but epm1's and epm2's, which are fitted on each resample's own area

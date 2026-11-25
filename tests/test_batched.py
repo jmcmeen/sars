@@ -169,6 +169,78 @@ class TestGPU:
         b = gpu.summary.set_index("model")["AICc"]
         np.testing.assert_allclose(b.loc[a.index], a, rtol=1e-6)
 
+    @pytest.mark.parametrize("fails", [False, True])
+    def test_a_screen_hands_its_memory_back(self, galap, fails):
+        import cupy
+
+        spec, log_idx, lower, upper, grid = grid_for("betap")
+        area_s, species_s = rescaled(galap)
+        pool = cupy.get_default_memory_pool()
+        func = spec.func
+        if fails:
+            calls = []
+
+            def func(a, *params):  # fails once the screen has allocated
+                calls.append(1)
+                if len(calls) > 2:
+                    raise RuntimeError("out of memory")
+                return spec.func(a, *params)
+
+        before = pool.total_bytes()
+        sars.set_backend("cupy")
+        try:
+            if fails:
+                with pytest.raises(RuntimeError):
+                    _batched.screen(func, area_s, species_s, grid, lower, upper, log_idx)
+            else:
+                _batched.screen(func, area_s, species_s, grid, lower, upper, log_idx)
+        finally:
+            sars.set_backend("numpy")
+        # A failed screen's arrays go too; the exception itself, still held by
+        # its caller when the pool is emptied, may keep a few small ones.
+        assert pool.total_bytes() - before <= (2**16 if fails else 0)
+
+
+class FakeCupy:
+    """numpy, with a memory pool that records being emptied."""
+
+    asnumpy = staticmethod(np.asarray)
+
+    def __init__(self):
+        self.freed = 0
+
+    def __getattr__(self, name):
+        return getattr(np, name)
+
+    def get_default_memory_pool(self):
+        fake = self
+
+        class Pool:
+            def free_all_blocks(self):
+                fake.freed += 1
+
+        return Pool()
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_the_gpu_pool_is_emptied_after_every_screen(galap, monkeypatch, fails):
+    spec, log_idx, lower, upper, grid = grid_for("power")
+    area_s, species_s = rescaled(galap)
+    fake = FakeCupy()
+    monkeypatch.setattr(_batched, "_xp", lambda: fake)
+    func = spec.func
+    if fails:
+
+        def func(*args):
+            raise RuntimeError("out of memory")
+
+    if fails:
+        with pytest.raises(RuntimeError, match="out of memory"):
+            _batched.screen(func, area_s, species_s, grid, lower, upper, log_idx)
+    else:
+        _batched.screen(func, area_s, species_s, grid, lower, upper, log_idx)
+    assert fake.freed == 1
+
 
 def test_a_screen_of_only_penalized_points_isnt_a_fit(galap, monkeypatch):
     """Points where the model is undefined at some island are never taken as a

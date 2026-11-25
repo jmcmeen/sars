@@ -16,6 +16,7 @@ backend screened them.
 
 from __future__ import annotations
 
+import traceback
 from collections.abc import Callable, Sequence
 from types import ModuleType
 from typing import Any
@@ -151,6 +152,40 @@ def screen(
     so each dataset's results are those it would get screened alone.
     """
     xp = _xp()
+    if xp is np:
+        return _screen(xp, func, area, species, starts, lower, upper, log_idx, groups)
+    try:
+        result = _screen(xp, func, area, species, starts, lower, upper, log_idx, groups)
+    except Exception as err:
+        # The traceback holds the screen's frames, and with them its arrays:
+        # let them go, so the pool can free their memory.
+        traceback.clear_frames(err.__traceback__)
+        _release(xp)
+        raise
+    _release(xp)
+    return result
+
+
+def _release(xp: ModuleType) -> None:
+    """Hand the GPU memory a screen freed back to the device. CuPy's pool
+    keeps freed blocks for reuse, so over many fits it would hold the most any
+    of them needed, which ``nvidia-smi`` shows as in use and other programs
+    on the GPU can't have."""
+    xp.get_default_memory_pool().free_all_blocks()
+
+
+def _screen(
+    xp: ModuleType,
+    func: Callable[..., Any],
+    area: np.ndarray,
+    species: np.ndarray,
+    starts: np.ndarray,
+    lower: Sequence[float],
+    upper: Sequence[float],
+    log_idx: list[int],
+    groups: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """``screen``, on the array library ``xp``."""
     area_d = xp.asarray(area, dtype=float)
     species_d = xp.asarray(species, dtype=float)
     lo = xp.asarray(lower, dtype=float)
