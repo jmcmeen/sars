@@ -92,6 +92,17 @@ def test_each_command_with_inline_data(client, path, body, check):
     assert check(response.json()["result"]["summary"])
 
 
+def test_many(client):
+    body = {"bundled": ["galap", "gala"], "models": ["power"], "threshold": False}
+    response = client.post("/v1/many", json=body)
+    assert response.status_code == 200, response.text
+    rows = response.json()["result"]["summary"]["datasets"]
+    assert [r["dataset"] for r in rows] == ["galap", "gala"]
+    inline = {"datasets": {"one": INLINE, "two": INLINE}, "models": ["power"], "threshold": False}
+    assert client.post("/v1/many", json=inline).status_code == 200
+    assert client.post("/v1/many", json={"bundled": ["galap"]}).status_code == 422
+
+
 def test_inline_data_match_the_python_api(client):
     response = client.post("/v1/fit", json={"data": INLINE})
     import pandas as pd

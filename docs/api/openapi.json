@@ -670,6 +670,93 @@
         "title": "LossRequest",
         "type": "object"
       },
+      "ManyRequest": {
+        "description": "Many datasets: inline arrays by name, or bundled datasets' names.",
+        "properties": {
+          "bundled": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "galap",
+                    "gala",
+                    "aegean",
+                    "aegean2",
+                    "niering",
+                    "schrader",
+                    "xu"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 1000,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bundled"
+          },
+          "datasets": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/Data"
+                },
+                "maxProperties": 1000,
+                "propertyNames": {
+                  "maxLength": 100,
+                  "minLength": 1
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datasets"
+          },
+          "ic": {
+            "default": "AICc",
+            "enum": [
+              "AICc",
+              "AIC",
+              "BIC"
+            ],
+            "title": "Ic",
+            "type": "string"
+          },
+          "models": {
+            "default": [
+              "all"
+            ],
+            "items": {
+              "maxLength": 32,
+              "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Models",
+            "type": "array"
+          },
+          "n_jobs": {
+            "default": 1,
+            "description": "processes; -1: the server's limit",
+            "maximum": 64.0,
+            "minimum": -1.0,
+            "title": "N Jobs",
+            "type": "integer"
+          },
+          "threshold": {
+            "default": true,
+            "title": "Threshold",
+            "type": "boolean"
+          }
+        },
+        "title": "ManyRequest",
+        "type": "object"
+      },
       "PredictRequest": {
         "properties": {
           "areas": {
@@ -1208,6 +1295,64 @@
           }
         },
         "summary": "Loss",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/v1/many": {
+      "post": {
+        "description": "The same models on many datasets, in one table (as `sars many`).",
+        "operationId": "many_v1_many_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Many",
         "tags": [
           "models"
         ]

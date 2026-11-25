@@ -12,6 +12,9 @@ reconstructed from the commit history and the
 
 ### Added
 
+- `sars many`: the same models on several datasets (CSVs or bundled names),
+  or on one long table split by `--by COLUMN`, summarized in one table, and
+  `POST /v1/many`.
 - `sars loglog`: the log-log power model by least squares (`lin_pow`), with
   standard errors, t tests and p values, and `POST /v1/loglog`.
 - `sars ci`: the model-averaged richness at given areas (ten spread over the

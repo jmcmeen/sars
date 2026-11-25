@@ -155,6 +155,30 @@ class LossRequest(DataRequest):
         return self
 
 
+DatasetName = Annotated[str, Field(min_length=1, max_length=100)]
+MAX_DATASETS = 1_000
+
+
+class ManyRequest(BaseModel):
+    """Many datasets: inline arrays by name, or bundled datasets' names."""
+
+    datasets: dict[DatasetName, Data] | None = Field(default=None, max_length=MAX_DATASETS)
+    bundled: list[Dataset] | None = Field(default=None, max_length=MAX_DATASETS)
+    models: Models = Field(default=["all"])
+    ic: IC = "AICc"
+    threshold: bool = True
+    n_jobs: Jobs = 1
+
+    @model_validator(mode="after")
+    def _one_source(self) -> ManyRequest:
+        given = [d for d in (self.datasets, self.bundled) if d is not None]
+        if len(given) != 1:
+            raise ValueError("give exactly one of datasets and bundled")
+        if len(given[0]) < 2:
+            raise ValueError("give two or more datasets")
+        return self
+
+
 class LogLogRequest(DataRequest):
     log_base: Literal["e", "2", "10"] = "e"
     con: float = Field(default=1.0, description="added to every richness when an island has none")
@@ -378,6 +402,27 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
             n_boot=request.n_boot,
             conf=request.conf,
             seed=request.seed,
+            n_jobs=jobs(request.n_jobs),
+        )
+
+    @app.post("/v1/many", tags=["models"], dependencies=guarded)
+    def many(request: ManyRequest) -> JSONResponse:
+        """The same models on many datasets, in one table (as `sars many`)."""
+        datasets: dict[str, dict[str, Any]]
+        if request.datasets is not None:
+            datasets = {
+                name: {"area": list(d.area), "species": list(d.species)}
+                for name, d in request.datasets.items()
+            }
+        else:
+            assert request.bundled is not None
+            datasets = {name: {"dataset": name} for name in request.bundled}
+        return run(
+            "many",
+            datasets=datasets,
+            models=request.models,
+            ic=request.ic,
+            threshold=request.threshold,
             n_jobs=jobs(request.n_jobs),
         )
 

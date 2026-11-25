@@ -57,6 +57,11 @@ def loss(data: dict[str, Any], **options: Any) -> dict[str, Any]:
     return ops.result(ops.loss(frame(data), **options), include_object=True)
 
 
+def many(datasets: dict[str, dict[str, Any]], **options: Any) -> dict[str, Any]:
+    frames = {name: frame(data) for name, data in datasets.items()}
+    return ops.result(ops.many(frames, **options), include_object=True)
+
+
 def loglog(data: dict[str, Any], **options: Any) -> dict[str, Any]:
     return ops.result(ops.loglog(frame(data), **options), include_object=True)
 

@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 import numpy as np
+import pandas as pd
 import pytest
 
 import sars
@@ -285,6 +286,33 @@ def test_loss(capsys):
         capsys, "loss", "gala", "--area", "900", "--remaining", "450", "--fraction-lost", "0.5"
     )
     assert code == 2 and "not allowed with" in err
+
+
+def test_many(capsys, tmp_path):
+    code, envelope = run_json(capsys, "many", "galap", "gala", "-m", "power,loga", "--no-threshold")
+    rows = envelope["result"]["summary"]["datasets"]
+    assert code == 0 and [r["dataset"] for r in rows] == ["galap", "gala"]
+    expected = sars.sar_many(
+        {"galap": sars.load_galap(), "gala": sars.load_gala()},
+        models=["power", "loga"],
+        threshold=False,
+    )
+    assert rows[0]["z"] == pytest.approx(expected.summary["z"].iloc[0])
+    long = pd.concat(
+        [sars.load_galap().assign(group="a"), sars.load_gala().assign(group="b")]
+    ).rename(columns={"area": "A", "species": "S"})
+    path = tmp_path / "long.csv"
+    long.to_csv(path, index=False)
+    argv = ["many", str(path), "--by", "group", "--area-col", "A", "--species-col", "S"]
+    code, envelope = run_json(capsys, *argv, "-m", "power", "--no-threshold")
+    rows = envelope["result"]["summary"]["datasets"]
+    assert code == 0 and [r["dataset"] for r in rows] == ["a", "b"]
+    code, out, _ = run(capsys, *argv, "-m", "power", "--no-threshold")
+    assert code == 0 and out.split()[0] == "dataset"
+    code, envelope = run_json(capsys, "many", "galap")
+    assert code == 1 and "two or more" in envelope["error"]["message"]
+    code, envelope = run_json(capsys, "many", str(path), "--by", "nope")
+    assert code == 1 and "No column 'nope'" in envelope["error"]["message"]
 
 
 def test_loglog(capsys):

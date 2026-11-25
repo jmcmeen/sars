@@ -33,14 +33,9 @@ __all__ = ["DATASETS", "THRESHOLD_MODELS", "build_parser", "main"]
 # ---------------------------------------------------------------------------
 
 
-def _read_data(source: str, area_col: str, species_col: str, label_col: str | None = None) -> Any:
-    """A data frame of area and species from a CSV file, standard input
-    (``-``) or a bundled dataset's name. ``label_col`` keeps a column naming the
-    islands too: its name, or "auto" for the first of island, site, locality
-    and name found."""
+def _read_table(source: str) -> Any:
+    """The table in a CSV file, standard input (``-``) or a bundled dataset."""
     import pandas as pd
-
-    import sars
 
     if source == "-" or Path(source).is_file():
         label = "standard input" if source == "-" else source
@@ -51,10 +46,20 @@ def _read_data(source: str, area_col: str, species_col: str, label_col: str | No
             frame = pd.read_csv(io.StringIO(text))
         except (pd.errors.ParserError, pd.errors.EmptyDataError, UnicodeDecodeError) as exc:
             raise InputError(f"Couldn't read {label} as CSV: {exc}") from exc
-    elif source in DATASETS:
-        frame = ops.bundled(source)
-    else:
-        raise InputError(f"No such file: {source} (nor a bundled dataset: {', '.join(DATASETS)}).")
+        return frame
+    if source in DATASETS:
+        return ops.bundled(source)
+    raise InputError(f"No such file: {source} (nor a bundled dataset: {', '.join(DATASETS)}).")
+
+
+def _read_data(source: str, area_col: str, species_col: str, label_col: str | None = None) -> Any:
+    """A data frame of area and species from a CSV file, standard input
+    (``-``) or a bundled dataset's name. ``label_col`` keeps a column naming the
+    islands too: its name, or "auto" for the first of island, site, locality
+    and name found."""
+    import sars
+
+    frame = _read_table(source)
     for column in (area_col, species_col):
         if column not in frame.columns:
             raise InputError(
@@ -86,6 +91,18 @@ def _print_summary(summary: dict[str, Any], out: Any) -> None:
     import pandas as pd
 
     kind = summary["type"]
+    if kind == "ManySARFit":
+        table = pd.DataFrame(summary["datasets"])
+        shown = ["dataset", "n", "z", "R2", "best_model", "best_weight", "threshold_model"]
+        shown += ["breakpoint_area"]
+        if table["error"].fillna("").astype(bool).any():
+            shown.append("error")
+        table = table[[c for c in shown if c in table.columns]].copy()
+        for column in table.columns:
+            if column not in ("dataset", "best_model", "threshold_model", "error"):
+                table[column] = [_cell(v) for v in table[column]]
+        print(table.fillna("").to_string(index=False), file=out)
+        return
     if kind == "LinPowFit":
         log = "log" if summary["log_base"] == "e" else f"log{summary['log_base']}"
         print(f"{log} S = {log} c + z {log} A, by least squares:", file=out)
@@ -258,6 +275,42 @@ def _cmd_loss(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
         n_jobs=args.n_jobs,
     )
     return _finish(obj, args)
+
+
+def _cmd_many(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
+    import sars
+
+    options = {
+        "models": ops.model_names(args.models),
+        "ic": args.ic,
+        "threshold": not args.no_threshold,
+        "n_jobs": args.n_jobs,
+    }
+    if args.by is not None:
+        if len(args.data) != 1:
+            raise InputError("With --by, give one table holding every dataset.")
+        frame = _read_table(args.data[0])
+        missing = [c for c in (args.by, args.area_col, args.species_col) if c not in frame.columns]
+        if missing:
+            raise InputError(
+                f"No column {missing[0]!r} in {args.data[0]}; its columns are "
+                f"{list(frame.columns)}."
+            )
+        table = frame[[args.by, args.area_col, args.species_col]].rename(
+            columns={args.area_col: "area", args.species_col: "species"}
+        )
+        return _finish(ops.many(table, by=args.by, **options), args)
+    if len(args.data) < 2:
+        raise InputError("Give two or more datasets, or one table and --by COLUMN.")
+    datasets: dict[str, Any] = {}
+    for source in args.data:
+        name = source if source in DATASETS else Path(source).stem or source
+        if name in datasets:  # the same name twice (two folders' islands.csv)
+            name = f"{name}_{len(datasets) + 1}"
+        datasets[name] = sars.from_df(
+            _read_data(source, args.area_col, args.species_col)[["area", "species"]]
+        )
+    return _finish(ops.many(datasets, **options), args)
 
 
 def _cmd_loglog(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
@@ -495,6 +548,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_output_args(loss)
     loss.set_defaults(handler=_cmd_loss)
+
+    many = commands.add_parser(
+        "many",
+        help="the same models on many datasets, in one table",
+        description="Fit the same models to many datasets and summarize them in one table: "
+        "each dataset's best averaged model and its weight, the log-log fit's z, and the "
+        "threshold model chosen (see sar_many). Give several CSVs or bundled datasets, or "
+        "one CSV and --by naming the column that says which dataset each row is in.",
+    )
+    many.add_argument(
+        "data", nargs="+", help="CSV files, - for standard input, or bundled datasets' names"
+    )
+    many.add_argument("--by", metavar="COLUMN", help="the column naming each row's dataset")
+    many.add_argument("--area-col", default="area", help="the area column (default: area)")
+    many.add_argument(
+        "--species-col", default="species", help="the richness column (default: species)"
+    )
+    many.add_argument(
+        "-m", "--models", action="append", metavar="NAME", help="models to average (default: all)"
+    )
+    many.add_argument("--ic", choices=["AICc", "AIC", "BIC"], default="AICc")
+    many.add_argument("--no-threshold", action="store_true", help="skip the threshold models")
+    many.add_argument(
+        "--n-jobs", type=int, default=1, metavar="N", help="processes to use; -1 for one per core"
+    )
+    _add_output_args(many)
+    many.set_defaults(handler=_cmd_many)
 
     loglog = commands.add_parser(
         "loglog",

@@ -323,6 +323,23 @@ def loglog(data: Any, log_base: str = "e", con: float = 1.0, compare: bool = Fal
     return sars.lin_pow(data, con=con, log_base=log_base, compare=compare)
 
 
+def many(
+    datasets: Any,
+    by: str | None = None,
+    models: Sequence[str] | None = None,
+    ic: str = "AICc",
+    threshold: bool = True,
+    n_jobs: int = 1,
+) -> Any:
+    """The same models on many datasets, summarized in one table: a mapping of
+    name to data, or one table with ``by`` naming each row's dataset."""
+    import sars
+
+    return sars.sar_many(
+        datasets, by=by, models=_models(models, "all"), ic=ic, threshold=threshold, n_jobs=n_jobs
+    )
+
+
 def predict(obj: Any, areas: Sequence[float]) -> dict[str, Any]:
     """Predicted richness at ``areas`` from a fitted result."""
     import numpy as np
@@ -447,6 +464,8 @@ def summary(obj: Any) -> dict[str, Any]:
             "ic": obj.average.ic,
             "scenarios": records(obj.table),
         }
+    if kind == "ManySARFit":
+        return {"type": kind, "datasets": records(obj.summary)}
     if kind == "LinPowFit":
         names = ("logc", "c", "z", "logc_se", "c_se", "z_se", "logc_t", "z_t", "logc_p", "z_p")
         out = {"type": kind, **{name: number(getattr(obj, name)) for name in names}}

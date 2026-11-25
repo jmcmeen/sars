@@ -32,6 +32,7 @@ $ sars datasets xu > xu.csv
 | `sars threshold DATA [-m MODEL ...] [--interval X] [--no-log-area]` | Fits piecewise models (ContOne, ZslopeOne and Linear by default) and picks one by AICc. |
 | `sars cv DATA [-m MODEL ...] [--ic AICc\|AIC\|BIC] [--warm] [--label-col COL] [--n-jobs N]` | Ranks the models by leave-one-island-out cross-validation (see [`loo_cv`](api/inference.md)). |
 | `sars loss DATA --area A ... (--remaining R ... \| --fraction-lost F ...) [-m MODEL ...] [--n-boot N] [--seed S]` | Species expected to be lost with habitat, with bootstrap intervals (see [`habitat_loss`](api/inference.md)). |
+| `sars many DATA DATA ... \| sars many TABLE --by COL [-m MODEL ...] [--no-threshold] [--n-jobs N]` | Fits the same models to many datasets and summarizes them in one table: best model and weight, log-log z, threshold model (see [`sar_many`](api/inference.md)). |
 | `sars loglog DATA [--log-base e\|2\|10] [--con C] [--compare]` | Fits the log-log power model by least squares, with standard errors, t tests and p values (see [`lin_pow`](api/models.md)). |
 | `sars ci DATA [--area A ...] [-m MODEL ...] [--method fast\|full] [--n-boot N] [--seed S] [--n-jobs N]` | The model-averaged richness at the areas (ten over the data's range by default), with bootstrap intervals (see [`bootstrap_ci`](api/inference.md)). |
 | `sars predict FILE AREA ...` | Predicts richness at the areas from a result saved with `--save`. |
