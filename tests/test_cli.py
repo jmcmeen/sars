@@ -302,6 +302,8 @@ def test_threshold_ci(capsys):
     assert code == 0 and "ZslopeOne breakpoints, 95% intervals (inverted F test)" in out
     code, envelope = run_json(capsys, "threshold", "galap", "--ci", "--n-boot", "10")
     assert code == 1 and "Linear, has no breakpoint" in envelope["error"]["message"]
+    code, envelope = run_json(capsys, "threshold", "gala", "--ci", "--ci-model", "Linear")
+    assert code == 1 and envelope["error"]["message"].startswith("Linear has no breakpoint")
 
 
 def test_fit_params(capsys):

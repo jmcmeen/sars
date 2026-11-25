@@ -235,9 +235,8 @@ def breakpoint_ci(
 
     name = model or fit.best_model
     if name == "Linear":
-        raise InputError(
-            "The chosen model, Linear, has no breakpoint: name a threshold model for the intervals."
-        )
+        which = "Linear has" if model else "The chosen model, Linear, has"
+        raise InputError(f"{which} no breakpoint: name a threshold model for the intervals.")
     return sars.threshold_ci(
         fit,
         model=name,
