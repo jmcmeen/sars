@@ -263,7 +263,8 @@ def _print_parameters(tables: dict[str, list[dict[str, Any]]], conf: float, out:
         table = pd.DataFrame(rows)
         for column in table.columns:
             if column != "parameter":
-                table[column] = [_cell(v) for v in table[column]]
+                # NaN where the data don't identify a parameter: shown, not blank.
+                table[column] = ["NaN" if v is None else _cell(v) for v in table[column]]
         print(table.to_string(index=False), file=out)
 
 

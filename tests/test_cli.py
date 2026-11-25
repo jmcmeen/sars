@@ -303,6 +303,18 @@ def test_fit_params(capsys):
     assert code == 1 and "give --params too" in envelope["error"]["message"]
 
 
+def test_parameters_the_data_dont_identify_show_nan(capsys, monkeypatch):
+    from sars import _operations
+
+    def unidentified(obj, conf=0.95):
+        row = {"parameter": "z", "estimate": 0.3, "std_error": None, "t_value": None}
+        return {"power": [{**row, "p_value": None, "ci_lower": None, "ci_upper": None}]}
+
+    monkeypatch.setattr(_operations, "parameters", unidentified)
+    code, out, _ = run(capsys, "fit", "galap", "--params")
+    assert code == 0 and "NaN" in out.split("parameters, 95% intervals")[1]
+
+
 def test_a_bad_level_saves_nothing(capsys, tmp_path):
     saved = tmp_path / "fit.json"
     code, _ = run_json(capsys, "fit", "galap", "--params", "--conf", "95", "--save", str(saved))
