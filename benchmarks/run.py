@@ -16,6 +16,7 @@ named after the CPU, so runs on different machines sit side by side.
 from __future__ import annotations
 
 import argparse
+import logging
 import platform
 import re
 import shutil
@@ -52,7 +53,9 @@ COLORS = {
     "Python GPU full": "#98df8a",
     "R": "#ff7f0e",
 }
-GPU_TASKS = ["average", "bootstrap", "bootstrap_full"]  # timed on the GPU with --gpu
+# Timed on the GPU with --gpu. Not the all-cores bootstraps: their worker
+# processes would share the one GPU, which says nothing useful.
+GPU_TASKS = ["average", "bootstrap", "bootstrap_full"]
 
 
 def synthetic(n: int) -> pd.DataFrame:
@@ -74,6 +77,13 @@ def synthetic_large(n: int) -> pd.DataFrame:
     mean = 200 * (1 - np.exp(-((area / 6e4) ** 0.7)))
     species = np.maximum(1, np.round(mean * np.exp(rng.normal(0, 0.1, n))))
     return pd.DataFrame({"area": area, "species": species})
+
+
+def positive_int(text: str) -> int:
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"must be a positive number of points, got {value}")
+    return value
 
 
 def is_large(dataset: str) -> bool:
@@ -145,18 +155,52 @@ def time_python(
     return pd.DataFrame(rows)
 
 
+class _FellBack(logging.Handler):
+    """Records sars's warnings that a step meant for the GPU ran on the CPU."""
+
+    def __init__(self) -> None:
+        super().__init__(logging.WARNING)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if "failed" in record.getMessage():
+            self.messages.append(record.getMessage())
+
+
 def time_gpu(jobs: pd.DataFrame, datasets: dict, repeats: int, n_boot: int) -> pd.DataFrame:
-    """The GPU jobs' timings with the cupy backend, or none if it can't run."""
+    """The GPU jobs' timings with the cupy backend, or none if it can't run.
+
+    A job in which some step fell back to the CPU (a GPU out of memory, say)
+    is timed but marked in its result, since its time isn't the GPU's alone.
+    A failure part-way leaves the timings so far, so the CPU's still get
+    written."""
     try:
         sars.set_backend("cupy")
     except ImportError as err:
         print(f"No GPU timings: {err}", file=sys.stderr)
         return pd.DataFrame()
+    fell_back = _FellBack()
+    logging.getLogger("sars").addHandler(fell_back)
+    rows = []
     try:
-        gpu_jobs = jobs[jobs["task"].isin(GPU_TASKS)]
-        return time_python(gpu_jobs, datasets, repeats, n_boot, language="Python GPU")
+        # Compile the GPU kernels before anything is timed: a large table is
+        # timed without a warm-up of its own.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            sars.sar_multi(synthetic(200))
+        for _, job in jobs[jobs["task"].isin(GPU_TASKS)].iterrows():
+            fell_back.messages.clear()
+            row = time_python(job.to_frame().T, datasets, repeats, n_boot, language="Python GPU")
+            if fell_back.messages:
+                row["result"] = row["result"] + " (partly on the CPU)"
+                print(f"  ... partly on the CPU: {fell_back.messages[0]}", file=sys.stderr)
+            rows.append(row)
+    except Exception as err:  # keep what was timed, and the CPU's results
+        print(f"GPU timings stopped: {err}", file=sys.stderr)
     finally:
+        logging.getLogger("sars").removeHandler(fell_back)
         sars.set_backend("numpy")
+    return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
 
 
 def time_r(jobs: pd.DataFrame, folder: Path, repeats: int, n_boot: int) -> pd.DataFrame:
@@ -321,7 +365,7 @@ def main() -> None:
     parser.add_argument("--no-r", action="store_true", help="time Python only")
     parser.add_argument(
         "--large",
-        type=int,
+        type=positive_int,
         metavar="N",
         help="also fit all 20 models to a synthetic table of N points (Python only; slow)",
     )

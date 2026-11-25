@@ -20,7 +20,8 @@ Two options cover what the defaults don't:
   to 300,000 km² and richness rising toward 200 species, with noise. Large
   areas and a curved, noisy relationship are where the nonlinear models are
   slowest. It's timed once, and not in R (R would take hours); with 100,000
-  points it runs for over an hour on the CPU.
+  points, all 20 models took about 3.5 minutes on an AMD Ryzen 7 7700 and
+  1.3 minutes on an RTX 5060 Ti.
 - `--gpu` times the all-models and bootstrap jobs again with
   `sars.set_backend("cupy")`, as a "Python GPU" series, when CuPy
   (`pip install "sars[gpu]"`) finds a GPU; that includes the `--large`
