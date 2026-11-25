@@ -300,6 +300,14 @@ def test_loglog(capsys):
     )
     code, out, _ = run(capsys, "loglog", "galap", "--log-base", "10")
     assert code == 0 and out.startswith("log10 S = log10 c + z log10 A")
+    assert out.count("t = ") == 2  # the intercept's t test and the slope's
+
+
+def test_loglog_on_an_exact_line_shows_an_infinite_t(capsys, tmp_path):
+    path = tmp_path / "exact.csv"
+    path.write_text("area,species\n1,10\n10,20\n100,40\n1000,80\n")
+    code, out, _ = run(capsys, "loglog", str(path))
+    assert code == 0 and "t = inf" in out
 
 
 def test_ci(capsys):

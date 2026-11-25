@@ -92,12 +92,12 @@ def _print_summary(summary: dict[str, Any], out: Any) -> None:
         print(
             f"  c = {_fmt(summary['c'])} (SE {_fmt(summary['c_se'])})  "
             f"{log} c = {_fmt(summary['logc'])} (SE {_fmt(summary['logc_se'])}, "
-            f"p = {_fmt(summary['logc_p'])})",
+            f"t = {_t(summary['logc_t'], summary['logc_se'])}, p = {_fmt(summary['logc_p'])})",
             file=out,
         )
         print(
             f"  z = {_fmt(summary['z'])} (SE {_fmt(summary['z_se'])}, t = "
-            f"{_fmt(summary['z_t'])}, p = {_fmt(summary['z_p'])})",
+            f"{_t(summary['z_t'], summary['z_se'])}, p = {_fmt(summary['z_p'])})",
             file=out,
         )
         print(
@@ -174,6 +174,12 @@ def _cell(value: Any) -> str:
     if value is None or (isinstance(value, float) and math.isnan(value)):
         return ""
     return value if isinstance(value, str) else f"{value:.4g}"
+
+
+def _t(t: Any, se: Any) -> str:
+    """A t statistic: infinite where the points lie exactly on the line (its
+    standard error is 0, and JSON can't hold the infinity)."""
+    return "inf" if t is None and se == 0 else _fmt(t)
 
 
 def _fmt(value: Any) -> str:
