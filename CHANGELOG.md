@@ -10,6 +10,8 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+## [0.11.12] - 2026-11-26
+
 ### Added
 
 - `lin_pow_bayes` (the new `bayes` extra, PyMC): the hierarchical log-log
@@ -908,7 +910,8 @@ reconstructed from the commit history and the
 - Project skeleton: package layout, CI, publishing workflow, license, and
   citation file.
 
-[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.11...HEAD
+[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.12...HEAD
+[0.11.12]: https://github.com/jmcmeen/sars/compare/v0.11.11...v0.11.12
 [0.11.11]: https://github.com/jmcmeen/sars/compare/v0.11.10...v0.11.11
 [0.11.10]: https://github.com/jmcmeen/sars/compare/v0.11.9...v0.11.10
 [0.11.8]: https://github.com/jmcmeen/sars/compare/v0.11.7...v0.11.8
