@@ -35,6 +35,12 @@ MAX_JOBS = 64
 IC = Literal["AICc", "AIC", "BIC"]
 # The bundled datasets (sars._operations.DATASETS; a test keeps the two the same).
 Dataset = Literal["galap", "gala", "aegean", "aegean2", "niering", "schrader", "xu"]
+# A column, site or species name.
+Name = Annotated[str, Field(min_length=1, max_length=100)]
+Column = Annotated[list[float], Field(min_length=1, max_length=MAX_ROWS)]
+# The most counts an abundance table may hold (species times sites).
+MAX_COUNTS = 1_000_000
+MAX_COLUMNS = 200
 # A model name: letters and digits only, so it can't be read as a flag.
 ModelName = Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9]*$", max_length=32)]
 Models = Annotated[list[ModelName], Field(min_length=1, max_length=MAX_MODELS)]
@@ -216,11 +222,159 @@ class CIRequest(DataRequest, Checks):
     n_jobs: Jobs = 1
 
 
+class GDMData(BaseModel):
+    """An area, a richness and an age per island."""
+
+    area: Column
+    species: Column
+    time: Column
+
+    @model_validator(mode="after")
+    def _same_length(self) -> GDMData:
+        if len({len(self.area), len(self.species), len(self.time)}) != 1:
+            raise ValueError("area, species and time must have the same length")
+        return self
+
+
+class GDMRequest(BaseModel):
+    data: GDMData
+    model: Literal["loga", "linear", "power_area", "power_area_time", "all"] = "loga"
+    mod_sel: bool = Field(default=False, description="also compare with the simpler models")
+
+
+class HabitatData(BaseModel):
+    """An area, a number of habitats and a richness per island."""
+
+    area: Column
+    habitats: Column
+    species: Column
+
+    @model_validator(mode="after")
+    def _same_length(self) -> HabitatData:
+        if len({len(self.area), len(self.habitats), len(self.species)}) != 1:
+            raise ValueError("area, habitats and species must have the same length")
+        return self
+
+
+class HabitatRequest(BaseModel):
+    """The data to fit: inline arrays, or the bundled table."""
+
+    data: HabitatData | None = None
+    dataset: Literal["habitat"] | None = None
+    mod_type: Literal["power_log", "power", "logarithmic"] = "power_log"
+    con: float | None = Field(
+        default=None, description="added to every richness before logs (power_log)"
+    )
+    log_base: Literal["e", "2", "10"] = "e"
+
+    @model_validator(mode="after")
+    def _one_source(self) -> HabitatRequest:
+        if (self.data is None) == (self.dataset is None):
+            raise ValueError("give exactly one of data and dataset")
+        return self
+
+
+class CountrysideData(BaseModel):
+    """Per site: the area of each habitat and the richness of each species
+    group, each by name."""
+
+    habitats: dict[Name, Column] = Field(min_length=1, max_length=MAX_COLUMNS)
+    species: dict[Name, Column] = Field(min_length=1, max_length=MAX_COLUMNS)
+
+    @model_validator(mode="after")
+    def _consistent(self) -> CountrysideData:
+        if set(self.habitats) & set(self.species):
+            raise ValueError("a habitat and a species group can't share a name")
+        if len({len(v) for v in [*self.habitats.values(), *self.species.values()]}) != 1:
+            raise ValueError("every habitat and species group must have a value per site")
+        return self
+
+
+class CountrysideRequest(BaseModel):
+    """The data to fit: inline columns, or the bundled table."""
+
+    data: CountrysideData | None = None
+    dataset: Literal["countryside"] | None = None
+    mod_type: Literal["power", "logarithmic"] = "power"
+    grid_start: Literal["partial", "exhaustive", "none"] = "partial"
+    z_lower: float = 0.0
+    n_starts: int | None = Field(
+        default=40, ge=1, le=100_000, description="starting values to fit from; null: all"
+    )
+
+    @model_validator(mode="after")
+    def _one_source(self) -> CountrysideRequest:
+        if (self.data is None) == (self.dataset is None):
+            raise ValueError("give exactly one of data and dataset")
+        return self
+
+
+class Abundance(BaseModel):
+    """Counts of individuals: a row per species, a value per site."""
+
+    sites: list[Name] = Field(min_length=1, max_length=MAX_ROWS, description="the sites' names")
+    counts: list[list[float]] = Field(
+        min_length=1, max_length=MAX_ROWS, description="a row per species, a count per site"
+    )
+    species: list[Name] | None = Field(
+        default=None, max_length=MAX_ROWS, description="the species' names (default: 1, 2, ...)"
+    )
+    areas: list[float] | None = Field(
+        default=None, max_length=MAX_ROWS, description="each site's area, in the order of sites"
+    )
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Abundance:
+        if len(set(self.sites)) != len(self.sites):
+            raise ValueError("give each site once")
+        if any(len(row) != len(self.sites) for row in self.counts):
+            raise ValueError("every row of counts must have a value per site")
+        if len(self.counts) * len(self.sites) > MAX_COUNTS:
+            raise ValueError(f"at most {MAX_COUNTS} counts (species times sites)")
+        if self.species is not None:
+            if len(self.species) != len(self.counts):
+                raise ValueError("species must name each row of counts")
+            if len(set(self.species)) != len(self.species):
+                raise ValueError("give each species once")
+        if self.areas is not None and len(self.areas) != len(self.sites):
+            raise ValueError("areas must have a value per site")
+        return self
+
+
+class AbundanceRequest(BaseModel):
+    """The counts: inline, or the bundled table (with its sites' areas)."""
+
+    data: Abundance | None = None
+    dataset: Literal["xu_abundance"] | None = None
+
+    @model_validator(mode="after")
+    def _one_source(self) -> AbundanceRequest:
+        if (self.data is None) == (self.dataset is None):
+            raise ValueError("give exactly one of data and dataset")
+        return self
+
+
+class ColemanRequest(AbundanceRequest):
+    n_sim: int = Field(default=999, ge=0, le=100_000, description="0: no simulation test")
+    seed: int | None = Field(default=None, ge=0)
+
+
+class EffortRequest(AbundanceRequest):
+    base: Literal["coverage", "size"] = "coverage"
+    level: float | None = Field(default=None, description="default: as iNEXT chooses")
+
+
 class PredictRequest(BaseModel):
     result: dict[str, Any] = Field(
         description="a result saved by --save, or an envelope's result.object"
     )
     areas: list[float] = Field(min_length=1, max_length=MAX_ROWS)
+    time: list[float] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=MAX_ROWS,
+        description="island ages, for a general dynamic model: one per area, or one for all",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -376,7 +530,7 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
 
     @app.get("/v1/datasets", tags=["service"], dependencies=guarded)
     def datasets() -> JSONResponse:
-        """The bundled datasets (as `sars datasets`)."""
+        """The bundled datasets and tables (as `sars datasets`)."""
         return run("datasets")
 
     @app.post("/v1/fit", tags=["models"], dependencies=guarded)
@@ -499,7 +653,68 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
     @app.post("/v1/predict", tags=["models"], dependencies=guarded)
     def predict(request: PredictRequest) -> JSONResponse:
         """Predictions from a saved result (as `sars predict`)."""
-        return run("predict", result=request.result, areas=request.areas)
+        return run("predict", result=request.result, areas=request.areas, time=request.time)
+
+    def source(request: Any, columns: dict[str, list[float]] | None) -> dict[str, Any]:
+        """A handler's data: the bundled table's name, or the inline columns."""
+        if request.dataset is not None:
+            return {"dataset": request.dataset}
+        return {"columns": columns}
+
+    @app.post("/v1/gdm", tags=["other tables"], dependencies=guarded)
+    def gdm(request: GDMRequest) -> JSONResponse:
+        """The general dynamic model: area and island age (as `sars gdm`)."""
+        return run(
+            "gdm",
+            data={"columns": request.data.model_dump()},
+            model=request.model,
+            mod_sel=request.mod_sel,
+        )
+
+    @app.post("/v1/habitat", tags=["other tables"], dependencies=guarded)
+    def habitat(request: HabitatRequest) -> JSONResponse:
+        """The habitat models: area and number of habitats (as `sars habitat`)."""
+        return run(
+            "habitat",
+            data=source(request, request.data.model_dump() if request.data else None),
+            mod_type=request.mod_type,
+            con=request.con,
+            log_base=request.log_base,
+        )
+
+    @app.post("/v1/countryside", tags=["other tables"], dependencies=guarded)
+    def countryside(request: CountrysideRequest) -> JSONResponse:
+        """The countryside model: the areas of several habitats (as `sars countryside`)."""
+        columns = habitats = species = None
+        if request.data is not None:
+            columns = {**request.data.habitats, **request.data.species}
+            habitats, species = list(request.data.habitats), list(request.data.species)
+        return run(
+            "countryside",
+            data=source(request, columns),
+            habitats=habitats,
+            species=species,
+            mod_type=request.mod_type,
+            grid_start=request.grid_start,
+            z_lower=request.z_lower,
+            n_starts=request.n_starts,
+        )
+
+    def counts(request: AbundanceRequest) -> dict[str, Any]:
+        if request.dataset is not None:
+            return {"dataset": request.dataset}
+        assert request.data is not None
+        return request.data.model_dump()
+
+    @app.post("/v1/coleman", tags=["other tables"], dependencies=guarded)
+    def coleman(request: ColemanRequest) -> JSONResponse:
+        """Coleman's random placement model, from counts (as `sars coleman`)."""
+        return run("coleman", data=counts(request), n_sim=request.n_sim, seed=request.seed)
+
+    @app.post("/v1/effort", tags=["other tables"], dependencies=guarded)
+    def effort(request: EffortRequest) -> JSONResponse:
+        """Richness standardized for sampling effort, from counts (as `sars effort`)."""
+        return run("effort", data=counts(request), base=request.base, level=request.level)
 
     return app
 

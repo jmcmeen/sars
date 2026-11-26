@@ -33,7 +33,71 @@ def frame(data: dict[str, Any], labels: bool = False) -> Any:
 
 
 def datasets() -> dict[str, Any]:
-    return ops.datasets()
+    return ops.datasets(tables=True)
+
+
+def table(data: dict[str, Any]) -> Any:
+    """A table of named columns: a bundled table (``{"dataset": name}``), or
+    ``{"columns": {name: values}}``."""
+    import pandas as pd
+
+    if "dataset" in data:
+        return ops.bundled(data["dataset"])
+    return pd.DataFrame({name: list(values) for name, values in data["columns"].items()})
+
+
+def abundance(data: dict[str, Any]) -> tuple[Any, list[float] | None]:
+    """A species-by-site table of counts and its sites' areas (None if none
+    were sent): a bundled table with the areas that go with it, or
+    ``{"sites", "counts", "species", "areas"}`` with a row of counts per
+    species."""
+    import pandas as pd
+
+    if "dataset" in data:
+        counts = ops.bundled(data["dataset"])
+        areas = ops.bundled(ops.TABLES[data["dataset"]]["areas"])
+        return counts, ops.site_areas([str(c) for c in counts.columns], areas)
+    species = data.get("species") or [str(i + 1) for i in range(len(data["counts"]))]
+    counts = pd.DataFrame(data["counts"], index=pd.Index(species, name="species"))
+    counts.columns = list(data["sites"])
+    return counts, data.get("areas")
+
+
+def gdm(data: dict[str, Any], **options: Any) -> dict[str, Any]:
+    return ops.result(ops.gdm(table(data), **options), include_object=True)
+
+
+def habitat(data: dict[str, Any], **options: Any) -> dict[str, Any]:
+    return ops.result(ops.habitat(table(data), **options), include_object=True)
+
+
+def countryside(
+    data: dict[str, Any],
+    habitats: list[str] | None = None,
+    species: list[str] | None = None,
+    **options: Any,
+) -> dict[str, Any]:
+    defaults = ops.TABLES[data["dataset"]]["columns"] if "dataset" in data else {}
+    obj = ops.countryside(
+        table(data),
+        habitats=habitats or defaults["habitats"],
+        species=species or defaults["species"],
+        **options,
+    )
+    return ops.result(obj, include_object=True)
+
+
+def coleman(data: dict[str, Any], n_sim: int = 999, seed: int | None = None) -> dict[str, Any]:
+    counts, areas = abundance(data)
+    if areas is None:
+        raise ops.InputError("Random placement needs the area of each site: send areas.")
+    fit, test = ops.coleman(counts, areas, n_sim=n_sim, seed=seed)
+    return ops.coleman_result(fit, test, include_object=True)
+
+
+def effort(data: dict[str, Any], **options: Any) -> dict[str, Any]:
+    counts, areas = abundance(data)
+    return ops.effort(counts, areas, **options)
 
 
 def fit(
@@ -82,5 +146,7 @@ def ci(data: dict[str, Any], **options: Any) -> dict[str, Any]:
     return ops.result(ops.ci(frame(data), **options), include_object=True)
 
 
-def predict(result: dict[str, Any], areas: list[float]) -> dict[str, Any]:
-    return ops.predict(ops.from_saved(result), areas)
+def predict(
+    result: dict[str, Any], areas: list[float], time: list[float] | None = None
+) -> dict[str, Any]:
+    return ops.predict(ops.from_saved(result), areas, time=time)

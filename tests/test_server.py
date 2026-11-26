@@ -372,3 +372,183 @@ def test_the_extra_is_named_when_missing(monkeypatch):
     )
     with pytest.raises(_extras.MissingExtraError, match=r"pip install 'sars\[server\]'"):
         _extras.require_extra("server", "sars.server")
+
+
+# --- the tables beyond area and richness ---
+
+AGES = {
+    "area": [12, 85, 240, 31, 640, 150, 9, 410, 58, 22, 310, 14],
+    "species": [31, 74, 118, 82, 161, 139, 66, 150, 88, 57, 96, 29],
+    "time": [0.4, 1.1, 2.0, 2.9, 3.6, 4.5, 5.3, 6.2, 7.4, 8.8, 10.1, 11.6],
+}
+COUNTS = {
+    "sites": ["a", "b", "c"],
+    "species": ["wren", "robin", "finch", "crow"],
+    "counts": [[10, 40, 3], [5, 20, 0], [1, 9, 2], [1, 3, 0]],
+    "areas": [1.0, 4.0, 0.5],
+}
+
+
+def _counts_frame():
+    import pandas as pd
+
+    return pd.DataFrame(COUNTS["counts"], index=COUNTS["species"], columns=COUNTS["sites"])
+
+
+def test_gdm_then_predict_with_island_ages(client):
+    import pandas as pd
+
+    expected = sars.sar_gdm(pd.DataFrame(AGES), mod_sel=True)
+    response = client.post("/v1/gdm", json={"data": AGES, "mod_sel": True})
+    assert response.status_code == 200, response.text
+    result = response.json()["result"]
+    assert result["summary"]["params"] == pytest.approx(expected.params)
+    assert len(result["summary"]["comparison"]) == 4
+
+    saved = result["object"]
+    body = {"result": saved, "areas": [50, 500], "time": [3]}
+    rows = client.post("/v1/predict", json=body).json()["result"]["predictions"]
+    assert [r["species"] for r in rows] == pytest.approx(list(expected.predict([50, 500], 3)))
+    response = client.post("/v1/predict", json={"result": saved, "areas": [50]})
+    assert (
+        response.status_code == 422 and "give the ages too" in response.json()["error"]["message"]
+    )
+
+    response = client.post("/v1/gdm", json={"data": AGES, "model": "all"})
+    assert response.json()["result"]["summary"]["type"] == "GDMMultiFit"
+
+
+def test_habitat(client):
+    expected = sars.sar_habitat(sars.load_habitat())
+    response = client.post("/v1/habitat", json={"dataset": "habitat"})
+    assert response.status_code == 200, response.text
+    models = response.json()["result"]["summary"]["models"]
+    assert [row["model"] for row in models] == list(expected.summary["model"])
+
+    table = sars.load_habitat()
+    data = {name: [float(v) for v in table[name]] for name in ("area", "habitats", "species")}
+    response = client.post("/v1/habitat", json={"data": data, "mod_type": "power"})
+    power = sars.sar_habitat(table, mod_type="power")
+    assert response.json()["result"]["summary"]["best"] == power.summary.iloc[0]["model"]
+
+
+def test_countryside(client):
+    table = sars.load_countryside()
+    habitats, species = ["Area_AG", "Area_SH", "Area_QF"], ["Spcs_AG", "Spcs_UB"]
+    expected = sars.sar_countryside(table, habitats=habitats, species=species, n_starts=5)
+    data = {
+        "habitats": {name: [float(v) for v in table[name]] for name in habitats},
+        "species": {name: [float(v) for v in table[name]] for name in species},
+    }
+    response = client.post("/v1/countryside", json={"data": data, "n_starts": 5})
+    assert response.status_code == 200, response.text
+    summary = response.json()["result"]["summary"]
+    assert summary["habitats"] == habitats and summary["groups"] == species
+    assert summary["params"][0]["z"] == pytest.approx(expected.params.loc["Spcs_AG", "z"])
+
+    response = client.post("/v1/countryside", json={"dataset": "countryside", "n_starts": 5})
+    assert response.status_code == 200
+    assert len(response.json()["result"]["summary"]["groups"]) == 4
+
+
+def test_coleman(client):
+    import numpy as np
+
+    expected = sars.coleman(_counts_frame(), COUNTS["areas"])
+    response = client.post("/v1/coleman", json={"data": COUNTS, "n_sim": 99, "seed": 4})
+    assert response.status_code == 200, response.text
+    summary = response.json()["result"]["summary"]
+    assert [row["site"] for row in summary["sites"]] == COUNTS["sites"]
+    assert [row["expected"] for row in summary["sites"]] == pytest.approx(
+        list(expected.sites["expected"])
+    )
+    test = expected.placement_test(n_sim=99, rng=np.random.default_rng(4))
+    assert summary["test"]["p_value"] == pytest.approx(test.p_value)
+
+    response = client.post("/v1/coleman", json={"dataset": "xu_abundance", "n_sim": 0})
+    summary = response.json()["result"]["summary"]
+    assert summary["n_sites"] == 42 and summary["test"] is None
+    # The saved fit predicts the richness expected at an area.
+    body = {"result": response.json()["result"]["object"], "areas": [10]}
+    assert client.post("/v1/predict", json=body).status_code == 200
+
+    without = {k: v for k, v in COUNTS.items() if k != "areas"}
+    response = client.post("/v1/coleman", json={"data": without})
+    assert response.status_code == 422 and "send areas" in response.json()["error"]["message"]
+
+
+def test_effort(client):
+    expected = sars.standardised_richness(_counts_frame(), area=COUNTS["areas"])
+    response = client.post("/v1/effort", json={"data": COUNTS})
+    assert response.status_code == 200, response.text
+    rows = response.json()["result"]["sites"]
+    assert [row["site"] for row in rows] == COUNTS["sites"]
+    assert [row["species"] for row in rows] == pytest.approx(list(expected["species"]))
+    assert [row["area"] for row in rows] == COUNTS["areas"]
+
+    # Without names or areas: species are numbered, and there is no area.
+    bare = {"sites": COUNTS["sites"], "counts": COUNTS["counts"]}
+    response = client.post("/v1/effort", json={"data": bare, "base": "size", "level": 5})
+    rows = response.json()["result"]["sites"]
+    assert response.status_code == 200 and "area" not in rows[0]
+
+    response = client.post("/v1/effort", json={"dataset": "xu_abundance"})
+    assert len(response.json()["result"]["sites"]) == 42
+
+
+def test_datasets_lists_the_other_tables(client):
+    from typing import get_args
+
+    from sars._operations import TABLES
+    from sars.server.app import AbundanceRequest, CountrysideRequest, HabitatRequest
+
+    tables = client.get("/v1/datasets").json()["result"]["tables"]
+    assert [t["name"] for t in tables] == list(TABLES)
+    # Every bundled table is accepted by the endpoint of a command it is for.
+    accepted = set()
+    for request in (HabitatRequest, CountrysideRequest, AbundanceRequest):
+        literal = get_args(request.model_fields["dataset"].annotation)[0]
+        accepted |= set(get_args(literal))
+    assert accepted == set(TABLES)
+
+
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [
+        ("/v1/gdm", {"data": {**AGES, "time": AGES["time"][:-1]}}),
+        ("/v1/gdm", {"dataset": "galap"}),
+        ("/v1/habitat", {}),
+        ("/v1/habitat", {"dataset": "countryside"}),
+        (
+            "/v1/habitat",
+            {"dataset": "habitat", "data": {"area": [1], "habitats": [1], "species": [1]}},
+        ),
+        ("/v1/countryside", {"data": {"habitats": {"x": [1, 2]}, "species": {"x": [1, 2]}}}),
+        ("/v1/countryside", {"data": {"habitats": {"x": [1, 2]}, "species": {"s": [1]}}}),
+        ("/v1/countryside", {"dataset": "countryside", "n_starts": 0}),
+        ("/v1/coleman", {"data": {**COUNTS, "sites": ["a", "a", "c"]}}),
+        ("/v1/coleman", {"data": {**COUNTS, "areas": [1.0]}}),
+        ("/v1/coleman", {"data": {**COUNTS, "counts": [[1, 2], [3, 4], [5, 6], [7, 8]]}}),
+        ("/v1/coleman", {"data": {**COUNTS, "species": ["a", "b"]}}),
+        ("/v1/coleman", {"data": COUNTS, "n_sim": 10_000_000}),
+        ("/v1/coleman", {"data": COUNTS, "seed": -1}),
+        ("/v1/effort", {"data": COUNTS, "base": "area"}),
+        ("/v1/predict", {"result": {}, "areas": [1], "time": []}),
+    ],
+)
+def test_invalid_other_table_requests_are_refused(client, path, body):
+    response = client.post(path, json=body)
+    assert response.status_code == 422 and "detail" in response.json()
+
+
+def test_other_table_input_errors_are_422_with_an_envelope(client):
+    few = {name: values[:3] for name, values in AGES.items()}
+    response = client.post("/v1/gdm", json={"data": few})
+    assert (
+        response.status_code == 422 and "at least 5 islands" in response.json()["error"]["message"]
+    )
+    negative = {**COUNTS, "counts": [[10, -1, 3], [5, 20, 0], [1, 9, 2], [1, 3, 0]]}
+    response = client.post("/v1/effort", json={"data": negative})
+    assert response.status_code == 422 and response.json()["ok"] is False
+    response = client.post("/v1/effort", json={"data": COUNTS, "level": 7})
+    assert response.status_code == 422 and "between 0 and 1" in response.json()["error"]["message"]

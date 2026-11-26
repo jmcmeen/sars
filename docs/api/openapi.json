@@ -1,6 +1,76 @@
 {
   "components": {
     "schemas": {
+      "Abundance": {
+        "description": "Counts of individuals: a row per species, a value per site.",
+        "properties": {
+          "areas": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 100000,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "each site's area, in the order of sites",
+            "title": "Areas"
+          },
+          "counts": {
+            "description": "a row per species, a count per site",
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "maxItems": 100000,
+            "minItems": 1,
+            "title": "Counts",
+            "type": "array"
+          },
+          "sites": {
+            "description": "the sites' names",
+            "items": {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100000,
+            "minItems": 1,
+            "title": "Sites",
+            "type": "array"
+          },
+          "species": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 100000,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "the species' names (default: 1, 2, ...)",
+            "title": "Species"
+          }
+        },
+        "required": [
+          "sites",
+          "counts"
+        ],
+        "title": "Abundance",
+        "type": "object"
+      },
       "AverageRequest": {
         "properties": {
           "data": {
@@ -390,6 +460,169 @@
         "title": "CVRequest",
         "type": "object"
       },
+      "ColemanRequest": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Abundance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "const": "xu_abundance",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset"
+          },
+          "n_sim": {
+            "default": 999,
+            "description": "0: no simulation test",
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "N Sim",
+            "type": "integer"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          }
+        },
+        "title": "ColemanRequest",
+        "type": "object"
+      },
+      "CountrysideData": {
+        "description": "Per site: the area of each habitat and the richness of each species\ngroup, each by name.",
+        "properties": {
+          "habitats": {
+            "additionalProperties": {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 100000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "maxProperties": 200,
+            "minProperties": 1,
+            "propertyNames": {
+              "maxLength": 100,
+              "minLength": 1
+            },
+            "title": "Habitats",
+            "type": "object"
+          },
+          "species": {
+            "additionalProperties": {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 100000,
+              "minItems": 1,
+              "type": "array"
+            },
+            "maxProperties": 200,
+            "minProperties": 1,
+            "propertyNames": {
+              "maxLength": 100,
+              "minLength": 1
+            },
+            "title": "Species",
+            "type": "object"
+          }
+        },
+        "required": [
+          "habitats",
+          "species"
+        ],
+        "title": "CountrysideData",
+        "type": "object"
+      },
+      "CountrysideRequest": {
+        "description": "The data to fit: inline columns, or the bundled table.",
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CountrysideData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "const": "countryside",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset"
+          },
+          "grid_start": {
+            "default": "partial",
+            "enum": [
+              "partial",
+              "exhaustive",
+              "none"
+            ],
+            "title": "Grid Start",
+            "type": "string"
+          },
+          "mod_type": {
+            "default": "power",
+            "enum": [
+              "power",
+              "logarithmic"
+            ],
+            "title": "Mod Type",
+            "type": "string"
+          },
+          "n_starts": {
+            "anyOf": [
+              {
+                "maximum": 100000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 40,
+            "description": "starting values to fit from; null: all",
+            "title": "N Starts"
+          },
+          "z_lower": {
+            "default": 0.0,
+            "title": "Z Lower",
+            "type": "number"
+          }
+        },
+        "title": "CountrysideRequest",
+        "type": "object"
+      },
       "Data": {
         "description": "Species-area data: an area and a richness per site, and optionally a\nname per site (used to label results).",
         "properties": {
@@ -432,6 +665,55 @@
           "species"
         ],
         "title": "Data",
+        "type": "object"
+      },
+      "EffortRequest": {
+        "properties": {
+          "base": {
+            "default": "coverage",
+            "enum": [
+              "coverage",
+              "size"
+            ],
+            "title": "Base",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Abundance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "const": "xu_abundance",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "default: as iNEXT chooses",
+            "title": "Level"
+          }
+        },
+        "title": "EffortRequest",
         "type": "object"
       },
       "FitRequest": {
@@ -536,6 +818,75 @@
         "title": "FitRequest",
         "type": "object"
       },
+      "GDMData": {
+        "description": "An area, a richness and an age per island.",
+        "properties": {
+          "area": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 100000,
+            "minItems": 1,
+            "title": "Area",
+            "type": "array"
+          },
+          "species": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 100000,
+            "minItems": 1,
+            "title": "Species",
+            "type": "array"
+          },
+          "time": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 100000,
+            "minItems": 1,
+            "title": "Time",
+            "type": "array"
+          }
+        },
+        "required": [
+          "area",
+          "species",
+          "time"
+        ],
+        "title": "GDMData",
+        "type": "object"
+      },
+      "GDMRequest": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/GDMData"
+          },
+          "mod_sel": {
+            "default": false,
+            "description": "also compare with the simpler models",
+            "title": "Mod Sel",
+            "type": "boolean"
+          },
+          "model": {
+            "default": "loga",
+            "enum": [
+              "loga",
+              "linear",
+              "power_area",
+              "power_area_time",
+              "all"
+            ],
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "GDMRequest",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -547,6 +898,106 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HabitatData": {
+        "description": "An area, a number of habitats and a richness per island.",
+        "properties": {
+          "area": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 100000,
+            "minItems": 1,
+            "title": "Area",
+            "type": "array"
+          },
+          "habitats": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 100000,
+            "minItems": 1,
+            "title": "Habitats",
+            "type": "array"
+          },
+          "species": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 100000,
+            "minItems": 1,
+            "title": "Species",
+            "type": "array"
+          }
+        },
+        "required": [
+          "area",
+          "habitats",
+          "species"
+        ],
+        "title": "HabitatData",
+        "type": "object"
+      },
+      "HabitatRequest": {
+        "description": "The data to fit: inline arrays, or the bundled table.",
+        "properties": {
+          "con": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "added to every richness before logs (power_log)",
+            "title": "Con"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HabitatData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "const": "habitat",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset"
+          },
+          "log_base": {
+            "default": "e",
+            "enum": [
+              "e",
+              "2",
+              "10"
+            ],
+            "title": "Log Base",
+            "type": "string"
+          },
+          "mod_type": {
+            "default": "power_log",
+            "enum": [
+              "power_log",
+              "power",
+              "logarithmic"
+            ],
+            "title": "Mod Type",
+            "type": "string"
+          }
+        },
+        "title": "HabitatRequest",
         "type": "object"
       },
       "LogLogRequest": {
@@ -849,6 +1300,23 @@
             "description": "a result saved by --save, or an envelope's result.object",
             "title": "Result",
             "type": "object"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 100000,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "island ages, for a general dynamic model: one per area, or one for all",
+            "title": "Time"
           }
         },
         "required": [
@@ -1107,6 +1575,122 @@
         ]
       }
     },
+    "/v1/coleman": {
+      "post": {
+        "description": "Coleman's random placement model, from counts (as `sars coleman`).",
+        "operationId": "coleman_v1_coleman_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ColemanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Coleman",
+        "tags": [
+          "other tables"
+        ]
+      }
+    },
+    "/v1/countryside": {
+      "post": {
+        "description": "The countryside model: the areas of several habitats (as `sars countryside`).",
+        "operationId": "countryside_v1_countryside_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CountrysideRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Countryside",
+        "tags": [
+          "other tables"
+        ]
+      }
+    },
     "/v1/cv": {
       "post": {
         "description": "Leave-one-island-out cross-validation (as `sars cv`).",
@@ -1167,7 +1751,7 @@
     },
     "/v1/datasets": {
       "get": {
-        "description": "The bundled datasets (as `sars datasets`).",
+        "description": "The bundled datasets and tables (as `sars datasets`).",
         "operationId": "datasets_v1_datasets_get",
         "parameters": [
           {
@@ -1210,6 +1794,64 @@
         "summary": "Datasets",
         "tags": [
           "service"
+        ]
+      }
+    },
+    "/v1/effort": {
+      "post": {
+        "description": "Richness standardized for sampling effort, from counts (as `sars effort`).",
+        "operationId": "effort_v1_effort_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EffortRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Effort",
+        "tags": [
+          "other tables"
         ]
       }
     },
@@ -1268,6 +1910,122 @@
         "summary": "Fit",
         "tags": [
           "models"
+        ]
+      }
+    },
+    "/v1/gdm": {
+      "post": {
+        "description": "The general dynamic model: area and island age (as `sars gdm`).",
+        "operationId": "gdm_v1_gdm_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GDMRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Gdm",
+        "tags": [
+          "other tables"
+        ]
+      }
+    },
+    "/v1/habitat": {
+      "post": {
+        "description": "The habitat models: area and number of habitats (as `sars habitat`).",
+        "operationId": "habitat_v1_habitat_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HabitatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Habitat",
+        "tags": [
+          "other tables"
         ]
       }
     },
