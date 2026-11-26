@@ -539,8 +539,8 @@ def test_countryside(capsys, tmp_path):
 
 def test_datasets_lists_the_other_tables(capsys):
     code, envelope = run_json(capsys, "datasets")
-    tables = {row["name"]: row["command"] for row in envelope["result"]["tables"]}
-    assert tables["habitat"] == "habitat" and tables["countryside"] == "countryside"
+    tables = {row["name"]: row["commands"] for row in envelope["result"]["tables"]}
+    assert tables["habitat"] == ["habitat"] and tables["countryside"] == ["countryside"]
     code, out, _ = run(capsys, "datasets")
     assert "for `sars countryside`" in out
     code, out, _ = run(capsys, "datasets", "habitat")

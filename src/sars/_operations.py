@@ -36,13 +36,13 @@ DATASETS = {
 }
 
 # The bundled tables that aren't area and richness alone, for the commands
-# that read more columns: the loader, the command each is for, and the columns
-# that command reads when none are named.
+# that read more columns: the loader, the commands each is for, and the
+# columns a command reads when none are named.
 TABLES: dict[str, dict[str, Any]] = {
-    "habitat": {"loader": "load_habitat", "command": "habitat", "columns": {}},
+    "habitat": {"loader": "load_habitat", "commands": ["habitat"], "columns": {}},
     "countryside": {
         "loader": "load_countryside",
-        "command": "countryside",
+        "commands": ["countryside"],
         "columns": {
             "habitats": ["Area_AG", "Area_SH", "Area_QF"],
             "species": ["Spcs_AG", "Spcs_SH", "Spcs_QF", "Spcs_UB"],
@@ -159,7 +159,7 @@ def _models(names: Sequence[str] | None, default: str) -> str | list[str]:
 
 def datasets(tables: bool = False) -> dict[str, Any]:
     """The bundled datasets (name, size, area range and columns) and, with
-    ``tables``, the other bundled tables with the command each is for."""
+    ``tables``, the other bundled tables with the commands each is for."""
     rows = []
     for name in DATASETS:
         frame = bundled(name)
@@ -182,7 +182,7 @@ def datasets(tables: bool = False) -> dict[str, Any]:
                 "name": name,
                 "n": len(frame),
                 "columns": [str(c) for c in frame.columns],
-                "command": spec["command"],
+                "commands": list(spec["commands"]),
             }
         )
     return {"datasets": rows, "tables": others}

@@ -53,12 +53,13 @@ def _read_table(source: str, command: str | None = None) -> Any:
     names = (
         list(DATASETS)
         if command is None
-        else [name for name, spec in TABLES.items() if spec["command"] == command]
+        else [name for name, spec in TABLES.items() if command in spec["commands"]]
     )
     if source in names:
         return ops.bundled(source)
     if source in TABLES:
-        raise InputError(f"The bundled {source} table is for `sars {TABLES[source]['command']}`.")
+        use = " and ".join(f"`sars {name}`" for name in TABLES[source]["commands"])
+        raise InputError(f"The bundled {source} table is for {use}.")
     if source in DATASETS:
         raise InputError(
             f"The bundled {source} dataset holds area and richness only, not what "
@@ -559,10 +560,8 @@ def _cmd_datasets(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
                     file=out,
                 )
             for row in result["tables"]:
-                print(
-                    f"{row['name']:<12} {row['n']:>4} rows   for `sars {row['command']}`",
-                    file=out,
-                )
+                use = " and ".join(f"`sars {name}`" for name in row["commands"])
+                print(f"{row['name']:<12} {row['n']:>4} rows   for {use}", file=out)
 
         return result, show
     text = ops.bundled(args.name).to_csv(index=False)
