@@ -24,6 +24,16 @@ intervals.
 
 ::: sars.MixedLinPowFit
 
+## lin_pow_bayes
+
+Needs the `bayes` extra: `pip install "sars[bayes]"` (PyMC).
+
+::: sars.lin_pow_bayes
+
+## BayesLinPowFit
+
+::: sars.BayesLinPowFit
+
 ## ResidualChecks
 
 ::: sars.ResidualChecks

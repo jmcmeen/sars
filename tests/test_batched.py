@@ -168,3 +168,218 @@ class TestGPU:
         a = cpu.summary.set_index("model")["AICc"]
         b = gpu.summary.set_index("model")["AICc"]
         np.testing.assert_allclose(b.loc[a.index], a, rtol=1e-6)
+
+    @pytest.mark.parametrize("fails", [False, True])
+    def test_a_screen_hands_its_memory_back(self, galap, fails):
+        import cupy
+
+        spec, log_idx, lower, upper, grid = grid_for("betap")
+        area_s, species_s = rescaled(galap)
+        pool = cupy.get_default_memory_pool()
+        func = spec.func
+        if fails:
+            calls = []
+
+            def func(a, *params):  # fails once the screen has allocated
+                calls.append(1)
+                if len(calls) > 2:
+                    raise RuntimeError("out of memory")
+                return spec.func(a, *params)
+
+        before = pool.total_bytes()
+        sars.set_backend("cupy")
+        try:
+            if fails:
+                with pytest.raises(RuntimeError):
+                    _batched.screen(func, area_s, species_s, grid, lower, upper, log_idx)
+            else:
+                _batched.screen(func, area_s, species_s, grid, lower, upper, log_idx)
+        finally:
+            sars.set_backend("numpy")
+        # A failed screen's arrays go too; the exception itself, still held by
+        # its caller when the pool is emptied, may keep a few small ones.
+        assert pool.total_bytes() - before <= (2**16 if fails else 0)
+
+
+class FakeCupy:
+    """numpy, with a memory pool that records being emptied."""
+
+    asnumpy = staticmethod(np.asarray)
+
+    def __init__(self):
+        self.freed = 0
+
+    def __getattr__(self, name):
+        return getattr(np, name)
+
+    def get_default_memory_pool(self):
+        fake = self
+
+        class Pool:
+            def free_all_blocks(self):
+                fake.freed += 1
+
+        return Pool()
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_the_gpu_pool_is_emptied_after_every_screen(galap, monkeypatch, fails):
+    spec, log_idx, lower, upper, grid = grid_for("power")
+    area_s, species_s = rescaled(galap)
+    fake = FakeCupy()
+    monkeypatch.setattr(_batched, "_xp", lambda: fake)
+    func = spec.func
+    if fails:
+
+        def func(*args):
+            raise RuntimeError("out of memory")
+
+    if fails:
+        with pytest.raises(RuntimeError, match="out of memory"):
+            _batched.screen(func, area_s, species_s, grid, lower, upper, log_idx)
+    else:
+        _batched.screen(func, area_s, species_s, grid, lower, upper, log_idx)
+    assert fake.freed == 1
+
+
+def test_a_screen_of_only_penalized_points_isnt_a_fit(galap, monkeypatch):
+    """Points where the model is undefined at some island are never taken as a
+    fit: with nothing else from the screen, the start-by-start search runs."""
+    from sars._models import _PENALTY_COST, _fit_nls
+
+    alone = _fit_nls("power", galap)
+
+    def undefined_everywhere(func, area, species, starts, *rest, **kw):
+        return starts, np.full(len(starts), 2 * _PENALTY_COST)
+
+    monkeypatch.setattr(_batched, "screen", undefined_everywhere)
+    fit = _fit_nls("power", galap)
+    assert fit.converged
+    assert fit.aicc == pytest.approx(alone.aicc, rel=1e-9)
+
+
+@pytest.mark.parametrize("block", [None, 40 * 16])
+def test_a_grouped_screen_matches_screening_each_dataset_alone(galap, monkeypatch, block):
+    """Many datasets in one batch: each gets what its own screen gives, the cut
+    included (the best starts of each dataset, not of the batch), and so in
+    small blocks (the warm-up and the carry-on both in chunks of rows)."""
+    spec, log_idx, lower, upper, grid = grid_for("chapman")
+    rng = np.random.default_rng(3)
+    datasets = [galap] + [galap.iloc[rng.integers(0, 16, 16)] for _ in range(3)]
+    scaled = [rescaled(d) for d in datasets]
+    alone = [_batched.screen(spec.func, a, s, grid, lower, upper, log_idx) for a, s in scaled]
+    if block:
+        monkeypatch.setattr(_batched, "_BLOCK", block)
+    together = _batched.screen(
+        spec.func,
+        np.array([a for a, _ in scaled]),
+        np.array([s for _, s in scaled]),
+        np.tile(grid, (len(datasets), 1)),
+        lower,
+        upper,
+        log_idx,
+        np.repeat(np.arange(len(datasets)), len(grid)),
+    )
+    for i, (x, cost) in enumerate(alone):
+        part = slice(i * len(grid), (i + 1) * len(grid))
+        np.testing.assert_allclose(together[1][part], cost, rtol=1e-12)
+        np.testing.assert_allclose(together[0][part], x, rtol=1e-12, atol=1e-14)
+
+
+@pytest.mark.parametrize("name", ["power", "chapman", "epm1", "betap"])
+def test_a_fit_from_a_shared_screen_is_the_fit_alone(galap, name):
+    from sars._models import _fit_nls, _screen_many
+
+    rng = np.random.default_rng(4)
+    datasets = [galap.iloc[rng.integers(0, 16, 16)].reset_index(drop=True) for _ in range(3)]
+    real_screen = _batched.screen
+    for data, found in zip(datasets, _screen_many(name, datasets), strict=True):
+        if name == "epm1":  # fitted on each dataset's own scale: screened alone
+            assert found is None
+        alone = _fit_nls(name, data)
+        if found is not None:  # the shared screen is used, not run again
+
+            def no_screen(*args, **kwargs):
+                pytest.fail("screened again")
+
+            _batched.screen = no_screen
+        try:
+            shared = _fit_nls(name, data, prescreened=found)
+        finally:
+            _batched.screen = real_screen
+        # Two runs of the same fit can differ in the last bits on older numpy
+        # (its reductions aren't reproducible run to run, #239), which a fit
+        # along a ridge, as epm1's here, carries a little further.
+        assert shared.aicc == pytest.approx(alone.aicc, rel=1e-9, nan_ok=True)
+        assert shared.params == pytest.approx(alone.params, rel=1e-6, nan_ok=True)
+
+
+def test_a_dataset_the_fit_would_reject_screens_alone(galap):
+    from sars._models import _screen_many
+
+    bad = galap.assign(species=0)
+    short = galap.iloc[:10]
+    found = _screen_many("power", [short, galap, bad, galap.iloc[::-1]])
+    # The batch takes the datasets of the most common size.
+    assert [f is not None for f in found] == [False, True, False, True]
+
+
+def test_a_failed_shared_screen_leaves_each_dataset_to_itself(galap, monkeypatch, caplog):
+    from sars._models import _screen_many
+
+    def broken(*args, **kwargs):
+        raise MemoryError("no room for the batch")
+
+    monkeypatch.setattr(_batched, "screen", broken)
+    monkeypatch.setattr(_batched, "_backend", "cupy")
+    with caplog.at_level(logging.WARNING, logger="sars"):
+        assert _screen_many("power", [galap, galap]) == [None, None]
+    assert "batched screen of 2 datasets on cupy failed (no room for the batch)" in caplog.text
+
+
+def test_the_bootstrap_is_the_same_in_any_chunks(galap, monkeypatch):
+    from sars import _inference
+
+    sizes = []
+    real_chunk = _inference._bootstrap_chunk
+
+    def chunk(resamples, *args, **kwargs):
+        sizes.append(len(resamples))
+        return real_chunk(resamples, *args, **kwargs)
+
+    monkeypatch.setattr(_inference, "_bootstrap_chunk", chunk)
+    whole = sars.bootstrap_ci(galap, n_boot=6, method="full", rng=np.random.default_rng(5))
+    monkeypatch.setattr(_inference, "_CHUNK_RESAMPLES", 1)
+    one_by_one = sars.bootstrap_ci(galap, n_boot=6, method="full", rng=np.random.default_rng(5))
+    assert sizes == [6] + [1] * 6
+    # The same up to the last bits older numpy varies in run to run (#239).
+    np.testing.assert_allclose(whole.lower, one_by_one.lower, rtol=1e-7)
+    np.testing.assert_allclose(whole.upper, one_by_one.upper, rtol=1e-7)
+    assert whole.convergence_counts == one_by_one.convergence_counts
+
+
+def test_a_failed_gpu_screen_leaves_the_fit_able_to_carry_on(galap, monkeypatch, caplog):
+    """Clearing a failed screen's frames, to free its GPU arrays, touches none of
+    its callers': the fit logs the failure by name and fits on the CPU."""
+    from sars import _models
+    from sars._models import _fit_nls
+
+    alone = _fit_nls("power", galap)
+    fake = FakeCupy()
+    monkeypatch.setattr(_batched, "_xp", lambda: fake)
+    monkeypatch.setattr(_batched, "_backend", "cupy")
+    real = _models._MODEL_REGISTRY["power"].func
+    calls = []
+
+    def flaky(a, *params):  # fails inside the screen only
+        calls.append(1)
+        if np.ndim(params[0]) == 2:
+            raise RuntimeError("out of memory")
+        return real(a, *params)
+
+    monkeypatch.setattr(_models._MODEL_REGISTRY["power"], "func", flaky)
+    with caplog.at_level(logging.WARNING, logger="sars"):
+        fit = _fit_nls("power", galap)
+    assert "Model 'power': the batched screen on cupy failed (out of memory)" in caplog.text
+    assert fake.freed == 1
+    assert fit.aicc == pytest.approx(alone.aicc, rel=1e-9)

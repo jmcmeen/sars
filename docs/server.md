@@ -1,8 +1,9 @@
 # HTTP server
 
-The optional `server` extra runs the [command line](cli.md) behind a small HTTP API, so
-programs in other languages, notebooks on another machine, or a web page can use `sars`
-without Python bindings.
+The optional `server` extra serves `sars` over a small HTTP API, so programs in other
+languages, notebooks on another machine, or a web page can use it without Python bindings.
+It runs the same operations as the [command line](cli.md) (the two share them, and
+neither goes through the other), so an endpoint and its command give the same result.
 
 ```console
 $ pip install "sars[server]"
@@ -10,20 +11,20 @@ $ sars serve
 INFO:     Uvicorn running on http://127.0.0.1:8765
 ```
 
-Each endpoint runs one `sars` command and returns the JSON envelope that command prints
+Each endpoint runs one operation and returns the same JSON envelope its command prints
 with `--json`: `{sars, command, ok, result | error, warnings}`. The envelope's
 `result.object` is the whole result, in the format [`sars.save`](api/io.md) writes.
 
 | Status | Meaning |
 |---|---|
-| 200 | The command succeeded (`"ok": true`). |
-| 422 with an envelope | The command refused the request (`"ok": false`): an unknown model, data it couldn't fit, no model passing the checks. |
+| 200 | The operation succeeded (`"ok": true`). |
+| 422 with an envelope | The operation refused the request (`"ok": false`): an unknown model, data it couldn't fit, no model passing the checks. |
 | 422 with `detail` | The request itself was invalid (a missing field, a value out of range); `detail` says which. |
 | 401 | A token is required and wasn't given, or was wrong. |
-| 500 | The command failed in a way that points to a bug (its envelope says how), or printed nothing. |
-| 504 | The command ran out of time and was stopped. |
+| 500 | The operation failed in a way that points to a bug (its envelope says how), or its worker ended without a result. |
+| 504 | The operation ran out of time and was stopped. |
 
-| Endpoint | Runs |
+| Endpoint | Does what this command does |
 |---|---|
 | `GET /v1/version` | The `sars` and API versions (no token needed) |
 | `GET /v1/datasets` | `sars datasets` |
@@ -32,6 +33,9 @@ with `--json`: `{sars, command, ok, result | error, warnings}`. The envelope's
 | `POST /v1/threshold` | `sars threshold` |
 | `POST /v1/cv` | `sars cv` |
 | `POST /v1/loss` | `sars loss` |
+| `POST /v1/many` | `sars many` (`datasets`: name to data, or `bundled`: names) |
+| `POST /v1/loglog` | `sars loglog` |
+| `POST /v1/ci` | `sars ci` |
 | `POST /v1/predict` | `sars predict`, from a saved result |
 
 The request bodies are in the [OpenAPI document](api/openapi.json), which a running server
@@ -73,14 +77,17 @@ $ sars serve --host 0.0.0.0 --token-file token.txt
 Every request but `/v1/version` then needs `Authorization: Bearer <token>`. The token can
 also come from the `SARS_SERVER_TOKEN` environment variable.
 
-Each request runs `python -m sars` in its own process, with the data written to a fresh
-temporary directory. The command line is built from the request's fields: no shell is
-involved and nothing in a request is run as code. The command doesn't see the server's
-token. A command that runs longer than `--timeout` seconds (600 by default) is stopped,
-with any worker processes it started, and the request returns 504. Cold
-cross-validation of every model, or many bootstrap resamples, can take minutes.
+Each request runs its operation in a fresh worker process, which gets the request's values
+as data: no shell is involved, no file is written, and nothing in a request is run as code.
+The worker doesn't see the server's token. An operation that runs longer than `--timeout`
+seconds (600 by default) is stopped, with any worker processes it started, and the request
+returns 504. Cold cross-validation of every model, or many bootstrap resamples, can take
+minutes.
 
-Four commands run at once; further requests wait their turn. A request's `n_jobs` is
+`sars --backend cupy serve` (or `ServerConfig(backend="cupy")`) runs every request's
+start-grid screens on the GPU; the server checks CuPy works when it starts.
+
+Four requests run at once; further requests wait their turn. A request's `n_jobs` is
 capped at the machine's core count, and `-1` means that many.
 
 ## In Python

@@ -1,2 +1,2 @@
-cpu,system,python,numpy,scipy,sars,R,R sars,repeats,n_boot
-AMD Ryzen 7 7700 8-Core Processor,Linux-7.0.0-43-generic-x86_64-with-glibc2.43,3.13.13,2.5.5,1.18.1,0.11.8,4.5.2,2.1.1,3,100
+cpu,system,python,numpy,scipy,sars,R,R sars,gpu,cupy,repeats,n_boot
+AMD Ryzen 7 7700 8-Core Processor,Linux-7.0.0-43-generic-x86_64-with-glibc2.43,3.13.13,2.5.4,1.18.1,"unreleased, after 0.11.11",4.5.2,2.1.1,NVIDIA GeForce RTX 5060 Ti,14.2.0,3,100

@@ -191,6 +191,76 @@ def test_epm1_fits_areas_in_square_metres(galap):
     assert fit.params["c"] < 1e-40
 
 
+@pytest.mark.parametrize(
+    ("model", "scaled"),
+    [("epm1", [0.7, 26.7, 0.3]), ("epm1", [1.2, -12.0, -2.0]), ("epm2", [0.6, 0.3, 0.8])],
+)
+def test_the_extended_power_models_scaled_forms_are_exact(model, scaled):
+    """epm1 and epm2 are searched in their own parameters on the rescaled area;
+    converted to the data's units, they're the same curve."""
+    from sars._models import _MODEL_REGISTRY, _RESCALE, _SCALED_FORM
+
+    area = np.geomspace(2e4, 3e5, 50)
+    a, s = float(np.exp(np.mean(np.log(area)))), 180.0
+    to_natural, to_scaled = _RESCALE[model]
+    natural = to_natural(np.array(scaled), a, s)
+    np.testing.assert_allclose(
+        s * _SCALED_FORM[model](a)(area / a, *scaled),
+        _MODEL_REGISTRY[model].func(area, *natural),
+        rtol=1e-9,
+    )
+    np.testing.assert_allclose(to_scaled(np.array(natural), a, s), scaled, rtol=1e-9)
+
+
+def test_epm1_finds_an_optimum_far_from_its_start_grid():
+    """On large areas epm1's optimum can have z near 1e-64 with d negative: in the
+    data's units no start grid comes near it, so the search runs on the exponent
+    at the mean area (#257). Data drawn from such a curve are fitted closely."""
+    rng = np.random.default_rng(1)
+    area = np.sort(10 ** rng.uniform(np.log10(2e4), np.log10(3e5), 400))
+    truth = sars._models._epm1_func(area, 65.5, 1.27e-64, -11.43)
+    species = truth * np.exp(rng.normal(0, 0.01, 400))
+    fit = sars.sar_epm1(pd.DataFrame({"area": area, "species": species}))
+    assert fit.converged
+    # At least as close as the curve the data came from, which is near the optimum.
+    assert fit.predict(area) == pytest.approx(truth, rel=0.01)
+    assert np.sum((species - fit.predict(area)) ** 2) <= np.sum((species - truth) ** 2)
+    assert 0 < fit.params["z"] < 1e-40 and fit.params["d"] < -5
+
+
+def test_epm1_keeps_its_bound_on_z(galap):
+    """z is bounded at +-50 in the data's units, whatever the search's own
+    parameters, and a fit there says so."""
+    from sars._models import _EPM1_W0, _SCALED_FORM, _on_bound
+
+    area = galap["area"].to_numpy(float)
+    a = float(np.exp(np.mean(np.log(area))))
+    func = _SCALED_FORM["epm1"](a)
+    # u for z = 49 and 51 at d = 0.5 (w = z a^-d, u = asinh(w / W0))
+    inside, outside = (float(np.arcsinh(z * a**-0.5 / _EPM1_W0)) for z in (49.0, 51.0))
+    assert np.isfinite(func(np.array([1.0, 2.0]), 0.5, inside, 0.5)).all()
+    assert np.isnan(func(np.array([1.0, 2.0]), 0.5, outside, 0.5)).all()
+    on = _on_bound("epm1", np.array([2.0, 50.0, 0.5]), area, galap["species"].to_numpy(float))
+    assert on.tolist() == [False, True, False]
+
+
+@pytest.mark.parametrize(("seed", "aicc"), [(13, 170.263273), (7, 200.303104)])
+def test_epm1_reaches_an_optimum_on_its_z_bound(seed, aicc):
+    """Where epm1's optimum has z on its bound, the search's curved wall stops
+    the solver short; the fit is solved again on the bound. The AICc values
+    are 0.11.10's, which searched z with a box bound."""
+    from sars._models import _on_bound
+
+    rng = np.random.default_rng(seed)
+    area = np.sort(10 ** rng.uniform(np.log10(3), np.log10(2e5), 30))
+    species = 50 * (1 - np.exp(-area / np.median(area))) * np.exp(rng.normal(0, 0.15, 30))
+    fit = sars.sar_epm1(pd.DataFrame({"area": area, "species": species}))
+    assert fit.params["z"] == pytest.approx(-50.0, rel=1e-10)
+    assert fit.aicc == pytest.approx(aicc, abs=1e-5)
+    values = np.array([fit.params[k] for k in ("c", "z", "d")])
+    assert _on_bound("epm1", values, area, species).tolist() == [False, True, False]
+
+
 def test_a_warm_start_must_be_positive_for_a_log_scale_parameter(galap):
     from sars._models import _fit_nls
 
@@ -222,12 +292,13 @@ def test_a_fit_is_the_same_in_any_units(galap, galap_fits, model):
 @pytest.mark.parametrize("model", ALL_MODEL_NAMES)
 def test_rescaling_converts_parameters_both_ways(model):
     """Each model's rescaled parameters convert to the data's units and back, and
-    the curve is the same: S(A) = s * S'(A / a)."""
-    from sars._models import _AREA_UNSCALED, _MODEL_REGISTRY, _RESCALE
+    the curve is the same: S(A) = s * S'(A / a), with S' the model as the search
+    fits it (its own form for epm1 and epm2)."""
+    from sars._models import _MODEL_REGISTRY, _RESCALE, _SCALED_FORM
 
     spec = _MODEL_REGISTRY[model]
     to_natural, to_scaled = _RESCALE[model]
-    a = 1.0 if model in _AREA_UNSCALED else 37.0
+    a = 37.0
     s, rng = 250.0, np.random.default_rng(0)
     scaled = np.array([np.mean(g) for g in spec.start_grid]) * rng.uniform(
         0.8, 1.2, len(spec.start_grid)
@@ -235,8 +306,9 @@ def test_rescaling_converts_parameters_both_ways(model):
     natural = np.array(to_natural(scaled, a, s))
     np.testing.assert_allclose(to_scaled(natural, a, s), scaled, rtol=1e-10)
     areas = np.geomspace(0.5, 2000, 9)
+    searched = _SCALED_FORM[model](a) if model in _SCALED_FORM else spec.func
     np.testing.assert_allclose(
-        spec.func(areas, *natural), s * spec.func(areas / a, *scaled), rtol=1e-9
+        spec.func(areas, *natural), s * searched(areas / a, *scaled), rtol=1e-9
     )
 
 

@@ -98,6 +98,224 @@
         "title": "AverageRequest",
         "type": "object"
       },
+      "BreakpointCI": {
+        "properties": {
+          "conf": {
+            "default": 0.95,
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Conf",
+            "type": "number"
+          },
+          "method": {
+            "default": "boot",
+            "enum": [
+              "boot",
+              "F"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "default: the chosen model",
+            "title": "Model"
+          },
+          "n_boot": {
+            "default": 1000,
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "N Boot",
+            "type": "integer"
+          },
+          "n_jobs": {
+            "default": 1,
+            "description": "processes; -1: the server's limit",
+            "maximum": 64.0,
+            "minimum": -1.0,
+            "title": "N Jobs",
+            "type": "integer"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          }
+        },
+        "title": "BreakpointCI",
+        "type": "object"
+      },
+      "CIRequest": {
+        "properties": {
+          "areas": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 1000,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "areas to predict at (default: ten over the data's range)",
+            "title": "Areas"
+          },
+          "conf": {
+            "default": 0.95,
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Conf",
+            "type": "number"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Data"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "enum": [
+                  "galap",
+                  "gala",
+                  "aegean",
+                  "aegean2",
+                  "niering",
+                  "schrader",
+                  "xu"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "a bundled dataset (GET /v1/datasets)",
+            "title": "Dataset"
+          },
+          "homoscedasticity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "cor.fitted",
+                  "cor.area"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Homoscedasticity"
+          },
+          "ic": {
+            "default": "AICc",
+            "enum": [
+              "AICc",
+              "AIC",
+              "BIC"
+            ],
+            "title": "Ic",
+            "type": "string"
+          },
+          "method": {
+            "default": "fast",
+            "enum": [
+              "fast",
+              "full"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "models": {
+            "default": [
+              "all"
+            ],
+            "items": {
+              "maxLength": 32,
+              "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Models",
+            "type": "array"
+          },
+          "n_boot": {
+            "default": 1000,
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "N Boot",
+            "type": "integer"
+          },
+          "n_jobs": {
+            "default": 1,
+            "description": "processes; -1: the server's limit",
+            "maximum": 64.0,
+            "minimum": -1.0,
+            "title": "N Jobs",
+            "type": "integer"
+          },
+          "neg_check": {
+            "default": false,
+            "title": "Neg Check",
+            "type": "boolean"
+          },
+          "normality": {
+            "anyOf": [
+              {
+                "enum": [
+                  "shapiro",
+                  "lillie",
+                  "kolmogorov"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normality"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          }
+        },
+        "title": "CIRequest",
+        "type": "object"
+      },
       "CVRequest": {
         "properties": {
           "data": {
@@ -218,6 +436,14 @@
       },
       "FitRequest": {
         "properties": {
+          "conf": {
+            "default": 0.95,
+            "description": "the parameter tables' level",
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Conf",
+            "type": "number"
+          },
           "data": {
             "anyOf": [
               {
@@ -299,6 +525,12 @@
               }
             ],
             "title": "Normality"
+          },
+          "params": {
+            "default": false,
+            "description": "add each model's parameter table",
+            "title": "Params",
+            "type": "boolean"
           }
         },
         "title": "FitRequest",
@@ -315,6 +547,64 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LogLogRequest": {
+        "properties": {
+          "compare": {
+            "default": false,
+            "title": "Compare",
+            "type": "boolean"
+          },
+          "con": {
+            "default": 1.0,
+            "description": "added to every richness when an island has none",
+            "title": "Con",
+            "type": "number"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Data"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "enum": [
+                  "galap",
+                  "gala",
+                  "aegean",
+                  "aegean2",
+                  "niering",
+                  "schrader",
+                  "xu"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "a bundled dataset (GET /v1/datasets)",
+            "title": "Dataset"
+          },
+          "log_base": {
+            "default": "e",
+            "enum": [
+              "e",
+              "2",
+              "10"
+            ],
+            "title": "Log Base",
+            "type": "string"
+          }
+        },
+        "title": "LogLogRequest",
         "type": "object"
       },
       "LossRequest": {
@@ -456,6 +746,93 @@
         "title": "LossRequest",
         "type": "object"
       },
+      "ManyRequest": {
+        "description": "Many datasets: inline arrays by name, or bundled datasets' names.",
+        "properties": {
+          "bundled": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "galap",
+                    "gala",
+                    "aegean",
+                    "aegean2",
+                    "niering",
+                    "schrader",
+                    "xu"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 1000,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bundled"
+          },
+          "datasets": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/Data"
+                },
+                "maxProperties": 1000,
+                "propertyNames": {
+                  "maxLength": 100,
+                  "minLength": 1
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datasets"
+          },
+          "ic": {
+            "default": "AICc",
+            "enum": [
+              "AICc",
+              "AIC",
+              "BIC"
+            ],
+            "title": "Ic",
+            "type": "string"
+          },
+          "models": {
+            "default": [
+              "all"
+            ],
+            "items": {
+              "maxLength": 32,
+              "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Models",
+            "type": "array"
+          },
+          "n_jobs": {
+            "default": 1,
+            "description": "processes; -1: the server's limit",
+            "maximum": 64.0,
+            "minimum": -1.0,
+            "title": "N Jobs",
+            "type": "integer"
+          },
+          "threshold": {
+            "default": true,
+            "title": "Threshold",
+            "type": "boolean"
+          }
+        },
+        "title": "ManyRequest",
+        "type": "object"
+      },
       "PredictRequest": {
         "properties": {
           "areas": {
@@ -483,6 +860,17 @@
       },
       "ThresholdRequest": {
         "properties": {
+          "ci": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BreakpointCI"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "intervals for the breakpoints"
+          },
           "data": {
             "anyOf": [
               {
@@ -596,7 +984,7 @@
     }
   },
   "info": {
-    "description": "Each endpoint runs one `sars` command (see the command line documentation) and returns its JSON envelope: `{sars, command, ok, result | error, warnings}`. A failed command returns 422 with `ok: false`.",
+    "description": "Each endpoint runs one of the library's operations, the same ones the command line runs, and returns its JSON envelope: `{sars, command, ok, result | error, warnings}`. A request the operation refuses returns 422 with `ok: false`.",
     "summary": "Species-area relationship models over HTTP",
     "title": "sars",
     "version": "v1"
@@ -605,7 +993,7 @@
   "paths": {
     "/v1/average": {
       "post": {
-        "description": "The model average (`sars average`).",
+        "description": "The model average (as `sars average`).",
         "operationId": "average_v1_average_post",
         "parameters": [
           {
@@ -661,9 +1049,67 @@
         ]
       }
     },
+    "/v1/ci": {
+      "post": {
+        "description": "Bootstrap intervals on the model-averaged curve (as `sars ci`).",
+        "operationId": "ci_v1_ci_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CIRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ci",
+        "tags": [
+          "models"
+        ]
+      }
+    },
     "/v1/cv": {
       "post": {
-        "description": "Leave-one-island-out cross-validation (`sars cv`).",
+        "description": "Leave-one-island-out cross-validation (as `sars cv`).",
         "operationId": "cv_v1_cv_post",
         "parameters": [
           {
@@ -721,7 +1167,7 @@
     },
     "/v1/datasets": {
       "get": {
-        "description": "The bundled datasets (`sars datasets`).",
+        "description": "The bundled datasets (as `sars datasets`).",
         "operationId": "datasets_v1_datasets_get",
         "parameters": [
           {
@@ -769,7 +1215,7 @@
     },
     "/v1/fit": {
       "post": {
-        "description": "Fit one model, or several ranked by AICc (`sars fit`).",
+        "description": "Fit one model, or several ranked by AICc (as `sars fit`).",
         "operationId": "fit_v1_fit_post",
         "parameters": [
           {
@@ -825,9 +1271,67 @@
         ]
       }
     },
+    "/v1/loglog": {
+      "post": {
+        "description": "The log-log power model, by least squares (as `sars loglog`).",
+        "operationId": "loglog_v1_loglog_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogLogRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Loglog",
+        "tags": [
+          "models"
+        ]
+      }
+    },
     "/v1/loss": {
       "post": {
-        "description": "Species expected to be lost with habitat (`sars loss`).",
+        "description": "Species expected to be lost with habitat (as `sars loss`).",
         "operationId": "loss_v1_loss_post",
         "parameters": [
           {
@@ -883,9 +1387,67 @@
         ]
       }
     },
+    "/v1/many": {
+      "post": {
+        "description": "The same models on many datasets, in one table (as `sars many`).",
+        "operationId": "many_v1_many_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Many",
+        "tags": [
+          "models"
+        ]
+      }
+    },
     "/v1/predict": {
       "post": {
-        "description": "Predictions from a saved result (`sars predict`).",
+        "description": "Predictions from a saved result (as `sars predict`).",
         "operationId": "predict_v1_predict_post",
         "parameters": [
           {
@@ -943,7 +1505,7 @@
     },
     "/v1/threshold": {
       "post": {
-        "description": "Piecewise (threshold) models (`sars threshold`).",
+        "description": "Piecewise (threshold) models (as `sars threshold`).",
         "operationId": "threshold_v1_threshold_post",
         "parameters": [
           {

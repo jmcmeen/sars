@@ -288,13 +288,13 @@ class TestAverageOfNoModels:
         real = _inference._sar_multi
         calls = {"n": 0}
 
-        def multi(data, models, checks, stacklevel, warn=True):
+        def multi(data, models, checks, stacklevel, warn=True, **fitting):
             calls["n"] += 1
             if calls["n"] % 2 == 0:
                 return _inference.MultiSARFit(
                     fits=[], data=data, summary=_inference._build_summary([])
                 )
-            return real(data, models, checks, stacklevel, warn=warn)
+            return real(data, models, checks, stacklevel, warn=warn, **fitting)
 
         monkeypatch.setattr(_inference, "_sar_multi", multi)
         with pytest.warns(UserWarning, match="dropped"):

@@ -12,6 +12,7 @@ except PackageNotFoundError:
     __version__ = "0.0.0.dev0"
 
 from sars._batched import get_backend, set_backend
+from sars._bayes import BayesLinPowFit, lin_pow_bayes
 from sars._checks import ResidualChecks
 from sars._coleman import ColemanFit, ColemanTest, coleman
 from sars._crossval import LOOCV, loo_cv
@@ -99,6 +100,7 @@ __all__ = [
     "LOOCV",
     "ManySARFit",
     "MixedLinPowFit",
+    "BayesLinPowFit",
     "MultiSARFit",
     "ResidualChecks",
     "SARFit",
@@ -117,6 +119,7 @@ __all__ = [
     "habitat_loss",
     "lin_pow",
     "lin_pow_mixed",
+    "lin_pow_bayes",
     "load",
     "load_aegean",
     "load_aegean2",

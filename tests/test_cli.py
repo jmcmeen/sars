@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 import numpy as np
+import pandas as pd
 import pytest
 
 import sars
@@ -285,6 +286,189 @@ def test_loss(capsys):
         capsys, "loss", "gala", "--area", "900", "--remaining", "450", "--fraction-lost", "0.5"
     )
     assert code == 2 and "not allowed with" in err
+
+
+def test_the_backend_is_chosen_and_recorded(capsys, monkeypatch):
+    code, envelope = run_json(capsys, "fit", "galap")
+    assert code == 0 and envelope["backend"] == "numpy"
+    chosen = []
+
+    def refuse(name):
+        chosen.append(name)
+        raise ImportError("no GPU here")
+
+    monkeypatch.setattr(sars, "set_backend", refuse)
+    code, envelope = run_json(capsys, "--backend", "cupy", "fit", "galap")
+    assert code == 1 and chosen == ["cupy"] and envelope["error"]["message"] == "no GPU here"
+    monkeypatch.setenv("SARS_BACKEND", "cupy")
+    code, out, err = run(capsys, "fit", "galap")
+    assert code == 1 and "no GPU here" in err
+    code, out, err = run(capsys, "serve")  # serve has no --json
+    assert code == 1 and "no GPU here" in err
+
+
+def test_a_bad_backend_in_the_environment_is_reported(capsys, monkeypatch):
+    monkeypatch.setenv("SARS_BACKEND", "CUPY")
+    code, envelope = run_json(capsys, "datasets")
+    assert code == 1 and "backend must be one of" in envelope["error"]["message"]
+
+
+def test_threshold_ci(capsys):
+    argv = ["threshold", "gala", "--ci", "--n-boot", "40", "--seed", "1"]
+    code, envelope = run_json(capsys, *argv)
+    ci = envelope["result"]["summary"]["ci"]
+    fit = sars.sar_threshold(sars.load_gala())
+    expected = sars.threshold_ci(fit, n_boot=40, rng=np.random.default_rng(1))
+    assert code == 0 and ci["model"] == fit.best_model == "ZslopeOne"
+    row = ci["breakpoints"][0]
+    assert row["lower_area"] == pytest.approx(expected.lower_area[0])
+    assert row["lower_area"] < row["estimate_area"] < row["upper_area"]
+    code, out, _ = run(capsys, "threshold", "gala", "--ci", "--ci-method", "F")
+    assert code == 0 and "ZslopeOne breakpoints, 95% intervals (inverted F test)" in out
+    code, envelope = run_json(capsys, "threshold", "galap", "--ci", "--n-boot", "10")
+    assert code == 1 and "Linear, has no breakpoint" in envelope["error"]["message"]
+    code, envelope = run_json(capsys, "threshold", "gala", "--ci", "--ci-model", "Linear")
+    assert code == 1 and envelope["error"]["message"].startswith("Linear has no breakpoint")
+
+
+def test_fit_params(capsys):
+    code, envelope = run_json(capsys, "fit", "galap", "-m", "negexpo,power", "--params")
+    tables = envelope["result"]["summary"]["parameters"]
+    expected = sars.sar_negexpo(sars.load_galap()).param_table()
+    assert code == 0 and set(tables) == {"negexpo", "power"}
+    rows = {row["parameter"]: row for row in tables["negexpo"]}
+    assert rows["d"]["std_error"] == pytest.approx(expected.loc["d", "std_error"])
+    code, out, _ = run(capsys, "fit", "galap", "--params", "--conf", "0.9")
+    assert code == 0 and "power: parameters, 90% intervals" in out and "ci_lower" in out
+    code, envelope = run_json(capsys, "fit", "galap", "--params", "--conf", "1.5")
+    assert code == 1 and "between 0 and 1" in envelope["error"]["message"]
+    code, envelope = run_json(capsys, "fit", "galap", "--conf", "0.9")
+    assert code == 1 and "give --params too" in envelope["error"]["message"]
+
+
+def test_parameters_the_data_dont_identify_show_nan(capsys, monkeypatch):
+    from sars import _operations
+
+    def unidentified(obj, conf=0.95):
+        row = {"parameter": "z", "estimate": 0.3, "std_error": None, "t_value": None}
+        return {"power": [{**row, "p_value": None, "ci_lower": None, "ci_upper": None}]}
+
+    monkeypatch.setattr(_operations, "parameters", unidentified)
+    code, out, _ = run(capsys, "fit", "galap", "--params")
+    assert code == 0 and "NaN" in out.split("parameters, 95% intervals")[1]
+
+
+def test_a_bad_level_saves_nothing(capsys, tmp_path):
+    saved = tmp_path / "fit.json"
+    code, _ = run_json(capsys, "fit", "galap", "--params", "--conf", "95", "--save", str(saved))
+    assert code == 1 and not saved.exists()
+
+
+def test_many(capsys, tmp_path):
+    code, envelope = run_json(capsys, "many", "galap", "gala", "-m", "power,loga", "--no-threshold")
+    rows = envelope["result"]["summary"]["datasets"]
+    assert code == 0 and [r["dataset"] for r in rows] == ["galap", "gala"]
+    expected = sars.sar_many(
+        {"galap": sars.load_galap(), "gala": sars.load_gala()},
+        models=["power", "loga"],
+        threshold=False,
+    )
+    assert rows[0]["z"] == pytest.approx(expected.summary["z"].iloc[0])
+    long = pd.concat(
+        [sars.load_galap().assign(group="a"), sars.load_gala().assign(group="b")]
+    ).rename(columns={"area": "A", "species": "S"})
+    path = tmp_path / "long.csv"
+    long.to_csv(path, index=False)
+    argv = ["many", str(path), "--by", "group", "--area-col", "A", "--species-col", "S"]
+    code, envelope = run_json(capsys, *argv, "-m", "power", "--no-threshold")
+    rows = envelope["result"]["summary"]["datasets"]
+    assert code == 0 and [r["dataset"] for r in rows] == ["a", "b"]
+    code, out, _ = run(capsys, *argv, "-m", "power", "--no-threshold")
+    assert code == 0 and out.split()[0] == "dataset"
+    code, envelope = run_json(capsys, "many", "galap")
+    assert code == 1 and "two or more" in envelope["error"]["message"]
+    # Files sharing a name each get one of their own, never another's.
+    for folder in ("a", "b"):
+        (tmp_path / folder).mkdir()
+        sars.load_galap().to_csv(tmp_path / folder / "x.csv", index=False)
+    sars.load_gala().to_csv(tmp_path / "x_2.csv", index=False)
+    files = [
+        str(tmp_path / "x_2.csv"),
+        str(tmp_path / "a" / "x.csv"),
+        str(tmp_path / "b" / "x.csv"),
+    ]
+    code, envelope = run_json(capsys, "many", *files, "-m", "power", "--no-threshold")
+    names = [r["dataset"] for r in envelope["result"]["summary"]["datasets"]]
+    assert code == 0 and len(set(names)) == 3
+    code, envelope = run_json(capsys, "many", str(path), "--by", "nope")
+    assert code == 1 and "No column 'nope'" in envelope["error"]["message"]
+
+
+def test_loglog(capsys):
+    code, envelope = run_json(capsys, "loglog", "galap", "--compare")
+    summary = envelope["result"]["summary"]
+    expected = sars.lin_pow(sars.load_galap())
+    assert code == 0 and summary["type"] == "LinPowFit"
+    assert summary["z"] == pytest.approx(expected.z) and summary["z_se"] == pytest.approx(
+        expected.z_se
+    )
+    assert summary["power"]["params"]["z"] == pytest.approx(
+        sars.sar_power(sars.load_galap()).params["z"]
+    )
+    code, out, _ = run(capsys, "loglog", "galap", "--log-base", "10")
+    assert code == 0 and out.startswith("log10 S = log10 c + z log10 A")
+    assert out.count("t = ") == 2  # the intercept's t test and the slope's
+
+
+def test_loglog_on_an_exact_line_shows_an_infinite_t(capsys, tmp_path):
+    path = tmp_path / "exact.csv"
+    path.write_text("area,species\n1,10\n10,20\n100,40\n1000,80\n")
+    code, out, _ = run(capsys, "loglog", str(path))
+    assert code == 0 and "t = inf" in out
+
+
+def test_ci(capsys):
+    argv = ["ci", "galap", "--area", "1", "100", "-m", "power", "--n-boot", "40", "--seed", "2"]
+    code, envelope = run_json(capsys, *argv)
+    summary = envelope["result"]["summary"]
+    expected = sars.bootstrap_ci(
+        sars.load_galap(),
+        models=["power"],
+        n_boot=40,
+        area_grid=np.array([1.0, 100.0]),
+        rng=np.random.default_rng(2),
+    )
+    assert code == 0 and summary["type"] == "BootstrappedCI" and summary["n_boot"] == 40
+    assert [row["lower"] for row in summary["intervals"]] == pytest.approx(list(expected.lower))
+    assert [row["upper"] for row in summary["intervals"]] == pytest.approx(list(expected.upper))
+    code, out, _ = run(capsys, *argv)
+    assert code == 0 and out.startswith("Model-averaged richness, 95% bootstrap intervals")
+    code, envelope = run_json(capsys, "ci", "galap", "-m", "power", "--n-boot", "10")
+    assert len(envelope["result"]["summary"]["intervals"]) == 10  # the default areas
+    code, envelope = run_json(capsys, "ci", "galap", "--area", "-1", "--n-boot", "10")
+    assert code == 1 and "positive" in envelope["error"]["message"]
+    for bad, message in [("--n-boot=0", "at least 1"), ("--conf=95", "between 0 and 1")]:
+        code, envelope = run_json(capsys, "ci", "galap", bad)
+        assert code == 1 and message in envelope["error"]["message"]
+
+
+def test_a_bootstrap_too_big_to_hold_is_refused(capsys, monkeypatch):
+    from sars import _operations
+
+    monkeypatch.setattr(_operations, "MAX_RESAMPLE_VALUES", 1000)
+    code, envelope = run_json(capsys, "ci", "galap", "--n-boot", "100")
+    assert code == 1 and "fewer resamples" in envelope["error"]["message"]
+    code, envelope = run_json(
+        capsys, "loss", "galap", "--area", "100", "--fraction-lost", "0.5", "--n-boot", "100"
+    )
+    assert code == 1 and "fewer resamples" in envelope["error"]["message"]
+
+
+def test_ci_checks_the_data_first(capsys, tmp_path):
+    path = tmp_path / "zero.csv"
+    path.write_text("area,species\n0,3\n2,5\n4,8\n")
+    code, envelope = run_json(capsys, "ci", str(path), "--n-boot", "5")
+    assert code == 1 and "positive" in envelope["error"]["message"]
 
 
 def test_cv_labels_islands_by_a_named_column(capsys, tmp_path):

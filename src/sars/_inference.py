@@ -11,14 +11,16 @@ import pandas as pd
 
 from sars._checks import CheckOptions
 from sars._models import (
+    _MODEL_REGISTRY,
     SARFit,
     _area_grid,
     _fit_nls,
     _model_spec,
+    _screen_many,
     _validate_data,
     rss_floor,
 )
-from sars._parallel import map_in_order, n_workers
+from sars._parallel import chunks, map_in_order, n_workers
 
 # All 20 model names in canonical order
 ALL_MODEL_NAMES: list[str] = [
@@ -267,10 +269,13 @@ def _sar_multi(
     checks: CheckOptions,
     stacklevel: int,
     warn: bool = True,
+    prescreened: dict[str, tuple[np.ndarray, np.ndarray] | None] | None = None,
+    quick_polish: bool = False,
 ) -> MultiSARFit:
     """``sar_multi``, with its warnings aimed ``stacklevel`` frames up so they
     point at the user's call whichever public function made it. ``warn=False``
-    keeps a bootstrap resample from repeating them once per resample."""
+    keeps a bootstrap resample from repeating them once per resample;
+    ``prescreened`` and ``quick_polish`` go to ``_fit_nls`` (the bootstrap's)."""
     # Validate once up front so bad input raises here. The per-model
     # except below is only for errors raised while fitting.
     _validate_data(data)
@@ -285,7 +290,12 @@ def _sar_multi(
     for name in model_names:
         _model_spec(name)  # an unknown name raises
         try:
-            fit = _fit_nls(name, data)
+            fit = _fit_nls(
+                name,
+                data,
+                prescreened=(prescreened or {}).get(name),
+                quick_polish=quick_polish,
+            )
         except ValueError as exc:
             not_fitted[name] = _unfitted_reason(exc)
             continue
@@ -724,10 +734,14 @@ def _bootstrap_resample(
     models: str | list[str],
     ic: str,
     area_grid: np.ndarray,
+    prescreened: dict[str, tuple[np.ndarray, np.ndarray] | None] | None = None,
 ) -> _ResampleOutcome:
     """Fit and predict one bootstrap resample (``bootstrap_ci``'s loop body).
 
-    Module level, and free of shared state, so it can run in a worker process.
+    The "full" method's fits are polished at the solver's default tolerances:
+    a resample needs the fit, not its last digits, and the tight polish was
+    most of a resample's time. ``prescreened`` holds its models' start-grid
+    screens, run for many resamples at once (``_bootstrap_chunk``).
     """
     boot_data = data.iloc[idx].reset_index(drop=True)
     not_fitted: tuple[str, ...] | None = None
@@ -739,7 +753,15 @@ def _bootstrap_resample(
                 assert warm_starts is not None  # set for the fast method
                 multi = _sar_multi_fast(boot_data, warm_starts)
             else:
-                multi = _sar_multi(boot_data, models, CheckOptions(), 2, warn=False)
+                multi = _sar_multi(
+                    boot_data,
+                    models,
+                    CheckOptions(),
+                    2,
+                    warn=False,
+                    prescreened=prescreened,
+                    quick_polish=True,
+                )
                 not_fitted = tuple(multi.not_fitted)
             if not multi.fits:
                 return _ResampleOutcome(dropped="no model converged", not_fitted=not_fitted)
@@ -751,6 +773,49 @@ def _bootstrap_resample(
     if not np.all(np.isfinite(pred)):
         return _ResampleOutcome(dropped="prediction not finite", not_fitted=not_fitted)
     return _ResampleOutcome(pred=pred, n_converged=len(multi.fits), not_fitted=not_fitted)
+
+
+def _bootstrap_chunk(
+    resamples: np.ndarray,
+    data: pd.DataFrame,
+    method: str,
+    warm_starts: dict[str, dict[str, float]] | None,
+    models: str | list[str],
+    ic: str,
+    area_grid: np.ndarray,
+) -> list[_ResampleOutcome]:
+    """Fit and predict a chunk of resamples (rows of indices), in order.
+
+    For the "full" method each model's start grid (but epm1's and epm2's) is
+    screened on every resample of the chunk in one batch (``_screen_many``);
+    each resample's fits
+    then go on from its own screen, as they would alone. Module level, so it
+    can run in a worker process.
+    """
+    screens: dict[str, list[tuple[np.ndarray, np.ndarray] | None]] = {}
+    if method != "fast":
+        datasets = [data.iloc[idx].reset_index(drop=True) for idx in resamples]
+        names = ALL_MODEL_NAMES if models == "all" else list(dict.fromkeys(models))
+        for name in names:
+            if name in _MODEL_REGISTRY:  # an unknown name fails in the resample, as before
+                screens[name] = _screen_many(name, datasets)
+    return [
+        _bootstrap_resample(
+            idx,
+            data,
+            method,
+            warm_starts,
+            models,
+            ic,
+            area_grid,
+            prescreened={name: found[i] for name, found in screens.items()},
+        )
+        for i, idx in enumerate(resamples)
+    ]
+
+
+# Most resamples in one chunk, so one batch's arrays stay a modest size.
+_CHUNK_RESAMPLES = 256
 
 
 def bootstrap_ci(
@@ -805,8 +870,12 @@ def bootstrap_ci(
         Bootstrap fitting strategy. ``"fast"`` (default) fits all models once
         on the original data with full grid search, then uses those converged
         parameters as warm starts for each resample (~2000x faster).
-        ``"full"`` runs the complete grid search on every resample (slow but
-        maximally robust).
+        ``"full"`` runs the complete grid search on every resample (slower but
+        maximally robust): each model's start grid is screened for many
+        resamples at once (but epm1's and epm2's, fitted on each resample's
+        own area scale), and each resample's fits are polished at the
+        solver's default tolerances (a resample needs the fit, not its last
+        digits).
     ic : str
         Information criterion for weighting: ``"AICc"`` (default), ``"AIC"``,
         or ``"BIC"``.
@@ -929,7 +998,11 @@ def bootstrap_ci(
 
     # Every resample's rows are drawn here, in order, so the interval doesn't
     # depend on n_jobs: the fits can run anywhere and come back in this order.
-    resamples = [rng.integers(0, n, size=n) for _ in range(n_boot)]
+    # Filled row by row, the same draws as one call per resample, without a
+    # second copy of them all.
+    resamples = np.empty((n_boot, n), dtype=np.int64)
+    for row in resamples:
+        row[:] = rng.integers(0, n, size=n)
     shared = {
         "data": data,
         "method": method,
@@ -938,7 +1011,12 @@ def bootstrap_ci(
         "ic": ic,
         "area_grid": area_grid,
     }
-    for result in map_in_order(_bootstrap_resample, resamples, n_jobs, shared):
+    # Chunks of resamples, a few per worker process, each fitted as a batch.
+    n_chunks = max(
+        n_workers(n_jobs) * 4 if n_workers(n_jobs) > 1 else 1, -(-n_boot // _CHUNK_RESAMPLES)
+    )
+    outcomes = map_in_order(_bootstrap_chunk, chunks(resamples, n_chunks), n_jobs, shared)
+    for result in (outcome for chunk in outcomes for outcome in chunk):
         if result.not_fitted is not None:  # the "full" method's multi-model fit ran
             unfitted_in.update(result.not_fitted)
             n_full_fitted += 1

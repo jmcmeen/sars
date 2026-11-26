@@ -10,6 +10,90 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- `lin_pow_bayes` (the new `bayes` extra, PyMC): the hierarchical log-log
+  model of `lin_pow_mixed`, fitted by Bayesian sampling, with posterior
+  summaries for the group's mean intercept and slope, their spread and
+  correlation, and every archipelago's curve, convergence diagnostics, and
+  the full posterior for ArviZ.
+- A primer on species-area relationships in the documentation, for readers
+  new to them: what a SAR is, the power model and its two fits, shapes,
+  choosing among models, uncertainty, thresholds, habitat loss and its
+  cautions, sampling effort, and models beyond area.
+- `examples/cli/`: six commented shell scripts of command-line workflows on
+  the bundled data, run by the tests.
+- `sars --backend numpy|cupy` (or `SARS_BACKEND`) chooses the array library
+  for the start-grid screens, and `sars serve` passes it to every request
+  (`ServerConfig.backend`); every envelope records the backend used.
+- `sars threshold --ci` (and `ci` on `POST /v1/threshold`): confidence
+  intervals for the chosen model's breakpoints, by residual bootstrap or
+  inverted F test.
+- `sars fit --params` (and `"params": true` on `POST /v1/fit`): each fitted
+  model's parameter table, with standard errors, t tests and confidence
+  intervals at `--conf`.
+- `sars many`: the same models on several datasets (CSVs or bundled names),
+  or on one long table split by `--by COLUMN`, summarized in one table, and
+  `POST /v1/many`.
+- `sars loglog`: the log-log power model by least squares (`lin_pow`), with
+  standard errors, t tests and p values, and `POST /v1/loglog`.
+- `sars ci`: the model-averaged richness at given areas (ten spread over the
+  data's range by default), with bootstrap intervals, by the fast or full
+  method; and the same as `POST /v1/ci` on the HTTP server.
+
+### Changed
+
+- The HTTP server no longer runs the command line. Each command's work is
+  now an operation in the library that both front ends call: the CLI reads
+  its arguments and files, calls it and prints; the server validates a
+  request, runs the same operation in a worker process with the same time
+  limit (stopping it and its workers when time runs out), and returns the
+  same envelope. The endpoints and request bodies are unchanged. An
+  envelope's error type for a bad input is now `InputError` (it was
+  `CLIError`). `python -m sars` no longer reruns the command in worker
+  processes started by spawn.
+
+- With the cupy backend, a fit hands the GPU memory it used back to the
+  device when its start-grid screen finishes. CuPy's pool had kept every
+  freed block for reuse, so a run of many fits held the most any of them
+  needed (2.2 GiB after all 20 models on 169,000 samples, where one screen
+  needs at most 1.3 GiB), shown as in use and unavailable to other
+  programs. Fits take the same time.
+
+- The full bootstrap is about 2.3 times faster (20 resamples of galap in
+  9.9 s instead of 23 s; 12 times faster than 0.11.10). Each model's start grid
+  (all but epm1's and epm2's, which are fitted on each resample's own area
+  scale) is screened for many resamples in one batch, each resample getting
+  exactly the screen it would get alone, and each resample's fits are
+  polished at the solver's default tolerances rather than tight ones: the
+  tight polish was three quarters of a resample's time, and changed no
+  resample's AICc by more than a few parts in ten million. `n_jobs` gives
+  each worker process chunks of resamples to batch.
+
+### Fixed
+
+- The README lists the `gpu` extra, groups its features (fitting, comparing
+  models, applications, using it), and shows the command line beside the
+  Python quick start.
+- The models page gave too many starting points for loga, linear (25, not
+  at least 36), powerR and asymp (80, not at least 100), described fitting
+  as scipy alone (the start grid is screened in one batch, then polished),
+  and left out the other ways a fit fails; it now says which parameters are
+  fitted positive, that ln is the natural log, and where epm1's z bound
+  applies.
+
+- epm1 and epm2 could miss their least-squares optimum on large areas.
+  Both were fitted in the data's own area units, where their parameters
+  are badly scaled and strongly correlated once areas reach thousands of
+  km², and the optimum can lie far from every starting value: on a table of
+  169,000 samples with areas of 17,000 to 315,000 km², epm1 ended at AICc
+  1,017,688 after 26 minutes, where its optimum is at 974,112 (z = 1.3e-64,
+  d = -11.4). They're now fitted on the rescaled area, like the other
+  models, in parameters that keep the model exact (the richness and the
+  exponent at the mean area), and the parameters reported are in the data's
+  units as before. epm1 finds that optimum in about a minute. Every epm1 and
+  epm2 fit on the bundled datasets is unchanged.
+
 ## [0.11.11] - 2026-11-23
 
 ### Added

@@ -1,23 +1,21 @@
-"""The HTTP API: each request runs the ``sars`` command line and returns its JSON.
+"""The HTTP API: each request runs one of the library's operations and
+returns its JSON envelope.
 
-The command line is the contract (see `sars.cli`): every endpoint builds the
-argv of one ``sars`` command, runs ``python -m sars ... --json`` in a
-subprocess with a time limit, and returns the envelope it printed. Nothing is
-evaluated, no shell runs, and data reach the command as a CSV file in a fresh
-temporary directory.
+The operations (``sars._operations``) are the ones the command line runs; the
+two front ends share them and nothing else. Each request runs its operation in
+a fresh worker process (``python -m sars._server_worker``, through
+``sars._server_handlers``) with a time limit: the request's values reach it as
+JSON data, nothing is evaluated and no shell runs.
 """
 
 from __future__ import annotations
 
-import csv
 import hmac
-import io
 import json
 import os
 import signal
 import subprocess
 import sys
-import tempfile
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -35,20 +33,18 @@ MAX_MODELS = 50
 MAX_JOBS = 64
 
 IC = Literal["AICc", "AIC", "BIC"]
-# The bundled datasets (sars.cli.DATASETS; a test keeps the two the same).
+# The bundled datasets (sars._operations.DATASETS; a test keeps the two the same).
 Dataset = Literal["galap", "gala", "aegean", "aegean2", "niering", "schrader", "xu"]
 # A model name: letters and digits only, so it can't be read as a flag.
 ModelName = Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9]*$", max_length=32)]
 Models = Annotated[list[ModelName], Field(min_length=1, max_length=MAX_MODELS)]
 Jobs = Annotated[int, Field(ge=-1, le=MAX_JOBS, description="processes; -1: the server's limit")]
 Numbers = Annotated[list[float], Field(min_length=1, max_length=MAX_SCENARIOS)]
-# The error types the command line reports for a bad request; any other means a bug.
-_CLIENT_ERRORS = {"CLIError", "UsageError", "ValueError", "KeyError", "RuntimeError", "OSError"}
 
 
 @dataclass(frozen=True)
 class ServerConfig:
-    """How the server runs commands.
+    """How the server runs requests.
 
     Attributes
     ----------
@@ -56,15 +52,19 @@ class ServerConfig:
         If set, every request but ``/v1/version`` needs the header
         ``Authorization: Bearer <token>``.
     timeout : float
-        Seconds a command may run before it is stopped, with any worker
+        Seconds a request may run before it is stopped, with any worker
         processes it started.
     python : str
-        The interpreter that runs ``-m sars`` (this one by default).
+        The interpreter that runs each request's worker,
+        ``-m sars._server_worker`` (this one by default).
     max_jobs : int
         The most processes one request's ``n_jobs`` may use (this machine's
         cores by default; -1 in a request means this many).
     max_concurrent : int
-        How many commands run at once; further requests wait.
+        How many requests run at once; further requests wait.
+    backend : {"numpy", "cupy"}
+        The array library each request's start-grid screens run on (see
+        ``sars.set_backend``); "cupy" is checked when the app is created.
     """
 
     token: str | None = None
@@ -72,6 +72,7 @@ class ServerConfig:
     python: str = sys.executable
     max_jobs: int = field(default_factory=lambda: os.cpu_count() or 1)
     max_concurrent: int = 4
+    backend: str = "numpy"
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +121,8 @@ class Checks(BaseModel):
 
 class FitRequest(DataRequest, Checks):
     models: Models = Field(default=["power"], description='one model, several, or ["all"]')
+    params: bool = Field(default=False, description="add each model's parameter table")
+    conf: float = Field(default=0.95, gt=0, lt=1, description="the parameter tables' level")
 
 
 class AverageRequest(DataRequest, Checks):
@@ -127,10 +130,20 @@ class AverageRequest(DataRequest, Checks):
     ic: IC = "AICc"
 
 
+class BreakpointCI(BaseModel):
+    model: ModelName | None = Field(default=None, description="default: the chosen model")
+    method: Literal["boot", "F"] = "boot"
+    n_boot: int = Field(default=1000, ge=1, le=100_000)
+    conf: float = Field(default=0.95, gt=0, lt=1)
+    seed: int | None = None
+    n_jobs: Jobs = 1
+
+
 class ThresholdRequest(DataRequest):
     models: Models | None = Field(default=None, description="default: ContOne, ZslopeOne, Linear")
     interval: float | None = None
     log_area: bool = True
+    ci: BreakpointCI | None = Field(default=None, description="intervals for the breakpoints")
 
 
 class CVRequest(DataRequest):
@@ -158,6 +171,51 @@ class LossRequest(DataRequest):
         return self
 
 
+DatasetName = Annotated[str, Field(min_length=1, max_length=100)]
+MAX_DATASETS = 1_000
+
+
+class ManyRequest(BaseModel):
+    """Many datasets: inline arrays by name, or bundled datasets' names."""
+
+    datasets: dict[DatasetName, Data] | None = Field(default=None, max_length=MAX_DATASETS)
+    bundled: list[Dataset] | None = Field(default=None, max_length=MAX_DATASETS)
+    models: Models = Field(default=["all"])
+    ic: IC = "AICc"
+    threshold: bool = True
+    n_jobs: Jobs = 1
+
+    @model_validator(mode="after")
+    def _one_source(self) -> ManyRequest:
+        given = [d for d in (self.datasets, self.bundled) if d is not None]
+        if len(given) != 1:
+            raise ValueError("give exactly one of datasets and bundled")
+        if len(given[0]) < 2:
+            raise ValueError("give two or more datasets")
+        if self.bundled is not None and len(set(self.bundled)) != len(self.bundled):
+            raise ValueError("give each bundled dataset once")
+        return self
+
+
+class LogLogRequest(DataRequest):
+    log_base: Literal["e", "2", "10"] = "e"
+    con: float = Field(default=1.0, description="added to every richness when an island has none")
+    compare: bool = False
+
+
+class CIRequest(DataRequest, Checks):
+    areas: Numbers | None = Field(
+        default=None, description="areas to predict at (default: ten over the data's range)"
+    )
+    models: Models = Field(default=["all"])
+    ic: IC = "AICc"
+    method: Literal["fast", "full"] = "fast"
+    n_boot: int = Field(default=1000, ge=1, le=100_000)
+    conf: float = Field(default=0.95, gt=0, lt=1)
+    seed: int | None = None
+    n_jobs: Jobs = 1
+
+
 class PredictRequest(BaseModel):
     result: dict[str, Any] = Field(
         description="a result saved by --save, or an envelope's result.object"
@@ -166,102 +224,116 @@ class PredictRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Running the command line
+# Running a request
 # ---------------------------------------------------------------------------
 
 
-def _run(config: ServerConfig, argv: list[str], workdir: Path) -> JSONResponse:
-    """Run ``sars <argv> --json`` and return its envelope: 200 when the
-    command succeeded; 422 when the request was at fault (arguments it
-    couldn't parse, an unknown model, data it couldn't fit); 500 when the
-    command failed some other way or printed no envelope; 504 when it ran out
-    of time, after which it and any worker processes it started are stopped."""
-    # -P: the work directory, the child's cwd, isn't put on sys.path.
-    command = [config.python, "-P", "-m", "sars", *argv, "--json"]
+def _status(envelope: dict[str, Any]) -> int:
+    """200 when the operation succeeded; 422 when the request was at fault (an
+    unknown model, data it couldn't fit); 500 for any other failure (a bug)."""
+    from sars._operations import INPUT_ERROR_NAMES
+
+    if envelope.get("ok"):
+        return 200
+    return 422 if (envelope.get("error") or {}).get("type") in INPUT_ERROR_NAMES else 500
+
+
+def _execute(
+    config: ServerConfig,
+    command: str,
+    target: str,
+    kwargs: dict[str, Any],
+    handlers: str = "sars._server_handlers",
+) -> JSONResponse:
+    """Run one request's handler (``handlers.target``) in a worker process,
+    ``python -m sars._server_worker``, and return its envelope (see
+    ``_status``): 500 if the worker printed none, 504 if it ran out of time,
+    after which it and any processes it started are stopped. ``handlers`` is
+    chosen by the server (tests give stand-ins), never by a request."""
+    request = json.dumps(
+        {
+            "command": command,
+            "handlers": handlers,
+            "target": target,
+            "kwargs": kwargs,
+            "backend": config.backend,
+        }
+    )
+    # -P: the working directory isn't put on sys.path. The worker's own
+    # environment: without the token.
     env = {k: v for k, v in os.environ.items() if k != "SARS_SERVER_TOKEN"}
     env["PYTHONWARNINGS"] = "default"
     posix = os.name == "posix"
     with subprocess.Popen(
-        command,
-        cwd=workdir,
+        [config.python, "-P", "-m", "sars._server_worker"],
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         env=env,
         start_new_session=posix,  # its own process group, with its workers
-    ) as proc:
+    ) as worker:
         try:
-            stdout, stderr = proc.communicate(timeout=config.timeout)
+            stdout, stderr = worker.communicate(request, timeout=config.timeout)
         except subprocess.TimeoutExpired:
-            if posix:
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-            else:  # pragma: no cover - Windows: the child only
-                proc.kill()
-            proc.communicate()
+            _stop(worker, posix)
+            worker.communicate()
             raise HTTPException(
-                504, f"The command took longer than {config.timeout:g} s and was stopped."
+                504, f"The request took longer than {config.timeout:g} s and was stopped."
             ) from None
     try:
         envelope = json.loads(stdout)
     except json.JSONDecodeError:
         tail = (stderr or stdout).strip().splitlines()[-1:] or ["no output"]
-        raise HTTPException(500, f"The command printed no envelope: {tail[0]}") from None
-    if envelope.get("ok"):
-        status = 200
-    else:
-        kind = (envelope.get("error") or {}).get("type")
-        status = 422 if kind in _CLIENT_ERRORS else 500
-    return JSONResponse(envelope, status_code=status)
+        raise HTTPException(
+            500,
+            f"The request's worker ended without a result (exit code {worker.returncode}): "
+            f"{tail[0]}",
+        ) from None
+    return JSONResponse(envelope, status_code=_status(envelope))
 
 
-def _data_args(request: DataRequest, workdir: Path, labels: bool = False) -> list[str]:
-    """The DATA argument (a CSV written into ``workdir``, or a dataset name),
-    and ``--label-col`` for a command that labels islands (``labels``)."""
+def _stop(worker: subprocess.Popen[str], posix: bool) -> None:
+    """Stop a worker process and the processes it started."""
+    if posix:
+        try:
+            os.killpg(worker.pid, signal.SIGKILL)
+            return
+        except ProcessLookupError:
+            pass
+    worker.kill()  # pragma: no cover - Windows, or already gone
+
+
+def _data(request: DataRequest) -> dict[str, Any]:
+    """The request's data as plain values, for the worker."""
     if request.dataset is not None:
-        return [request.dataset]
+        return {"dataset": request.dataset}
     assert request.data is not None
-    out = io.StringIO()
-    writer = csv.writer(out)
-    names = request.data.label
-    writer.writerow(["area", "species", *(["label"] if names is not None else [])])
-    for i, (a, sp) in enumerate(zip(request.data.area, request.data.species, strict=True)):
-        writer.writerow(
-            [repr(float(a)), repr(float(sp)), *([names[i]] if names is not None else [])]
-        )
-    (workdir / "data.csv").write_text(out.getvalue(), encoding="utf-8")
-    args = ["data.csv"]
-    if labels and request.data.label is not None:
-        args += ["--label-col", "label"]
-    return args
+    return {
+        "area": [float(a) for a in request.data.area],
+        "species": [float(s) for s in request.data.species],
+        "label": request.data.label,
+    }
 
 
-def _models(names: list[str] | None) -> list[str]:
-    # -m is every command's models option; attached, so a name can't be read as a flag.
-    return [f"-m{','.join(names)}"] if names else []
-
-
-def _check_args(request: Checks) -> list[str]:
-    args = []
-    if request.normality:
-        args.append(f"--normality={request.normality}")
-    if request.homoscedasticity:
-        args.append(f"--homoscedasticity={request.homoscedasticity}")
-    if request.neg_check:
-        args.append("--neg-check")
-    return args
-
-
-def _numbers(flag: str, values: list[float]) -> list[str]:
-    return [flag, *(repr(float(v)) for v in values)]
+def _checks(request: Checks) -> dict[str, Any]:
+    return {
+        "normality": request.normality,
+        "homoscedasticity": request.homoscedasticity,
+        "neg_check": request.neg_check,
+    }
 
 
 def create_app(config: ServerConfig | None = None) -> FastAPI:
     """The FastAPI application."""
     config = config or ServerConfig()
     from sars import __version__
+    from sars._batched import _check_cupy
+
+    if config.backend not in ("numpy", "cupy"):
+        raise ValueError(f"backend must be numpy or cupy, got {config.backend!r}")
+    if config.backend == "cupy":
+        _check_cupy()  # fail now, not on every request
 
     slots = threading.BoundedSemaphore(config.max_concurrent)
 
@@ -274,9 +346,10 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
         version=API_VERSION,
         summary="Species-area relationship models over HTTP",
         description=(
-            "Each endpoint runs one `sars` command (see the command line documentation) and "
-            "returns its JSON envelope: `{sars, command, ok, result | error, warnings}`. "
-            "A failed command returns 422 with `ok: false`."
+            "Each endpoint runs one of the library's operations, the same ones the "
+            "command line runs, and returns its JSON envelope: "
+            "`{sars, command, ok, result | error, warnings}`. "
+            "A request the operation refuses returns 422 with `ok: false`."
         ),
     )
 
@@ -292,10 +365,9 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
 
     guarded = [Depends(authorise)]
 
-    def run(argv_for: Any, request: Any) -> JSONResponse:
-        with slots, tempfile.TemporaryDirectory(prefix="sars-server-") as tmp:
-            workdir = Path(tmp)
-            return _run(config, argv_for(request, workdir), workdir)
+    def run(command: str, **kwargs: Any) -> JSONResponse:
+        with slots:
+            return _execute(config, command, command, kwargs)
 
     @app.get("/v1/version", tags=["service"])
     def version() -> dict[str, str]:
@@ -304,87 +376,130 @@ def create_app(config: ServerConfig | None = None) -> FastAPI:
 
     @app.get("/v1/datasets", tags=["service"], dependencies=guarded)
     def datasets() -> JSONResponse:
-        """The bundled datasets (`sars datasets`)."""
-        return run(lambda _r, _w: ["datasets"], None)
+        """The bundled datasets (as `sars datasets`)."""
+        return run("datasets")
 
     @app.post("/v1/fit", tags=["models"], dependencies=guarded)
     def fit(request: FitRequest) -> JSONResponse:
-        """Fit one model, or several ranked by AICc (`sars fit`)."""
+        """Fit one model, or several ranked by AICc (as `sars fit`)."""
         return run(
-            lambda r, w: ["fit", *_data_args(r, w), *_models(r.models), *_check_args(r)], request
+            "fit",
+            data=_data(request),
+            models=request.models,
+            params=request.params,
+            conf=request.conf,
+            **_checks(request),
         )
 
     @app.post("/v1/average", tags=["models"], dependencies=guarded)
     def average(request: AverageRequest) -> JSONResponse:
-        """The model average (`sars average`)."""
+        """The model average (as `sars average`)."""
         return run(
-            lambda r, w: [
-                "average",
-                *_data_args(r, w),
-                *_models(r.models),
-                f"--ic={r.ic}",
-                *_check_args(r),
-            ],
-            request,
+            "average",
+            data=_data(request),
+            models=request.models,
+            ic=request.ic,
+            **_checks(request),
         )
 
     @app.post("/v1/threshold", tags=["models"], dependencies=guarded)
     def threshold(request: ThresholdRequest) -> JSONResponse:
-        """Piecewise (threshold) models (`sars threshold`)."""
-
-        def argv(r: ThresholdRequest, w: Path) -> list[str]:
-            args = ["threshold", *_data_args(r, w), *_models(r.models)]
-            if r.interval is not None:
-                args.append(f"--interval={r.interval!r}")
-            if not r.log_area:
-                args.append("--no-log-area")
-            return args
-
-        return run(argv, request)
+        """Piecewise (threshold) models (as `sars threshold`)."""
+        ci = None
+        if request.ci is not None:
+            ci = request.ci.model_dump()
+            ci["n_jobs"] = jobs(request.ci.n_jobs)
+        return run(
+            "threshold",
+            data=_data(request),
+            models=request.models,
+            interval=request.interval,
+            log_area=request.log_area,
+            ci=ci,
+        )
 
     @app.post("/v1/cv", tags=["models"], dependencies=guarded)
     def cv(request: CVRequest) -> JSONResponse:
-        """Leave-one-island-out cross-validation (`sars cv`)."""
+        """Leave-one-island-out cross-validation (as `sars cv`)."""
         return run(
-            lambda r, w: [
-                "cv",
-                *_data_args(r, w, labels=True),
-                *_models(r.models),
-                f"--ic={r.ic}",
-                f"--n-jobs={jobs(r.n_jobs)}",
-                *(["--warm"] if r.warm else []),
-            ],
-            request,
+            "cv",
+            data=_data(request),
+            models=request.models,
+            warm=request.warm,
+            ic=request.ic,
+            n_jobs=jobs(request.n_jobs),
         )
 
     @app.post("/v1/loss", tags=["models"], dependencies=guarded)
     def loss(request: LossRequest) -> JSONResponse:
-        """Species expected to be lost with habitat (`sars loss`)."""
+        """Species expected to be lost with habitat (as `sars loss`)."""
+        return run(
+            "loss",
+            data=_data(request),
+            area=request.area,
+            remaining=request.remaining,
+            fraction_lost=request.fraction_lost,
+            models=request.models,
+            ic=request.ic,
+            n_boot=request.n_boot,
+            conf=request.conf,
+            seed=request.seed,
+            n_jobs=jobs(request.n_jobs),
+        )
 
-        def argv(r: LossRequest, w: Path) -> list[str]:
-            args = ["loss", *_data_args(r, w), *_numbers("--area", r.area)]
-            if r.remaining is not None:
-                args += _numbers("--remaining", r.remaining)
-            else:
-                assert r.fraction_lost is not None
-                args += _numbers("--fraction-lost", r.fraction_lost)
-            args += [*_models(r.models), f"--ic={r.ic}", f"--n-boot={r.n_boot}"]
-            args += [f"--conf={r.conf!r}", f"--n-jobs={jobs(r.n_jobs)}"]
-            if r.seed is not None:
-                args.append(f"--seed={r.seed}")
-            return args
+    @app.post("/v1/many", tags=["models"], dependencies=guarded)
+    def many(request: ManyRequest) -> JSONResponse:
+        """The same models on many datasets, in one table (as `sars many`)."""
+        datasets: dict[str, dict[str, Any]]
+        if request.datasets is not None:
+            datasets = {
+                name: {"area": list(d.area), "species": list(d.species)}
+                for name, d in request.datasets.items()
+            }
+        else:
+            assert request.bundled is not None
+            datasets = {name: {"dataset": name} for name in request.bundled}
+        return run(
+            "many",
+            datasets=datasets,
+            models=request.models,
+            ic=request.ic,
+            threshold=request.threshold,
+            n_jobs=jobs(request.n_jobs),
+        )
 
-        return run(argv, request)
+    @app.post("/v1/loglog", tags=["models"], dependencies=guarded)
+    def loglog(request: LogLogRequest) -> JSONResponse:
+        """The log-log power model, by least squares (as `sars loglog`)."""
+        return run(
+            "loglog",
+            data=_data(request),
+            log_base=request.log_base,
+            con=request.con,
+            compare=request.compare,
+        )
+
+    @app.post("/v1/ci", tags=["models"], dependencies=guarded)
+    def ci(request: CIRequest) -> JSONResponse:
+        """Bootstrap intervals on the model-averaged curve (as `sars ci`)."""
+        return run(
+            "ci",
+            data=_data(request),
+            areas=request.areas,
+            models=request.models,
+            ic=request.ic,
+            method=request.method,
+            n_boot=request.n_boot,
+            conf=request.conf,
+            seed=request.seed,
+            n_jobs=jobs(request.n_jobs),
+            **_checks(request),
+        )
 
     @app.post("/v1/predict", tags=["models"], dependencies=guarded)
     def predict(request: PredictRequest) -> JSONResponse:
-        """Predictions from a saved result (`sars predict`)."""
-
-        def argv(r: PredictRequest, w: Path) -> list[str]:
-            (w / "result.json").write_text(json.dumps(r.result), encoding="utf-8")
-            return ["predict", "result.json", *(repr(float(a)) for a in r.areas)]
-
-        return run(argv, request)
+        """Predictions from a saved result (as `sars predict`)."""
+        return run("predict", result=request.result, areas=request.areas)
 
     return app
 
