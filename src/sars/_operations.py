@@ -35,6 +35,21 @@ DATASETS = {
     "xu": "load_xu",
 }
 
+# The bundled tables that aren't area and richness alone, for the commands
+# that read more columns: the loader, the command each is for, and the columns
+# that command reads when none are named.
+TABLES: dict[str, dict[str, Any]] = {
+    "habitat": {"loader": "load_habitat", "command": "habitat", "columns": {}},
+    "countryside": {
+        "loader": "load_countryside",
+        "command": "countryside",
+        "columns": {
+            "habitats": ["Area_AG", "Area_SH", "Area_QF"],
+            "species": ["Spcs_AG", "Spcs_SH", "Spcs_QF", "Spcs_UB"],
+        },
+    },
+}
+
 THRESHOLD_MODELS = ["ContOne", "ZslopeOne", "DiscOne", "ContTwo", "ZslopeTwo", "DiscTwo"]
 
 
@@ -87,11 +102,15 @@ def version() -> str:
 
 
 def bundled(name: str) -> Any:
-    """A bundled dataset by its short name."""
+    """A bundled dataset, or one of the other bundled tables, by its short name."""
     import sars
 
+    if name in TABLES:
+        return getattr(sars, TABLES[name]["loader"])()
     if name not in DATASETS:
-        raise InputError(f"No bundled dataset {name!r}; choose from {', '.join(DATASETS)}.")
+        raise InputError(
+            f"No bundled dataset {name!r}; choose from {', '.join([*DATASETS, *TABLES])}."
+        )
     return getattr(sars, DATASETS[name])()
 
 
@@ -111,11 +130,20 @@ def data_frame(
 
 def model_names(values: Sequence[str] | None) -> list[str] | None:
     """Model names from repeated or comma-separated options."""
+    return _names(values, "model")
+
+
+def column_names(values: Sequence[str] | None) -> list[str] | None:
+    """Column names from repeated or comma-separated options."""
+    return _names(values, "column")
+
+
+def _names(values: Sequence[str] | None, what: str) -> list[str] | None:
     if not values:
         return None
     names = [name.strip() for value in values for name in value.split(",") if name.strip()]
     if not names:
-        raise InputError(f"No model names in {' '.join(repr(v) for v in values)}.")
+        raise InputError(f"No {what} names in {' '.join(repr(v) for v in values)}.")
     return names
 
 
@@ -129,8 +157,9 @@ def _models(names: Sequence[str] | None, default: str) -> str | list[str]:
 # ---------------------------------------------------------------------------
 
 
-def datasets() -> dict[str, Any]:
-    """The bundled datasets: name, size, area range and columns."""
+def datasets(tables: bool = False) -> dict[str, Any]:
+    """The bundled datasets (name, size, area range and columns) and, with
+    ``tables``, the other bundled tables with the command each is for."""
     rows = []
     for name in DATASETS:
         frame = bundled(name)
@@ -143,7 +172,20 @@ def datasets() -> dict[str, Any]:
                 "columns": [str(c) for c in frame.columns],
             }
         )
-    return {"datasets": rows}
+    if not tables:
+        return {"datasets": rows}
+    others = []
+    for name, spec in TABLES.items():
+        frame = bundled(name)
+        others.append(
+            {
+                "name": name,
+                "n": len(frame),
+                "columns": [str(c) for c in frame.columns],
+                "command": spec["command"],
+            }
+        )
+    return {"datasets": rows, "tables": others}
 
 
 def fit(
@@ -370,6 +412,64 @@ def many(
     )
 
 
+def habitat(
+    data: Any,
+    mod_type: str = "power_log",
+    area_col: str = "area",
+    habitats_col: str = "habitats",
+    species_col: str = "species",
+    con: float | None = None,
+    log_base: str = "e",
+) -> Any:
+    """The habitat species-area models (choros, jigsaw, Kallimanis and the
+    curve on area alone), ranked by AICc."""
+    import sars
+
+    return sars.sar_habitat(
+        data,
+        mod_type=mod_type,
+        area_col=area_col,
+        habitats_col=habitats_col,
+        species_col=species_col,
+        con=con,
+        log_base=log_base,
+    )
+
+
+def countryside(
+    data: Any,
+    habitats: Sequence[str],
+    species: Sequence[str],
+    mod_type: str = "power",
+    grid_start: str = "partial",
+    z_lower: float = 0.0,
+    n_starts: int | None = 40,
+) -> Any:
+    """The countryside species-area model: each species group's richness
+    from the areas of the habitats."""
+    import sars
+
+    for label, columns in (("habitat", habitats), ("species", species)):
+        repeated = sorted({c for c in columns if list(columns).count(c) > 1})
+        if repeated:
+            raise InputError(f"A {label} column is named twice: {', '.join(repeated)}.")
+    both = sorted(set(habitats) & set(species))
+    if both:
+        raise InputError(f"A column is named as both a habitat and a species: {', '.join(both)}.")
+    obj = sars.sar_countryside(
+        data,
+        habitats=list(habitats),
+        species=list(species),
+        mod_type=mod_type,
+        grid_start=grid_start,
+        z_lower=z_lower,
+        n_starts=n_starts,
+    )
+    if not obj.groups:
+        raise InputError("No species group could be fitted.")
+    return obj
+
+
 def parameters(obj: Any, conf: float = 0.95) -> dict[str, list[dict[str, Any]]]:
     """Each fitted model's parameter table (standard errors, t tests and
     confidence intervals), by model name: one model, or every model of a
@@ -392,6 +492,16 @@ def predict(obj: Any, areas: Sequence[float]) -> dict[str, Any]:
         raise InputError(
             f"A saved {type(obj).__name__} doesn't predict; save a single fit, an "
             "average or a threshold fit instead."
+        )
+    needs = {
+        "HabitatFit": "a number of habitats for each area",
+        "CountrysideFit": "an area for each habitat",
+    }
+    if type(obj).__name__ in needs:
+        raise InputError(
+            f"Predicting from a saved {type(obj).__name__} needs {needs[type(obj).__name__]}, "
+            "which this command doesn't take; load it in Python (sars.load) and call its "
+            "predict."
         )
     at = np.asarray(areas, dtype=float)
     if not np.isfinite(at).all():
@@ -572,6 +682,30 @@ def summary(obj: Any) -> dict[str, Any]:
             "n_models_attempted": obj.n_models_attempted,
             "dropped": dict(obj.dropped),
             "intervals": rows,
+        }
+    if kind == "HabitatFit":
+        return {
+            "type": kind,
+            "mod_type": obj.mod_type,
+            "best": obj.summary.iloc[0]["model"] if len(obj.summary) else None,
+            "log_base": obj.log_base,
+            "con": number(obj.con),
+            "n": len(obj.data),
+            "models": records(obj.summary),
+            "not_fitted": list(obj.not_fitted),
+        }
+    if kind == "CountrysideFit":
+        return {
+            "type": kind,
+            "mod_type": obj.mod_type,
+            "habitats": list(obj.habitats),
+            "groups": list(obj.groups),
+            "n": len(obj.data),
+            "params": records(obj.params.reset_index()),
+            "affinity": records(obj.affinity.reset_index()),
+            "c": {str(k): number(v) for k, v in obj.c.items()},
+            "rss": {k: number(v) for k, v in obj.rss.items()},
+            "not_fitted": list(obj.not_fitted),
         }
     if kind == "LOOCV":
         return {

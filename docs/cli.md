@@ -23,6 +23,9 @@ $ sars fit islands.csv --area-col Area_km2 --species-col Richness
 $ sars datasets xu > xu.csv
 ```
 
+Some analyses read more than area and richness; each has its own command and its own
+table (see [Other tables](#other-tables)).
+
 ## Commands
 
 | Command | Does |
@@ -35,9 +38,11 @@ $ sars datasets xu > xu.csv
 | `sars many DATA DATA ... \| sars many TABLE --by COL [-m MODEL ...] [--no-threshold] [--n-jobs N]` | Fits the same models to many datasets and summarizes them in one table: best model and weight, log-log z, threshold model (see [`sar_many`](api/inference.md)). |
 | `sars loglog DATA [--log-base e\|2\|10] [--con C] [--compare]` | Fits the log-log power model by least squares, with standard errors, t tests and p values (see [`lin_pow`](api/models.md)). |
 | `sars ci DATA [--area A ...] [-m MODEL ...] [--method fast\|full] [--n-boot N] [--seed S] [--n-jobs N]` | The model-averaged richness at the areas (ten over the data's range by default), with bootstrap intervals (see [`bootstrap_ci`](api/inference.md)). |
+| `sars habitat DATA [--mod-type power_log\|power\|logarithmic] [--habitats-col COL] [--con C] [--log-base e\|2\|10]` | Fits the habitat models (choros, jigsaw, Kallimanis and the curve on area alone) to data with a number of habitats per island, and ranks them by AICc (see [`sar_habitat`](api/habitat.md)). |
+| `sars countryside DATA --habitats COL,... --species COL,... [--mod-type power\|logarithmic] [--grid-start partial\|exhaustive\|none] [--z-lower Z] [--n-starts N\|all]` | Fits the countryside model: each species group's richness from the areas of several habitats (see [`sar_countryside`](api/habitat.md)). |
 | `sars predict FILE AREA ...` | Predicts richness at the areas from a result saved with `--save`. |
 | `sars serve [--host H] [--port P] [--token-file F] [--timeout S]` | Serves the same operations over HTTP; needs the `server` extra (see [HTTP server](server.md)). |
-| `sars datasets [NAME]` | Lists the bundled datasets, or writes one as CSV. |
+| `sars datasets [NAME]` | Lists the bundled datasets and tables, or writes one as CSV. |
 
 Every command takes `--backend numpy|cupy` before its name (`sars --backend cupy fit
 ...`), or the `SARS_BACKEND` environment variable, to screen start grids on an NVIDIA GPU
@@ -47,6 +52,34 @@ The JSON envelope records the backend used.
 `fit`, `average` and `ci` also take the residual checks of [`sar_multi`](api/inference.md):
 `--normality shapiro|lillie|kolmogorov`, `--homoscedasticity cor.fitted|cor.area` and
 `--neg-check`. `sars COMMAND --help` lists every option.
+
+## Other tables
+
+These commands read a CSV file, standard input or their own bundled table, and take
+`--json` and `--save` like the others.
+
+**Habitat models** (`sars habitat`): one row per island, with a column for the number of
+habitats (or another measure of heterogeneity) beside area and richness. The columns are
+`area`, `habitats` and `species` unless named with `--area-col`, `--habitats-col` and
+`--species-col`. The bundled table is `habitat`.
+
+```console
+$ sars habitat habitat
+$ sars habitat snails.csv --habitats-col Het --mod-type power
+```
+
+**Countryside model** (`sars countryside`): one row per site, a column of area for each
+habitat and a column of richness for each species group. Name them with `--habitats` and
+`--species`, repeated or comma-separated. The bundled table is `countryside`, whose
+columns are used when none are named.
+
+```console
+$ sars countryside countryside
+$ sars countryside sites.csv --habitats forest,farmland --species forest_spp,farm_spp,generalists
+```
+
+`sars predict` doesn't predict from these results, since they need more than areas: load
+the saved file in Python and call its `predict`.
 
 ## Saving and predicting
 

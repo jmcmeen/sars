@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from sars import _operations as ops
-from sars._operations import DATASETS, THRESHOLD_MODELS, InputError
+from sars._operations import DATASETS, TABLES, THRESHOLD_MODELS, InputError
 
 __all__ = ["DATASETS", "THRESHOLD_MODELS", "build_parser", "main"]
 
@@ -34,8 +34,10 @@ __all__ = ["DATASETS", "THRESHOLD_MODELS", "build_parser", "main"]
 # ---------------------------------------------------------------------------
 
 
-def _read_table(source: str) -> Any:
-    """The table in a CSV file, standard input (``-``) or a bundled dataset."""
+def _read_table(source: str, command: str | None = None) -> Any:
+    """The table in a CSV file, standard input (``-``) or a bundled dataset.
+    ``command`` names a command that reads more than area and richness: the
+    bundled tables are then the ones for it."""
     import pandas as pd
 
     if source == "-" or Path(source).is_file():
@@ -48,9 +50,22 @@ def _read_table(source: str) -> Any:
         except (pd.errors.ParserError, pd.errors.EmptyDataError, UnicodeDecodeError) as exc:
             raise InputError(f"Couldn't read {label} as CSV: {exc}") from exc
         return frame
-    if source in DATASETS:
+    names = (
+        list(DATASETS)
+        if command is None
+        else [name for name, spec in TABLES.items() if spec["command"] == command]
+    )
+    if source in names:
         return ops.bundled(source)
-    raise InputError(f"No such file: {source} (nor a bundled dataset: {', '.join(DATASETS)}).")
+    if source in TABLES:
+        raise InputError(f"The bundled {source} table is for `sars {TABLES[source]['command']}`.")
+    if source in DATASETS:
+        raise InputError(
+            f"The bundled {source} dataset holds area and richness only, not what "
+            f"`sars {command}` reads."
+        )
+    known = f"nor a bundled dataset: {', '.join(names)}" if names else "this command has none"
+    raise InputError(f"No such file: {source} ({known}).")
 
 
 def _read_data(source: str, area_col: str, species_col: str, label_col: str | None = None) -> Any:
@@ -92,6 +107,34 @@ def _print_summary(summary: dict[str, Any], out: Any) -> None:
     import pandas as pd
 
     kind = summary["type"]
+    if kind == "HabitatFit":
+        forms = {
+            "power_log": "power forms, fitted on the logs",
+            "power": "power forms, by non-linear least squares",
+            "logarithmic": "logarithmic forms",
+        }
+        print(
+            f"Best: {summary['best']} ({forms[summary['mod_type']]}; n = {summary['n']})", file=out
+        )
+        _print_table(summary["models"], out, text=("model",))
+        for model in summary["not_fitted"]:
+            print(f"not fitted: {model}", file=out)
+        return
+    if kind == "CountrysideFit":
+        print(
+            f"Countryside model ({summary['mod_type']}), {len(summary['groups'])} species groups "
+            f"on {len(summary['habitats'])} habitats, n = {summary['n']}:",
+            file=out,
+        )
+        _print_table(summary["params"], out, text=("group",))
+        print("Affinity (each h over the group's largest):", file=out)
+        _print_table(summary["affinity"], out, text=("group",))
+        if summary["rss"]:
+            parts = "  ".join(f"{name} = {_fmt(value)}" for name, value in summary["rss"].items())
+            print(f"RSS of total richness: {parts}", file=out)
+        for group in summary["not_fitted"]:
+            print(f"not fitted: {group}", file=out)
+        return
     if kind == "ManySARFit":
         table = pd.DataFrame(summary["datasets"])
         shown = ["dataset", "n", "z", "R2", "best_model", "best_weight", "threshold_model"]
@@ -190,6 +233,18 @@ def _print_summary(summary: dict[str, Any], out: Any) -> None:
     for label in ("excluded", "not_fitted"):
         for model, reason in summary.get(label, {}).items():
             print(f"{label.replace('_', ' ')}: {model}: {reason}", file=out)
+
+
+def _print_table(rows: list[dict[str, Any]], out: Any, text: Sequence[str] = ()) -> None:
+    """A table of records, its numbers to four significant figures; ``text``
+    names the columns printed as they are."""
+    import pandas as pd
+
+    table = pd.DataFrame(rows)
+    for column in table.columns:
+        if column not in text:
+            table[column] = [_cell(v) for v in table[column]]
+    print(table.to_string(index=False), file=out)
 
 
 def _cell(value: Any) -> str:
@@ -409,6 +464,73 @@ def _cmd_ci(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
     return _finish(obj, args)
 
 
+def _column(frame: Any, column: str, source: str, option: str) -> None:
+    if column not in frame.columns:
+        raise InputError(
+            f"No column {column!r} in {source}; its columns are {list(frame.columns)}. "
+            f"Name it with {option}."
+        )
+
+
+def _cmd_habitat(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
+    frame = _read_table(args.data, command="habitat")
+    for column, option in (
+        (args.area_col, "--area-col"),
+        (args.habitats_col, "--habitats-col"),
+        (args.species_col, "--species-col"),
+    ):
+        _column(frame, column, args.data, option)
+    obj = ops.habitat(
+        frame,
+        mod_type=args.mod_type,
+        area_col=args.area_col,
+        habitats_col=args.habitats_col,
+        species_col=args.species_col,
+        con=args.con,
+        log_base=args.log_base,
+    )
+    return _finish(obj, args)
+
+
+def _cmd_countryside(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
+    frame = _read_table(args.data, command="countryside")
+    defaults = TABLES[args.data]["columns"] if args.data in TABLES else {}
+    habitats = ops.column_names(args.habitats) or defaults.get("habitats")
+    species = ops.column_names(args.species) or defaults.get("species")
+    if habitats is None or species is None:
+        raise InputError(
+            "Name the habitat area columns with --habitats and the species group columns "
+            f"with --species; the columns of {args.data} are {list(frame.columns)}."
+        )
+    for column in habitats:
+        _column(frame, column, args.data, "--habitats")
+    for column in species:
+        _column(frame, column, args.data, "--species")
+    obj = ops.countryside(
+        frame,
+        habitats=habitats,
+        species=species,
+        mod_type=args.mod_type,
+        grid_start=args.grid_start,
+        z_lower=args.z_lower,
+        n_starts=args.n_starts,
+    )
+    return _finish(obj, args)
+
+
+def _n_starts(value: str) -> int | None:
+    """--n-starts: a positive whole number, or "all" for the whole grid."""
+    if value == "all":
+        return None
+    try:
+        number = int(value)
+    except ValueError:
+        number = 0
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"a positive whole number or 'all', not {value!r}")
+    return number
+
+
 def _cmd_predict(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
     import sars
 
@@ -427,13 +549,18 @@ def _cmd_predict(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
 
 def _cmd_datasets(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
     if args.name is None:
-        result = ops.datasets()
+        result = ops.datasets(tables=True)
 
         def show(out: Any) -> None:
             for row in result["datasets"]:
                 print(
-                    f"{row['name']:<10} {row['n']:>4} sites  area {row['area_min']:.4g} to "
+                    f"{row['name']:<12} {row['n']:>4} sites  area {row['area_min']:.4g} to "
                     f"{row['area_max']:.4g}",
+                    file=out,
+                )
+            for row in result["tables"]:
+                print(
+                    f"{row['name']:<12} {row['n']:>4} rows   for `sars {row['command']}`",
                     file=out,
                 )
 
@@ -744,6 +871,87 @@ def build_parser() -> argparse.ArgumentParser:
     _add_output_args(ci)
     ci.set_defaults(handler=_cmd_ci)
 
+    habitat = commands.add_parser(
+        "habitat",
+        help="fit the habitat models (area and number of habitats)",
+        description="Fit the habitat species-area models (choros, jigsaw, Kallimanis and the "
+        "curve on area alone) and rank them by AICc. The data have a column for the number "
+        "of habitats (or another measure of heterogeneity) beside area and richness.",
+    )
+    habitat.add_argument(
+        "data",
+        help="a CSV file, - for standard input, or the bundled table `habitat`",
+    )
+    habitat.add_argument("--area-col", default="area", help="the area column (default: area)")
+    habitat.add_argument(
+        "--habitats-col", default="habitats", help="the habitats column (default: habitats)"
+    )
+    habitat.add_argument(
+        "--species-col", default="species", help="the richness column (default: species)"
+    )
+    habitat.add_argument(
+        "--mod-type",
+        choices=["power_log", "power", "logarithmic"],
+        default="power_log",
+        help="power forms fitted on the logs (default), power forms by non-linear least "
+        "squares, or the logarithmic forms",
+    )
+    habitat.add_argument(
+        "--con",
+        type=float,
+        help="added to every richness before taking logs (power_log, when an island has none)",
+    )
+    habitat.add_argument(
+        "--log-base", choices=["e", "2", "10"], default="e", help="the logarithm (default: e)"
+    )
+    _add_output_args(habitat)
+    habitat.set_defaults(handler=_cmd_habitat)
+
+    countryside = commands.add_parser(
+        "countryside",
+        help="fit the countryside model (areas of several habitats)",
+        description="Fit the countryside species-area model: the richness of each species "
+        "group as a curve of a weighted sum of the habitat areas. The data have one row per "
+        "site, a column of area for each habitat and a column of richness for each group.",
+    )
+    countryside.add_argument(
+        "data",
+        help="a CSV file, - for standard input, or the bundled table `countryside`",
+    )
+    countryside.add_argument(
+        "--habitats",
+        action="append",
+        metavar="COLUMN",
+        help="the habitat area columns (repeated or comma-separated)",
+    )
+    countryside.add_argument(
+        "--species",
+        action="append",
+        metavar="COLUMN",
+        help="the species group richness columns (repeated or comma-separated)",
+    )
+    countryside.add_argument(
+        "--mod-type", choices=["power", "logarithmic"], default="power", help="default: power"
+    )
+    countryside.add_argument(
+        "--grid-start",
+        choices=["partial", "exhaustive", "none"],
+        default="partial",
+        help="how many starting values to try (default: partial)",
+    )
+    countryside.add_argument(
+        "--z-lower", type=float, default=0.0, metavar="Z", help="the smallest z allowed (default 0)"
+    )
+    countryside.add_argument(
+        "--n-starts",
+        type=_n_starts,
+        default=40,
+        metavar="N",
+        help="fit from the N most promising starting values (default 40), or `all`",
+    )
+    _add_output_args(countryside)
+    countryside.set_defaults(handler=_cmd_countryside)
+
     predict = commands.add_parser(
         "predict",
         help="predict richness from a saved result",
@@ -779,7 +987,8 @@ def build_parser() -> argparse.ArgumentParser:
     datasets = commands.add_parser(
         "datasets",
         help="list the bundled datasets, or write one as CSV",
-        description="List the bundled datasets, or write the named one as CSV.",
+        description="List the bundled datasets and the tables for the commands that read "
+        "more than area and richness, or write the named one as CSV.",
     )
     datasets.add_argument("name", nargs="?", help="a dataset to write as CSV")
     _add_output_args(datasets, save=False)

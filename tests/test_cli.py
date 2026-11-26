@@ -479,3 +479,110 @@ def test_cv_labels_islands_by_a_named_column(capsys, tmp_path):
     )
     rows = {row["model"]: row for row in envelope["result"]["summary"]["models"]}
     assert code == 0 and rows["power"]["worst"] == "Isabela"
+
+
+# --- habitat and countryside: tables with more than area and richness ---
+
+CS_HABITATS = ["Area_AG", "Area_SH", "Area_QF"]
+CS_SPECIES = ["Spcs_AG", "Spcs_SH", "Spcs_QF", "Spcs_UB"]
+
+
+def test_habitat(capsys, tmp_path):
+    code, envelope = run_json(capsys, "habitat", "habitat")
+    assert code == 0
+    summary = envelope["result"]["summary"]
+    expected = sars.sar_habitat(sars.load_habitat())
+    assert summary["type"] == "HabitatFit" and summary["n"] == 12
+    assert [row["model"] for row in summary["models"]] == list(expected.summary["model"])
+    assert summary["models"][0]["AICc"] == pytest.approx(expected.summary.iloc[0]["AICc"])
+    # choros and the area-only curve have no d: null, not NaN
+    assert {row["model"]: row["d"] for row in summary["models"]}["choros"] is None
+    again = sars.from_json(json.dumps(envelope["result"]["object"]))
+    assert again.params == expected.params
+
+    path = tmp_path / "snails.csv"
+    sars.load_habitat().rename(columns={"habitats": "Het"}).to_csv(path, index=False)
+    code, out, _ = run(
+        capsys, "habitat", str(path), "--habitats-col", "Het", "--mod-type", "power",
+        "--log-base", "10",
+    )  # fmt: skip
+    power = sars.sar_habitat(sars.load_habitat(), mod_type="power", log_base=10)
+    assert code == 0 and out.startswith(f"Best: {power.summary.iloc[0]['model']} ")
+
+
+def test_countryside(capsys, tmp_path):
+    saved = tmp_path / "cs.json"
+    code, envelope = run_json(capsys, "countryside", "countryside", "--save", str(saved))
+    assert code == 0
+    summary = envelope["result"]["summary"]
+    expected = sars.sar_countryside(
+        sars.load_countryside(), habitats=CS_HABITATS, species=CS_SPECIES
+    )
+    assert summary["habitats"] == CS_HABITATS and summary["groups"] == CS_SPECIES
+    assert [row["group"] for row in summary["params"]] == CS_SPECIES
+    assert summary["params"][0]["z"] == pytest.approx(expected.params.loc["Spcs_AG", "z"])
+    assert summary["rss"]["countryside"] == pytest.approx(expected.rss["countryside"])
+    assert sars.load(saved).habitats == CS_HABITATS
+    # A saved countryside fit needs an area per habitat: predict says so.
+    code, _, err = run(capsys, "predict", str(saved), "10")
+    assert code == 1 and "an area for each habitat" in err
+
+    # A file names its own columns: here two habitats and one group.
+    path = tmp_path / "sites.csv"
+    sars.load_countryside().to_csv(path, index=False)
+    code, out, _ = run(
+        capsys, "countryside", str(path), "--habitats", "Area_AG,Area_SH", "--habitats",
+        "Area_QF", "--species", "Spcs_UB", "--mod-type", "logarithmic", "--n-starts", "5",
+    )  # fmt: skip
+    assert code == 0 and "1 species groups on 3 habitats" in out
+
+
+def test_datasets_lists_the_other_tables(capsys):
+    code, envelope = run_json(capsys, "datasets")
+    tables = {row["name"]: row["command"] for row in envelope["result"]["tables"]}
+    assert tables["habitat"] == "habitat" and tables["countryside"] == "countryside"
+    code, out, _ = run(capsys, "datasets")
+    assert "for `sars countryside`" in out
+    code, out, _ = run(capsys, "datasets", "habitat")
+    assert out.splitlines()[0] == "area,habitats,species"
+
+
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        (["fit", "habitat"], "is for `sars habitat`"),
+        (["habitat", "galap"], "holds area and richness only"),
+        (["habitat", "countryside"], "is for `sars countryside`"),
+        (["habitat", "habitat", "--habitats-col", "Het"], "Name it with --habitats-col"),
+        (["habitat", "nosuch.csv"], "nor a bundled dataset: habitat"),
+        (["countryside", "countryside", "--habitats", "Area_AG", "--species", "nope"], "'nope'"),
+        (["countryside", "countryside", "--habitats", ","], "No column names"),
+        (
+            ["countryside", "countryside", "--habitats", "Area_AG,Area_AG", "--species", "Spcs_AG"],
+            "named twice",
+        ),
+        (
+            ["countryside", "countryside", "--habitats", "Area_AG", "--species", "Area_AG"],
+            "both a habitat and a species",
+        ),
+    ],
+)
+def test_other_tables_errors(capsys, argv, message):
+    code, _, err = run(capsys, *argv)
+    assert code == 1 and message in err
+
+
+def test_countryside_needs_its_columns_named(capsys, tmp_path):
+    path = tmp_path / "sites.csv"
+    sars.load_countryside().to_csv(path, index=False)
+    code, _, err = run(capsys, "countryside", str(path))
+    assert code == 1 and "--habitats" in err and "Area_AG" in err
+    code, envelope = run_json(capsys, "countryside", "countryside", "--n-starts", "0")
+    assert code == 2 and envelope["error"]["type"] == "UsageError"
+
+
+def test_predict_refuses_a_habitat_fit(capsys, tmp_path):
+    saved = tmp_path / "h.json"
+    assert run(capsys, "habitat", "habitat", "--save", str(saved))[0] == 0
+    code, _, err = run(capsys, "predict", str(saved), "10")
+    assert code == 1 and "a number of habitats for each area" in err

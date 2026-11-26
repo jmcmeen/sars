@@ -10,6 +10,16 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- `sars habitat` and `sars countryside`: the habitat models and the
+  countryside model on the command line. `habitat` reads a column for the
+  number of habitats beside area and richness (`--habitats-col`);
+  `countryside` reads the habitat area columns and the species group columns
+  named with `--habitats` and `--species`. Both take `--json` and `--save`,
+  and the bundled `habitat` and `countryside` tables by name; `sars datasets`
+  lists them.
+
 ## [0.11.12] - 2026-11-26
 
 ### Added
