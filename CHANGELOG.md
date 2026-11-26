@@ -10,6 +10,29 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- `sars habitat` and `sars countryside`: the habitat models and the
+  countryside model on the command line. `habitat` reads a column for the
+  number of habitats beside area and richness (`--habitats-col`);
+  `countryside` reads the habitat area columns and the species group columns
+  named with `--habitats` and `--species`. Both take `--json` and `--save`,
+  and the bundled `habitat` and `countryside` tables by name; `sars datasets`
+  lists them.
+- `sars gdm`: the general dynamic model on the command line, from a table
+  with a column of island age (`--time-col`), with `--model` and `--mod-sel`.
+  `sars predict` takes `--time` to predict from a saved one.
+- `sars.save`, `sars.load`, `to_json` and `from_json` handle `GDMFit` and
+  `GDMMultiFit`.
+- `sars coleman` and `sars effort`: Coleman's random placement model and
+  richness standardized for sampling effort on the command line. Both read a
+  table of counts with species in rows, sites in rows (`--sites-in-rows`) or
+  one row per site and species (`--long`, or `--long --one-per-row` for a
+  table of single records), and the site areas from a second file matched by
+  site name (`--areas`). `effort` writes CSV that `sars fit -` reads. The
+  bundled `xu_abundance` table works by name, with `xu` for its areas.
+- `sars.save` and `sars.load` handle `ColemanFit`.
+
 ## [0.11.12] - 2026-11-26
 
 ### Added

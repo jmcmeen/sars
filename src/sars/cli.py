@@ -19,12 +19,13 @@ import json
 import math
 import os
 import sys
+import warnings
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
 from sars import _operations as ops
-from sars._operations import DATASETS, THRESHOLD_MODELS, InputError
+from sars._operations import DATASETS, TABLES, THRESHOLD_MODELS, InputError
 
 __all__ = ["DATASETS", "THRESHOLD_MODELS", "build_parser", "main"]
 
@@ -34,8 +35,14 @@ __all__ = ["DATASETS", "THRESHOLD_MODELS", "build_parser", "main"]
 # ---------------------------------------------------------------------------
 
 
-def _read_table(source: str) -> Any:
-    """The table in a CSV file, standard input (``-``) or a bundled dataset."""
+def _read_table(source: str, command: str | None = None, as_text: bool = False) -> Any:
+    """The table in a CSV file, standard input (``-``) or a bundled dataset.
+    ``command`` names a command that reads more than area and richness: the
+    bundled tables are then the ones for it. With ``as_text`` a file's cells
+    are kept as written, so names that look like numbers (a site "01") stay
+    as they are, and a header used twice is refused."""
+    import csv
+
     import pandas as pd
 
     if source == "-" or Path(source).is_file():
@@ -44,13 +51,41 @@ def _read_table(source: str) -> Any:
             text = (
                 sys.stdin.read() if source == "-" else Path(source).read_text(encoding="utf-8-sig")
             )
-            frame = pd.read_csv(io.StringIO(text))
+            if as_text:
+                header = [name.strip() for name in next(csv.reader(io.StringIO(text)), [])]
+                repeated = sorted({name for name in header if header.count(name) > 1})
+                if repeated:
+                    raise InputError(f"{label} has a column named twice: {', '.join(repeated)}.")
+                frame = pd.read_csv(io.StringIO(text), dtype=str)
+                frame.columns = [str(c).strip() for c in frame.columns]
+            else:
+                frame = pd.read_csv(io.StringIO(text))
         except (pd.errors.ParserError, pd.errors.EmptyDataError, UnicodeDecodeError) as exc:
             raise InputError(f"Couldn't read {label} as CSV: {exc}") from exc
         return frame
-    if source in DATASETS:
+    names = (
+        list(DATASETS)
+        if command is None
+        else [name for name, spec in TABLES.items() if command in spec["commands"]]
+    )
+    if source in names:
         return ops.bundled(source)
-    raise InputError(f"No such file: {source} (nor a bundled dataset: {', '.join(DATASETS)}).")
+    if source in TABLES:
+        use = " and ".join(f"`sars {name}`" for name in TABLES[source]["commands"])
+        raise InputError(f"The bundled {source} table is for {use}.")
+    if source in DATASETS:
+        raise InputError(
+            f"The bundled {source} dataset holds area and richness only, not what "
+            f"`sars {command}` reads."
+        )
+    known = f"nor a bundled dataset: {', '.join(names)}" if names else "this command has none"
+    raise InputError(f"No such file: {source} ({known}).")
+
+
+def _is_bundled(source: str) -> bool:
+    """Whether ``source`` is read as a bundled table: a file of the same name
+    comes first."""
+    return source != "-" and not Path(source).is_file()
 
 
 def _read_data(source: str, area_col: str, species_col: str, label_col: str | None = None) -> Any:
@@ -92,6 +127,63 @@ def _print_summary(summary: dict[str, Any], out: Any) -> None:
     import pandas as pd
 
     kind = summary["type"]
+    if kind == "GDMFit":
+        _print_gdm(summary, out)
+        return
+    if kind == "GDMMultiFit":
+        print(f"Best: {summary['best']} (the general dynamic model, by AICc)", file=out)
+        _print_table(summary["models"], out, text=("model", "k", "converged"))
+        for fit in summary["fits"].values():
+            print("", file=out)
+            _print_gdm(fit, out)
+        return
+    if kind == "ColemanFit":
+        outside = sum(not row["within_sd"] for row in summary["sites"])
+        verdict = "rejected" if summary["rejected"] else "not rejected"
+        print(
+            f"Random placement: {summary['n_species']} species on {summary['n_sites']} sites, "
+            f"{outside} sites ({summary['fraction_outside']:.0%}) more than one sd from "
+            f"expected: {verdict} by the one-third rule",
+            file=out,
+        )
+        test = summary.get("test")
+        if test is not None:
+            print(
+                f"Placement test: statistic = {_fmt(test['statistic'])}  "
+                f"p = {_fmt(test['p_value'])}  ({test['n_sim']} simulations; the one-third "
+                f"rule rejects {test['rule_rejection_rate']:.0%} of random placements)",
+                file=out,
+            )
+        _print_table(summary["sites"], out, text=("site", "observed", "within_sd"))
+        return
+    if kind == "HabitatFit":
+        forms = {
+            "power_log": "power forms, fitted on the logs",
+            "power": "power forms, by non-linear least squares",
+            "logarithmic": "logarithmic forms",
+        }
+        print(
+            f"Best: {summary['best']} ({forms[summary['mod_type']]}; n = {summary['n']})", file=out
+        )
+        _print_table(summary["models"], out, text=("model",))
+        for model in summary["not_fitted"]:
+            print(f"not fitted: {model}", file=out)
+        return
+    if kind == "CountrysideFit":
+        print(
+            f"Countryside model ({summary['mod_type']}), {len(summary['groups'])} species groups "
+            f"on {len(summary['habitats'])} habitats, n = {summary['n']}:",
+            file=out,
+        )
+        _print_table(summary["params"], out, text=("group",))
+        print("Affinity (each h over the group's largest):", file=out)
+        _print_table(summary["affinity"], out, text=("group",))
+        if summary["rss"]:
+            parts = "  ".join(f"{name} = {_fmt(value)}" for name, value in summary["rss"].items())
+            print(f"RSS of total richness: {parts}", file=out)
+        for group in summary["not_fitted"]:
+            print(f"not fitted: {group}", file=out)
+        return
     if kind == "ManySARFit":
         table = pd.DataFrame(summary["datasets"])
         shown = ["dataset", "n", "z", "R2", "best_model", "best_weight", "threshold_model"]
@@ -190,6 +282,41 @@ def _print_summary(summary: dict[str, Any], out: Any) -> None:
     for label in ("excluded", "not_fitted"):
         for model, reason in summary.get(label, {}).items():
             print(f"{label.replace('_', ' ')}: {model}: {reason}", file=out)
+
+
+def _print_gdm(summary: dict[str, Any], out: Any) -> None:
+    print(f"{summary['model']}: {summary['formula']}", file=out)
+    rows = [
+        {
+            "term": name,
+            "estimate": value,
+            "se": summary["std_errors"][name],
+            "p": summary["p_values"][name],
+        }
+        for name, value in summary["params"].items()
+    ]
+    _print_table(rows, out, text=("term",))
+    print(
+        f"R2 = {_fmt(summary['R2'])}  RSE = {_fmt(summary['RSE'])}  AIC = {_fmt(summary['AIC'])}  "
+        f"AICc = {_fmt(summary['AICc'])}  BIC = {_fmt(summary['BIC'])}  n = {summary['n']}"
+        + ("" if summary["converged"] else "  (did not converge)"),
+        file=out,
+    )
+    if summary["comparison"] is not None:
+        print("Against simpler models of the same form:", file=out)
+        _print_table(summary["comparison"], out, text=("model", "k", "converged"))
+
+
+def _print_table(rows: list[dict[str, Any]], out: Any, text: Sequence[str] = ()) -> None:
+    """A table of records, its numbers to four significant figures; ``text``
+    names the columns printed as they are."""
+    import pandas as pd
+
+    table = pd.DataFrame(rows)
+    for column in table.columns:
+        if column not in text:
+            table[column] = [_cell(v) for v in table[column]]
+    print(table.to_string(index=False), file=out)
 
 
 def _cell(value: Any) -> str:
@@ -409,6 +536,203 @@ def _cmd_ci(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
     return _finish(obj, args)
 
 
+def _column(frame: Any, column: str, source: str, option: str) -> None:
+    if column not in frame.columns:
+        raise InputError(
+            f"No column {column!r} in {source}; its columns are {list(frame.columns)}. "
+            f"Name it with {option}."
+        )
+
+
+def _read_abundance(args: argparse.Namespace, command: str) -> tuple[Any, list[float] | None]:
+    """The species-by-site table a command was given, and its sites' areas
+    (None when none were given): from --areas, from the long table's own area
+    column, or for a bundled table from the dataset that goes with it."""
+    import pandas as pd
+
+    if args.areas == "-" and args.abundance == "-":
+        raise InputError("Only one of the abundance table and the areas can be standard input.")
+    if args.sites_in_rows and args.long:
+        raise InputError("Give one of --sites-in-rows and --long.")
+    frame = _read_table(args.abundance, command=command, as_text=True)
+    bundled = _is_bundled(args.abundance)
+    count_col = args.count_col
+    source = args.areas or (TABLES[args.abundance].get("areas") if bundled else None)
+    if source is None:
+        if args.areas_site_col is not None:
+            raise InputError("--areas-site-col goes with --areas.")
+        if args.area_col is not None and not args.long:
+            raise InputError("--area-col goes with --areas, or with a --long table's own areas.")
+    area_col = args.area_col or "area"
+    if not args.long:
+        given = [
+            option
+            for option, value in (
+                ("--site-col", args.site_col),
+                ("--species-col", args.species_col),
+                ("--count-col", args.count_col),
+                ("--one-per-row", args.one_per_row or None),
+            )
+            if value is not None
+        ]
+        if given:
+            raise InputError(f"{given[0]} goes with --long.")
+    if args.one_per_row:
+        if count_col is not None:
+            raise InputError("Give one of --count-col and --one-per-row.")
+    elif args.long and count_col is None:
+        count_col = "count"
+        if count_col not in frame.columns:
+            raise InputError(
+                f"No column 'count' in {args.abundance}; its columns are {list(frame.columns)}. "
+                "Name the column of counts with --count-col, or pass --one-per-row if each "
+                "row is one individual."
+            )
+    layout = "long" if args.long else "sites" if args.sites_in_rows else "species"
+    if bundled and layout != "species":
+        raise InputError(f"The bundled {args.abundance} table has species in rows.")
+    table = ops.abundance_table(
+        frame,
+        layout=layout,
+        site_col=args.site_col or "site",
+        species_col=args.species_col or "species",
+        count_col=count_col,
+    )
+    sites = [str(c) for c in table.columns]
+    if source is not None:
+        areas_table = _read_table(source, as_text=True)
+        site_col = args.areas_site_col
+        if site_col is None and args.site_col in areas_table.columns:
+            site_col = args.site_col  # the long table's name for the column, here too
+        header = None if args.long or bundled else str(frame.columns[0])
+        areas = ops.site_areas(
+            sites, areas_table, site_col=site_col, area_col=area_col, names_header=header
+        )
+        return table, areas
+    if args.long and area_col in frame.columns:
+        own = pd.DataFrame({"site": frame[args.site_col or "site"], "area": frame[area_col]})
+        return table, ops.site_areas(sites, own, site_col="site", area_col="area")
+    if args.area_col is not None:
+        raise InputError(
+            f"No column {area_col!r} in {args.abundance}; its columns are {list(frame.columns)}."
+        )
+    if not args.long and not bundled:
+        names = pd.to_numeric(frame[frame.columns[0]], errors="coerce")
+        if len(names) and names.notna().all():
+            what = "sites" if args.sites_in_rows else "species"
+            warnings.warn(
+                f"The first column, {frame.columns[0]!r}, holds only numbers and is read as "
+                f"the names of the {what}, not as counts.",
+                stacklevel=2,
+            )
+    return table, None
+
+
+def _cmd_coleman(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
+    import sars
+
+    table, areas = _read_abundance(args, "coleman")
+    if areas is None:
+        raise InputError(
+            "Random placement needs the area of each site: give --areas FILE, a CSV with a "
+            "column naming the sites and a column of areas."
+        )
+    fit, test = ops.coleman(table, areas, n_sim=args.n_sim, seed=args.seed)
+    if args.save:
+        sars.save(fit, args.save)
+    result = ops.coleman_result(
+        fit, test, include_object=args.json, saved=str(args.save) if args.save else None
+    )
+    return result, lambda out: _print_summary(result["summary"], out)
+
+
+def _cmd_effort(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
+    import pandas as pd
+
+    table, areas = _read_abundance(args, "effort")
+    result = ops.effort(table, areas, base=args.base, level=args.level)
+    text = pd.DataFrame(result["sites"]).to_csv(index=False)
+    return result, lambda out: out.write(text)
+
+
+def _cmd_gdm(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
+    frame = _read_table(args.data, command="gdm")
+    for column, option in (
+        (args.area_col, "--area-col"),
+        (args.species_col, "--species-col"),
+        (args.time_col, "--time-col"),
+    ):
+        _column(frame, column, args.data, option)
+    obj = ops.gdm(
+        frame,
+        model=args.model,
+        mod_sel=args.mod_sel,
+        area_col=args.area_col,
+        species_col=args.species_col,
+        time_col=args.time_col,
+    )
+    return _finish(obj, args)
+
+
+def _cmd_habitat(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
+    frame = _read_table(args.data, command="habitat")
+    for column, option in (
+        (args.area_col, "--area-col"),
+        (args.habitats_col, "--habitats-col"),
+        (args.species_col, "--species-col"),
+    ):
+        _column(frame, column, args.data, option)
+    obj = ops.habitat(
+        frame,
+        mod_type=args.mod_type,
+        area_col=args.area_col,
+        habitats_col=args.habitats_col,
+        species_col=args.species_col,
+        con=args.con,
+        log_base=args.log_base,
+    )
+    return _finish(obj, args)
+
+
+def _cmd_countryside(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
+    frame = _read_table(args.data, command="countryside")
+    defaults = TABLES[args.data]["columns"] if _is_bundled(args.data) else {}
+    habitats = ops.column_names(args.habitats) or defaults.get("habitats")
+    species = ops.column_names(args.species) or defaults.get("species")
+    if habitats is None or species is None:
+        raise InputError(
+            "Name the habitat area columns with --habitats and the species group columns "
+            f"with --species; the columns of {args.data} are {list(frame.columns)}."
+        )
+    for column in habitats:
+        _column(frame, column, args.data, "--habitats")
+    for column in species:
+        _column(frame, column, args.data, "--species")
+    obj = ops.countryside(
+        frame,
+        habitats=habitats,
+        species=species,
+        mod_type=args.mod_type,
+        grid_start=args.grid_start,
+        z_lower=args.z_lower,
+        n_starts=args.n_starts,
+    )
+    return _finish(obj, args)
+
+
+def _n_starts(value: str) -> int | None:
+    """--n-starts: a positive whole number, or "all" for the whole grid."""
+    if value == "all":
+        return None
+    try:
+        number = int(value)
+    except ValueError:
+        number = 0
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"a positive whole number or 'all', not {value!r}")
+    return number
+
+
 def _cmd_predict(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
     import sars
 
@@ -416,29 +740,35 @@ def _cmd_predict(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
         obj = sars.load(args.fit)
     except FileNotFoundError as exc:
         raise InputError(f"No such file: {args.fit}") from exc
-    result = ops.predict(obj, args.areas)
+    result = ops.predict(obj, args.areas, time=args.time)
 
     def show(out: Any) -> None:
         for row in result["predictions"]:
-            print(f"{row['area']:.6g}\t{_fmt(row['species'])}", file=out)
+            age = f"{row['time']:.6g}\t" if "time" in row else ""
+            print(f"{row['area']:.6g}\t{age}{_fmt(row['species'])}", file=out)
 
     return result, show
 
 
 def _cmd_datasets(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
     if args.name is None:
-        result = ops.datasets()
+        result = ops.datasets(tables=True)
 
         def show(out: Any) -> None:
             for row in result["datasets"]:
                 print(
-                    f"{row['name']:<10} {row['n']:>4} sites  area {row['area_min']:.4g} to "
+                    f"{row['name']:<12} {row['n']:>4} sites  area {row['area_min']:.4g} to "
                     f"{row['area_max']:.4g}",
                     file=out,
                 )
+            for row in result["tables"]:
+                use = " and ".join(f"`sars {name}`" for name in row["commands"])
+                print(f"{row['name']:<12} {row['n']:>4} rows   for {use}", file=out)
 
         return result, show
-    text = ops.bundled(args.name).to_csv(index=False)
+    frame = ops.bundled(args.name)
+    # A table with names in its index (species by site) keeps them as a column.
+    text = frame.to_csv(index=frame.index.name is not None)
     return {"name": args.name, "csv": text}, lambda out: out.write(text)
 
 
@@ -456,6 +786,56 @@ def _add_data_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--species-col", default="species", help="the CSV's richness column (default: species)"
     )
+
+
+def _add_abundance_args(parser: argparse.ArgumentParser, required: bool) -> None:
+    parser.add_argument(
+        "abundance",
+        help="a species-by-site table of counts: a CSV file, - for standard input, or the "
+        "bundled table `xu_abundance`. Species in rows and a column per site, the first "
+        "column naming the species, unless --sites-in-rows or --long",
+    )
+    parser.add_argument(
+        "--sites-in-rows",
+        action="store_true",
+        help="the table has a row per site and a column per species",
+    )
+    parser.add_argument(
+        "--long",
+        action="store_true",
+        help="the table has a row per site and species, with the number of individuals",
+    )
+    parser.add_argument(
+        "--site-col", metavar="COLUMN", help="with --long, the site column (default: site)"
+    )
+    parser.add_argument(
+        "--species-col",
+        metavar="COLUMN",
+        help="with --long, the species column (default: species)",
+    )
+    parser.add_argument(
+        "--count-col", metavar="COLUMN", help="with --long, the column of counts (default: count)"
+    )
+    parser.add_argument(
+        "--one-per-row",
+        action="store_true",
+        help="with --long, each row is one individual: there is no column of counts",
+    )
+    parser.add_argument(
+        "--areas",
+        metavar="FILE",
+        help="the site areas"
+        + ("" if required else " (optional)")
+        + ": a CSV file or a bundled dataset with a column naming the sites and a column "
+        "of areas, matched to the table's sites by name. A --long table may hold the "
+        "areas itself",
+    )
+    parser.add_argument(
+        "--areas-site-col",
+        metavar="COLUMN",
+        help="the areas file's site column (default: island, site, locality or name)",
+    )
+    parser.add_argument("--area-col", metavar="COLUMN", help="the column of areas (default: area)")
 
 
 def _add_check_args(parser: argparse.ArgumentParser) -> None:
@@ -744,6 +1124,158 @@ def build_parser() -> argparse.ArgumentParser:
     _add_output_args(ci)
     ci.set_defaults(handler=_cmd_ci)
 
+    coleman = commands.add_parser(
+        "coleman",
+        help="test Coleman's random placement model (abundance table)",
+        description="Compare each site's richness with Coleman's random placement model, "
+        "from the number of individuals of each species at each site and the sites' areas: "
+        "the one-third rule, and a simulation test of random placement.",
+    )
+    _add_abundance_args(coleman, required=True)
+    coleman.add_argument(
+        "--n-sim",
+        type=int,
+        default=999,
+        metavar="N",
+        help="simulated placements for the test (default 999; 0: no test)",
+    )
+    coleman.add_argument("--seed", type=int, help="seed for the test, for a reproducible p value")
+    _add_output_args(coleman)
+    coleman.set_defaults(handler=_cmd_coleman)
+
+    effort = commands.add_parser(
+        "effort",
+        help="standardize richness for sampling effort (abundance table)",
+        description="Rarefy or extrapolate each site's sample to the same coverage or the "
+        "same number of individuals, and write the standardized richness as CSV: with "
+        "--areas, a table `sars fit -` reads.",
+    )
+    _add_abundance_args(effort, required=False)
+    effort.add_argument(
+        "--base",
+        choices=["coverage", "size"],
+        default="coverage",
+        help="standardize to equal sample coverage (default) or equal numbers of individuals",
+    )
+    effort.add_argument(
+        "--level",
+        type=float,
+        metavar="X",
+        help="the coverage (0 to 1) or number of individuals (default: the largest every "
+        "site reaches at twice its sample)",
+    )
+    _add_output_args(effort, save=False)
+    effort.set_defaults(handler=_cmd_effort)
+
+    gdm = commands.add_parser(
+        "gdm",
+        help="fit the general dynamic model (area and island age)",
+        description="Fit the general dynamic model of oceanic island biogeography: richness "
+        "from island area and a hump in island age (time and time squared). The data have a "
+        "column of island age beside area and richness.",
+    )
+    gdm.add_argument("data", help="a CSV file, or - for standard input")
+    gdm.add_argument("--area-col", default="area", help="the area column (default: area)")
+    gdm.add_argument(
+        "--species-col", default="species", help="the richness column (default: species)"
+    )
+    gdm.add_argument("--time-col", default="time", help="the island age column (default: time)")
+    gdm.add_argument(
+        "-m",
+        "--model",
+        choices=["loga", "linear", "power_area", "power_area_time", "all"],
+        default="loga",
+        help="how area and time enter (default: loga); `all` fits and ranks the four",
+    )
+    gdm.add_argument(
+        "--mod-sel",
+        action="store_true",
+        help="also compare with the simpler models: area and time, area only, intercept only",
+    )
+    _add_output_args(gdm)
+    gdm.set_defaults(handler=_cmd_gdm)
+
+    habitat = commands.add_parser(
+        "habitat",
+        help="fit the habitat models (area and number of habitats)",
+        description="Fit the habitat species-area models (choros, jigsaw, Kallimanis and the "
+        "curve on area alone) and rank them by AICc. The data have a column for the number "
+        "of habitats (or another measure of heterogeneity) beside area and richness.",
+    )
+    habitat.add_argument(
+        "data",
+        help="a CSV file, - for standard input, or the bundled table `habitat`",
+    )
+    habitat.add_argument("--area-col", default="area", help="the area column (default: area)")
+    habitat.add_argument(
+        "--habitats-col", default="habitats", help="the habitats column (default: habitats)"
+    )
+    habitat.add_argument(
+        "--species-col", default="species", help="the richness column (default: species)"
+    )
+    habitat.add_argument(
+        "--mod-type",
+        choices=["power_log", "power", "logarithmic"],
+        default="power_log",
+        help="power forms fitted on the logs (default), power forms by non-linear least "
+        "squares, or the logarithmic forms",
+    )
+    habitat.add_argument(
+        "--con",
+        type=float,
+        help="added to every richness before taking logs (power_log, when an island has none)",
+    )
+    habitat.add_argument(
+        "--log-base", choices=["e", "2", "10"], default="e", help="the logarithm (default: e)"
+    )
+    _add_output_args(habitat)
+    habitat.set_defaults(handler=_cmd_habitat)
+
+    countryside = commands.add_parser(
+        "countryside",
+        help="fit the countryside model (areas of several habitats)",
+        description="Fit the countryside species-area model: the richness of each species "
+        "group as a curve of a weighted sum of the habitat areas. The data have one row per "
+        "site, a column of area for each habitat and a column of richness for each group.",
+    )
+    countryside.add_argument(
+        "data",
+        help="a CSV file, - for standard input, or the bundled table `countryside`",
+    )
+    countryside.add_argument(
+        "--habitats",
+        action="append",
+        metavar="COLUMN",
+        help="the habitat area columns (repeated or comma-separated)",
+    )
+    countryside.add_argument(
+        "--species",
+        action="append",
+        metavar="COLUMN",
+        help="the species group richness columns (repeated or comma-separated)",
+    )
+    countryside.add_argument(
+        "--mod-type", choices=["power", "logarithmic"], default="power", help="default: power"
+    )
+    countryside.add_argument(
+        "--grid-start",
+        choices=["partial", "exhaustive", "none"],
+        default="partial",
+        help="how many starting values to try (default: partial)",
+    )
+    countryside.add_argument(
+        "--z-lower", type=float, default=0.0, metavar="Z", help="the smallest z allowed (default 0)"
+    )
+    countryside.add_argument(
+        "--n-starts",
+        type=_n_starts,
+        default=40,
+        metavar="N",
+        help="fit from the N most promising starting values (default 40), or `all`",
+    )
+    _add_output_args(countryside)
+    countryside.set_defaults(handler=_cmd_countryside)
+
     predict = commands.add_parser(
         "predict",
         help="predict richness from a saved result",
@@ -751,6 +1283,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     predict.add_argument("fit", type=Path, help="a result saved with --save")
     predict.add_argument("areas", nargs="+", type=float, metavar="AREA", help="areas to predict at")
+    predict.add_argument(
+        "--time",
+        nargs="+",
+        type=float,
+        metavar="T",
+        help="island ages, for a general dynamic model: one for each area, or one for all",
+    )
     _add_output_args(predict, save=False)
     predict.set_defaults(handler=_cmd_predict)
 
@@ -779,7 +1318,8 @@ def build_parser() -> argparse.ArgumentParser:
     datasets = commands.add_parser(
         "datasets",
         help="list the bundled datasets, or write one as CSV",
-        description="List the bundled datasets, or write the named one as CSV.",
+        description="List the bundled datasets and the tables for the commands that read "
+        "more than area and richness, or write the named one as CSV.",
     )
     datasets.add_argument("name", nargs="?", help="a dataset to write as CSV")
     _add_output_args(datasets, save=False)

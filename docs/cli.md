@@ -23,6 +23,9 @@ $ sars fit islands.csv --area-col Area_km2 --species-col Richness
 $ sars datasets xu > xu.csv
 ```
 
+Some analyses read more than area and richness; each has its own command and its own
+table (see [Other tables](#other-tables)).
+
 ## Commands
 
 | Command | Does |
@@ -35,9 +38,14 @@ $ sars datasets xu > xu.csv
 | `sars many DATA DATA ... \| sars many TABLE --by COL [-m MODEL ...] [--no-threshold] [--n-jobs N]` | Fits the same models to many datasets and summarizes them in one table: best model and weight, log-log z, threshold model (see [`sar_many`](api/inference.md)). |
 | `sars loglog DATA [--log-base e\|2\|10] [--con C] [--compare]` | Fits the log-log power model by least squares, with standard errors, t tests and p values (see [`lin_pow`](api/models.md)). |
 | `sars ci DATA [--area A ...] [-m MODEL ...] [--method fast\|full] [--n-boot N] [--seed S] [--n-jobs N]` | The model-averaged richness at the areas (ten over the data's range by default), with bootstrap intervals (see [`bootstrap_ci`](api/inference.md)). |
-| `sars predict FILE AREA ...` | Predicts richness at the areas from a result saved with `--save`. |
+| `sars coleman ABUNDANCE --areas FILE [--n-sim N] [--seed S]` | Compares each site's richness with Coleman's random placement model: the one-third rule and a simulation test (see [`coleman`](api/coleman.md)). |
+| `sars effort ABUNDANCE [--areas FILE] [--base coverage\|size] [--level X]` | Standardizes each site's richness for sampling effort and writes it as CSV (see [`standardised_richness`](api/effort.md)). |
+| `sars gdm DATA [-m loga\|linear\|power_area\|power_area_time\|all] [--mod-sel] [--time-col COL]` | Fits the general dynamic model: richness from island area and a hump in island age (see [`sar_gdm`](api/gdm.md)). `--mod-sel` compares it with the simpler models without the hump, without time, and with neither. |
+| `sars habitat DATA [--mod-type power_log\|power\|logarithmic] [--habitats-col COL] [--con C] [--log-base e\|2\|10]` | Fits the habitat models (choros, jigsaw, Kallimanis and the curve on area alone) to data with a number of habitats per island, and ranks them by AICc (see [`sar_habitat`](api/habitat.md)). |
+| `sars countryside DATA --habitats COL,... --species COL,... [--mod-type power\|logarithmic] [--grid-start partial\|exhaustive\|none] [--z-lower Z] [--n-starts N\|all]` | Fits the countryside model: each species group's richness from the areas of several habitats (see [`sar_countryside`](api/habitat.md)). |
+| `sars predict FILE AREA ... [--time T ...]` | Predicts richness at the areas from a result saved with `--save`. A general dynamic model needs island ages too. |
 | `sars serve [--host H] [--port P] [--token-file F] [--timeout S]` | Serves the same operations over HTTP; needs the `server` extra (see [HTTP server](server.md)). |
-| `sars datasets [NAME]` | Lists the bundled datasets, or writes one as CSV. |
+| `sars datasets [NAME]` | Lists the bundled datasets and tables, or writes one as CSV. |
 
 Every command takes `--backend numpy|cupy` before its name (`sars --backend cupy fit
 ...`), or the `SARS_BACKEND` environment variable, to screen start grids on an NVIDIA GPU
@@ -47,6 +55,87 @@ The JSON envelope records the backend used.
 `fit`, `average` and `ci` also take the residual checks of [`sar_multi`](api/inference.md):
 `--normality shapiro|lillie|kolmogorov`, `--homoscedasticity cor.fitted|cor.area` and
 `--neg-check`. `sars COMMAND --help` lists every option.
+
+## Other tables
+
+These commands read a CSV file, standard input or their own bundled table, and take
+`--json` and `--save` like the others.
+
+**General dynamic model** (`sars gdm`): one row per island, with a column of island age
+beside area and richness. The columns are `area`, `species` and `time` unless named with
+`--area-col`, `--species-col` and `--time-col`. No table is bundled for it.
+
+```console
+$ sars gdm islands.csv --time-col age_myr --mod-sel
+$ sars gdm islands.csv -m all --save gdm.json
+$ sars predict gdm.json 10 100 --time 2.5
+```
+
+`sars predict` takes the island ages with `--time`, after the areas: one for each area,
+or one for all.
+From a saved `-m all` result it predicts with the best form.
+
+**Habitat models** (`sars habitat`): one row per island, with a column for the number of
+habitats (or another measure of heterogeneity) beside area and richness. The columns are
+`area`, `habitats` and `species` unless named with `--area-col`, `--habitats-col` and
+`--species-col`. The bundled table is `habitat`.
+
+```console
+$ sars habitat habitat
+$ sars habitat snails.csv --habitats-col Het --mod-type power
+```
+
+**Countryside model** (`sars countryside`): one row per site, a column of area for each
+habitat and a column of richness for each species group. Name them with `--habitats` and
+`--species`, repeated or comma-separated. The bundled table is `countryside`, whose
+columns are used when none are named.
+
+```console
+$ sars countryside countryside
+$ sars countryside sites.csv --habitats forest,farmland --species forest_spp,farm_spp,generalists
+```
+
+**Abundance tables** (`sars coleman`, `sars effort`): the number of individuals of each
+species at each site, in one of three layouts.
+
+| Layout | Option | The CSV |
+|---|---|---|
+| Species in rows | (default) | The first column names the species; every other column is a site. |
+| Sites in rows | `--sites-in-rows` | The first column names the sites; every other column is a species. |
+| Long | `--long` | One row per site and species, in columns `site`, `species` and `count` (or `--site-col`, `--species-col`, `--count-col`). A pair on several rows is summed, and a pair that is missing counts as 0. With `--one-per-row` each row is one individual and there is no count column, as in a table of occurrence records. |
+
+The site areas come from a second CSV, `--areas FILE`, with a column naming the sites
+(`island`, `site`, `locality` or `name`, or `--areas-site-col`) and a column of areas
+(`area`, or `--area-col`). Sites are matched by name, so the order doesn't matter and the
+file may hold sites the table doesn't. Names are compared as written, apart from spaces
+around them: `01` and `1` are different sites. A long table may hold the areas itself, in
+its area column; `--areas` is used instead when both are given. `coleman` needs the areas; for `effort` they are optional. The bundled table
+is `xu_abundance`, which takes its areas from `xu`.
+
+```console
+$ sars coleman xu_abundance --seed 1
+$ sars coleman counts.csv --areas islands.csv --areas-site-col Island --area-col km2
+$ sars coleman records.csv --long --one-per-row --site-col park --species-col taxon --areas parks.csv
+```
+
+The first column of a table with species or sites in rows always holds their names. A
+table of counts alone would lose its first column to them: `coleman` and `effort` refuse
+it when that column's header is one of the sites in the areas file, and `effort` without
+areas warns when the first column holds only numbers.
+
+`effort` writes one row per site as CSV, with `site`, `area` (given areas) and `species`
+(the standardized richness), so it feeds the fitting commands:
+
+```console
+$ sars effort xu_abundance | sars fit - -m all
+$ sars effort counts.csv --areas islands.csv --base size --level 100 > standardized.csv
+```
+
+`coleman --save` saves the fit; `sars predict` then gives the richness expected under
+random placement at an area. `effort` has no `--save`: its result is the table.
+
+`sars predict` doesn't predict from a saved habitat or countryside result, since they
+need more than areas: load the saved file in Python and call its `predict`.
 
 ## Saving and predicting
 
