@@ -24,6 +24,14 @@ reconstructed from the commit history and the
   `sars predict` takes `--time` to predict from a saved one.
 - `sars.save`, `sars.load`, `to_json` and `from_json` handle `GDMFit` and
   `GDMMultiFit`.
+- `sars coleman` and `sars effort`: Coleman's random placement model and
+  richness standardized for sampling effort on the command line. Both read a
+  table of counts with species in rows, sites in rows (`--sites-in-rows`) or
+  one row per site and species (`--long`, or `--long --one-per-row` for a
+  table of single records), and the site areas from a second file matched by
+  site name (`--areas`). `effort` writes CSV that `sars fit -` reads. The
+  bundled `xu_abundance` table works by name, with `xu` for its areas.
+- `sars.save` and `sars.load` handle `ColemanFit`.
 
 ## [0.11.12] - 2026-11-26
 

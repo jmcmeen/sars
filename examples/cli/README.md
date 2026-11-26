@@ -11,6 +11,7 @@ they work as they are. Install sars (`pip install sars`) and run any of them wit
 | `04_habitat_loss.sh` | Species expected to be lost with habitat |
 | `05_compare_and_validate.sh` | Log-log against nonlinear power, cross-validation, many datasets |
 | `06_json_and_jq.sh` | JSON output for scripts, saving and predicting (needs `jq`) |
+| `07_other_tables.sh` | Habitat and countryside models, the general dynamic model, random placement and richness standardized for effort |
 
 `sars --help` and `sars COMMAND --help` list every option, and the documentation's
 [Command line](https://jmcmeen.github.io/sars/cli/) page describes them. The tests run

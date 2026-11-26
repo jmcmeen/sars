@@ -48,6 +48,12 @@ TABLES: dict[str, dict[str, Any]] = {
             "species": ["Spcs_AG", "Spcs_SH", "Spcs_QF", "Spcs_UB"],
         },
     },
+    "xu_abundance": {
+        "loader": "load_xu_abundance",
+        "commands": ["coleman", "effort"],
+        "columns": {},
+        "areas": "xu",
+    },
 }
 
 THRESHOLD_MODELS = ["ContOne", "ZslopeOne", "DiscOne", "ContTwo", "ZslopeTwo", "DiscTwo"]
@@ -56,6 +62,10 @@ THRESHOLD_MODELS = ["ContOne", "ZslopeOne", "DiscOne", "ContTwo", "ZslopeTwo", "
 # The most resample indices a bootstrap may hold at once (resamples times
 # islands): 200 million, 1.6 GB, so a request can't exhaust the machine.
 MAX_RESAMPLE_VALUES = 200_000_000
+
+
+# The most simulated placements a Coleman test may run.
+MAX_SIMULATIONS = 1_000_000
 
 
 def _check_resamples(n_boot: int, n: int) -> None:
@@ -501,6 +511,210 @@ def gdm(
     )
 
 
+def abundance_table(
+    table: Any,
+    layout: str = "species",
+    site_col: str = "site",
+    species_col: str = "species",
+    count_col: str | None = "count",
+) -> Any:
+    """A species-by-site abundance table (species in rows, a column per site)
+    from one of three layouts.
+
+    ``layout`` is "species" (already so: the first column names the species),
+    "sites" (sites in rows: the first column names the sites) or "long" (one
+    row per site and species, in ``site_col`` and ``species_col``, with the
+    number of individuals in ``count_col``; with ``count_col`` None each row
+    is one individual). A table whose index is already named (a bundled one)
+    is taken as it is.
+    """
+    import numpy as np
+    import pandas as pd
+
+    if layout not in ("species", "sites", "long"):
+        raise InputError(f"layout must be 'species', 'sites' or 'long', got {layout!r}.")
+    if layout == "long":
+        needed = [site_col, species_col] + ([] if count_col is None else [count_col])
+        for column in needed:
+            if column not in table.columns:
+                raise InputError(
+                    f"No column {column!r} in the long table; its columns are "
+                    f"{list(table.columns)}."
+                )
+        if len(set(needed)) < len(needed):
+            raise InputError("The site, species and count columns must be different columns.")
+        if table[[site_col, species_col]].isna().any().any():
+            raise InputError("The long table has rows with no site or no species.")
+        if count_col is None:
+            counts = pd.Series(1, index=table.index)
+        else:
+            if pd.api.types.is_bool_dtype(table[count_col]):
+                raise InputError(f"The count column {count_col!r} must hold numbers.")
+            counts = pd.to_numeric(table[count_col], errors="coerce")
+            # Each row is checked, not only a pair's total: -1 and 1 aren't 0.
+            whole = np.isfinite(counts) & (counts >= 0) & (counts == np.round(counts))
+            if not whole.all():
+                raise InputError(
+                    f"The count column {count_col!r} must hold whole numbers, 0 or more, with "
+                    f"none missing: see row {int(np.flatnonzero(~whole.to_numpy())[0]) + 1}."
+                )
+        sites = table[site_col].astype(str).str.strip()
+        species = table[species_col].astype(str).str.strip()
+        wide = counts.groupby([species, sites], sort=False).sum().unstack(fill_value=0)
+        wide = wide.reindex(index=pd.unique(species), columns=pd.unique(sites))
+    else:
+        named = table.index.name is not None
+        if not named and table.shape[1] < 2:
+            what = "species" if layout == "species" else "sites"
+            raise InputError(
+                f"The table needs a first column naming the {what} and a column of counts "
+                f"for each {'site' if layout == 'species' else 'species'}."
+            )
+        wide = table if named else table.set_index(table.columns[0])
+        if wide.index.isna().any() or not wide.index.is_unique:
+            what = "species" if layout == "species" else "site"
+            raise InputError(f"The first column must name each {what} once, with none missing.")
+        try:
+            wide = wide.apply(pd.to_numeric)
+        except (ValueError, TypeError) as exc:
+            raise InputError(
+                "Every column after the first must hold counts; one holds something that "
+                f"isn't a number ({exc})."
+            ) from exc
+        if layout == "sites":
+            wide = wide.T
+    wide.index = wide.index.astype(str).str.strip()
+    wide.columns = wide.columns.astype(str).str.strip()
+    if not wide.index.is_unique:
+        repeated = sorted(set(wide.index[wide.index.duplicated()]))
+        raise InputError(f"A species is named twice: {', '.join(repeated)}.")
+    wide.index.name, wide.columns.name = "species", None
+    if not wide.columns.is_unique:
+        repeated = sorted(set(wide.columns[wide.columns.duplicated()]))
+        raise InputError(f"A site is named twice: {', '.join(repeated)}.")
+    return wide
+
+
+def site_areas(
+    sites: Sequence[str],
+    table: Any,
+    site_col: str | None = None,
+    area_col: str = "area",
+    names_header: str | None = None,
+) -> list[float]:
+    """The area of each of ``sites``, in order, looked up by name in a table
+    with a column naming the sites (``site_col``, or the first of island,
+    site, locality and name found) and a column of areas. Sites of the table
+    that aren't among ``sites`` are left out. ``names_header`` is the header
+    of the abundance table's first column, which names its rows: if it is
+    one of the areas table's sites, that column held counts, not names."""
+    import numpy as np
+    import pandas as pd
+
+    from sars._crossval import _LABEL_GUESSES
+
+    if site_col is None:
+        lower = {str(c).lower(): c for c in table.columns}
+        site_col = next((lower[g] for g in _LABEL_GUESSES if g in lower), None)
+        if site_col is None:
+            raise InputError(
+                f"No column naming the sites in the areas table (one of "
+                f"{', '.join(_LABEL_GUESSES)}); its columns are {list(table.columns)}."
+            )
+    for column in (site_col, area_col):
+        if column not in table.columns:
+            raise InputError(
+                f"No column {column!r} in the areas table; its columns are {list(table.columns)}."
+            )
+    table = table[table[site_col].notna()]
+    names = table[site_col].astype(str).str.strip()
+    if names_header is not None and names_header in set(names):
+        raise InputError(
+            f"The abundance table's first column, {names_header!r}, is one of the sites: "
+            "the first column must hold the names of the rows, not counts."
+        )
+    areas = pd.to_numeric(table[area_col], errors="coerce")
+    # A long table repeats a site's area on each of its rows: one value each.
+    pairs = pd.DataFrame({"site": names, "area": areas}).drop_duplicates()
+    wanted = pairs[pairs["site"].isin(list(sites))]
+    unusable = sorted(set(wanted["site"][wanted["area"].isna()]))
+    if unusable:
+        raise InputError(
+            f"Sites with an area that is missing or not a number: {', '.join(unusable[:5])}."
+        )
+    repeated = sorted(set(wanted["site"][wanted["site"].duplicated()]))
+    if repeated:
+        raise InputError(f"Sites with more than one area: {', '.join(repeated[:5])}.")
+    lookup = wanted.set_index("site")["area"]
+    missing = [s for s in sites if s not in lookup.index]
+    if missing:
+        raise InputError(
+            f"No area for {len(missing)} of the {len(sites)} sites: {', '.join(missing[:5])}"
+            + (", ..." if len(missing) > 5 else "")
+            + ". Sites are matched by name."
+        )
+    out = lookup.reindex(list(sites)).to_numpy(dtype=float)
+    if not np.all(np.isfinite(out)) or np.any(out <= 0):
+        bad = [s for s, a in zip(sites, out, strict=True) if not (np.isfinite(a) and a > 0)]
+        raise InputError(f"Site areas must be positive numbers: see {', '.join(bad[:5])}.")
+    return [float(a) for a in out]
+
+
+def coleman(
+    abundance: Any, areas: Sequence[float], n_sim: int = 999, seed: int | None = None
+) -> tuple[Any, Any]:
+    """Coleman's random placement model against observed richness, and its
+    simulation test (None with ``n_sim`` 0)."""
+    import numpy as np
+
+    import sars
+
+    if not 0 <= n_sim <= MAX_SIMULATIONS:
+        raise InputError(
+            f"The number of simulations must be from 0 to {MAX_SIMULATIONS:,}, got {n_sim}."
+        )
+    if seed is not None and seed < 0:
+        raise InputError(f"The seed can't be negative, got {seed}.")
+    fit = sars.coleman(abundance, list(areas))
+    test = fit.placement_test(n_sim=n_sim, rng=np.random.default_rng(seed)) if n_sim else None
+    return fit, test
+
+
+def coleman_result(
+    fit: Any, test: Any, include_object: bool, saved: str | None = None
+) -> dict[str, Any]:
+    """A Coleman fit for the envelope, with its test in the summary."""
+    out = result(fit, include_object=include_object, saved=saved)
+    out["summary"]["test"] = (
+        None
+        if test is None
+        else {
+            "statistic": number(test.statistic),
+            "p_value": number(test.p_value),
+            "n_sim": test.n_sim,
+            "rule_rejection_rate": number(test.rule_rejection_rate),
+        }
+    )
+    return out
+
+
+def effort(
+    abundance: Any,
+    areas: Sequence[float] | None = None,
+    base: str = "coverage",
+    level: float | None = None,
+) -> dict[str, Any]:
+    """Richness standardized for sampling effort, a row per site."""
+    import sars
+
+    if level is not None and not math.isfinite(level):
+        raise InputError(f"The level must be a finite number, got {level}.")
+    table = sars.standardised_richness(
+        abundance, area=None if areas is None else list(areas), base=base, level=level
+    )
+    return {"base": base, "level": number(table["level"].iloc[0]), "sites": records(table)}
+
+
 def parameters(obj: Any, conf: float = 0.95) -> dict[str, list[dict[str, Any]]]:
     """Each fitted model's parameter table (standard errors, t tests and
     confidence intervals), by model name: one model, or every model of a
@@ -776,6 +990,16 @@ def summary(obj: Any) -> dict[str, Any]:
             "best": obj.summary.iloc[0]["model"],
             "models": records(obj.summary),
             "fits": {name: summary(fit) for name, fit in obj.fits.items()},
+        }
+    if kind == "ColemanFit":
+        return {
+            "type": kind,
+            "n_sites": obj.n_sites,
+            "n_species": obj.n_species,
+            "total_area": number(obj.total_area),
+            "fraction_outside": number(obj.fraction_outside),
+            "rejected": bool(obj.rejected),
+            "sites": records(obj.sites.rename_axis("site").reset_index()),
         }
     if kind == "HabitatFit":
         return {

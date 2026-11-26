@@ -18,6 +18,7 @@ FORMAT_VERSION = 1
 def _result_types() -> dict[str, type]:
     """The result classes JSON may rebuild, by name. Nothing else is ever
     constructed from a file, so loading one can't run arbitrary code."""
+    from sars._coleman import ColemanFit
     from sars._crossval import LOOCV
     from sars._gdm import GDMFit, GDMMultiFit
     from sars._habitat import CountrysideFit, HabitatFit
@@ -45,6 +46,7 @@ def _result_types() -> dict[str, type]:
         MixedLinPowFit,
         GDMFit,
         GDMMultiFit,
+        ColemanFit,
     ]
     return {cls.__name__: cls for cls in classes}
 
@@ -55,8 +57,8 @@ def to_json(obj: Any, indent: int | None = None) -> str:
     Works for every result the package returns (`SARFit`, `MultiSARFit`,
     `AveragedSAR`, `BootstrappedCI`, `LinPowFit`, `ThresholdFit`,
     `ThresholdCI`, `ManySARFit`, `LOOCV`, `HabitatLoss`, `HabitatFit`,
-    `CountrysideFit`, `MixedLinPowFit`, `GDMFit`, `GDMMultiFit`), with its
-    data, parameters and settings; but not `BayesLinPowFit`, whose posterior ArviZ saves. The
+    `CountrysideFit`, `MixedLinPowFit`, `GDMFit`, `GDMMultiFit`, `ColemanFit`), with
+    its data, parameters and settings; but not `BayesLinPowFit`, whose posterior ArviZ saves. The
     text is standard JSON: NaN and infinite numbers (an AICc that is
     undefined, say) are written as strings and read back as numbers. It
     records the format version and the sars version that wrote it.

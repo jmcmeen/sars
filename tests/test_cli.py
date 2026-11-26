@@ -730,3 +730,276 @@ def test_only_a_gdm_predicts_with_island_ages(capsys, tmp_path):
     assert run(capsys, "fit", "galap", "--save", str(saved))[0] == 0
     code, _, err = run(capsys, "predict", str(saved), "10", "--time", "1")
     assert code == 1 and "Only a general dynamic model" in err
+
+
+# --- coleman and effort: a table of counts, and the sites' areas ---
+
+COUNTS = {  # species -> counts at sites a, b, c
+    "wren": [10, 40, 3],
+    "robin": [5, 20, 0],
+    "finch": [1, 9, 2],
+    "crow": [1, 3, 0],
+}
+SITE_AREAS = {"a": 1.0, "b": 4.0, "c": 0.5}
+
+
+@pytest.fixture
+def counts(tmp_path):
+    """The same counts in the three layouts, and the areas in their own file
+    (in another order, with a site the tables don't have)."""
+    import pandas as pd
+
+    wide = pd.DataFrame(COUNTS, index=list(SITE_AREAS)).T.rename_axis("species")
+    wide.to_csv(tmp_path / "species.csv")
+    wide.T.rename_axis("site").to_csv(tmp_path / "sites.csv")
+    long = wide.reset_index().melt(id_vars="species", var_name="site", value_name="count")
+    long = long[long["count"] > 0]
+    long.to_csv(tmp_path / "long.csv", index=False)
+    long.assign(area=long["site"].map(SITE_AREAS)).to_csv(tmp_path / "long_area.csv", index=False)
+    records = long.loc[long.index.repeat(long["count"]), ["site", "species"]]
+    records.to_csv(tmp_path / "records.csv", index=False)
+    pd.DataFrame(
+        {"site": ["c", "elsewhere", "a", "b"], "area": [0.5, 9.0, 1.0, 4.0]}
+    ).to_csv(tmp_path / "areas.csv", index=False)  # fmt: skip
+    return tmp_path, wide
+
+
+LAYOUTS = [
+    ["species.csv"],
+    ["sites.csv", "--sites-in-rows"],
+    ["long.csv", "--long"],
+    ["records.csv", "--long", "--one-per-row"],
+]
+
+
+@pytest.mark.parametrize("layout", LAYOUTS, ids=["species", "sites", "long", "records"])
+def test_coleman_reads_every_layout(capsys, counts, layout):
+    folder, wide = counts
+    expected = sars.coleman(wide, [SITE_AREAS[s] for s in wide.columns])
+    code, envelope = run_json(
+        capsys, "coleman", str(folder / layout[0]), *layout[1:], "--areas",
+        str(folder / "areas.csv"), "--seed", "4", "--n-sim", "99",
+    )  # fmt: skip
+    assert code == 0, envelope
+    summary = envelope["result"]["summary"]
+    assert [row["site"] for row in summary["sites"]] == ["a", "b", "c"]
+    assert [row["area"] for row in summary["sites"]] == [1.0, 4.0, 0.5]
+    assert [row["expected"] for row in summary["sites"]] == pytest.approx(
+        list(expected.sites["expected"])
+    )
+    assert summary["n_species"] == 4 and summary["rejected"] == expected.rejected
+    test = expected.placement_test(n_sim=99, rng=np.random.default_rng(4))
+    assert summary["test"]["p_value"] == pytest.approx(test.p_value)
+    assert summary["test"]["n_sim"] == 99
+
+
+def test_coleman_takes_areas_from_a_long_table(capsys, counts):
+    folder, _ = counts
+    code, envelope = run_json(capsys, "coleman", str(folder / "long_area.csv"), "--long")
+    assert code == 0
+    assert [row["area"] for row in envelope["result"]["summary"]["sites"]] == [1.0, 4.0, 0.5]
+
+
+def test_coleman_bundled_save_and_predict(capsys, tmp_path):
+    saved = tmp_path / "coleman.json"
+    code, out, _ = run(capsys, "coleman", "xu_abundance", "--n-sim", "0", "--save", str(saved))
+    assert code == 0 and "68 species on 42 sites" in out and "Placement test" not in out
+    expected = sars.coleman(sars.load_xu_abundance(), sars.load_xu()["area"].to_numpy())
+    again = sars.load(saved)
+    assert again.total_area == expected.total_area
+    assert list(again.sites.index) == list(expected.sites.index)
+    code, envelope = run_json(capsys, "predict", str(saved), "10", "100")
+    assert [row["species"] for row in envelope["result"]["predictions"]] == pytest.approx(
+        expected.predict([10.0, 100.0])
+    )
+    code, envelope = run_json(capsys, "coleman", "xu_abundance", "--n-sim", "0")
+    assert envelope["result"]["summary"]["test"] is None
+
+
+@pytest.mark.parametrize("layout", LAYOUTS, ids=["species", "sites", "long", "records"])
+def test_effort_reads_every_layout(capsys, counts, layout):
+    folder, wide = counts
+    expected = sars.standardised_richness(wide, area=[SITE_AREAS[s] for s in wide.columns])
+    code, envelope = run_json(
+        capsys, "effort", str(folder / layout[0]), *layout[1:], "--areas",
+        str(folder / "areas.csv"),
+    )  # fmt: skip
+    assert code == 0, envelope
+    result = envelope["result"]
+    assert result["base"] == "coverage"
+    assert [row["site"] for row in result["sites"]] == ["a", "b", "c"]
+    assert [row["species"] for row in result["sites"]] == pytest.approx(list(expected["species"]))
+    assert [row["area"] for row in result["sites"]] == [1.0, 4.0, 0.5]
+
+
+def test_effort_writes_csv_the_fitting_commands_read(capsys, monkeypatch, counts):
+    folder, wide = counts
+    code, out, _ = run(capsys, "effort", "xu_abundance")
+    assert code == 0 and out.startswith("site,area,species,")
+    expected = sars.standardised_richness(sars.load_xu_abundance(), area=sars.load_xu()["area"])
+    monkeypatch.setattr("sys.stdin", io.StringIO(out))
+    code, envelope = run_json(capsys, "fit", "-")
+    fit = sars.sar_power(expected[["area", "species"]])
+    assert envelope["result"]["summary"]["params"] == pytest.approx(fit.params, rel=1e-6)
+
+    # Without areas there is no area column; by size, to a given level.
+    code, out, _ = run(
+        capsys, "effort", str(folder / "species.csv"), "--base", "size", "--level", "5"
+    )
+    assert code == 0 and out.splitlines()[0].startswith("site,species,")
+    by_size = sars.standardised_richness(wide, base="size", level=5)
+    assert float(out.splitlines()[1].split(",")[1]) == pytest.approx(by_size["species"].iloc[0])
+
+
+def test_datasets_writes_a_table_with_its_row_names(capsys):
+    code, out, _ = run(capsys, "datasets", "xu_abundance")
+    assert out.startswith("species,Zhoushan,") and len(out.splitlines()) == 69
+    code, envelope = run_json(capsys, "datasets")
+    tables = {row["name"]: row["commands"] for row in envelope["result"]["tables"]}
+    assert tables["xu_abundance"] == ["coleman", "effort"]
+
+
+def test_abundance_errors(capsys, counts):
+    folder, _ = counts
+
+    def message(*argv):
+        code, _, err = run(capsys, *argv)
+        assert code == 1
+        return err
+
+    species, areas = str(folder / "species.csv"), str(folder / "areas.csv")
+    assert "--areas FILE" in message("coleman", species)
+    assert "--site-col goes with --long" in message(
+        "coleman", species, "--areas", areas, "--site-col", "s"
+    )
+    assert "one of --sites-in-rows and --long" in message(
+        "coleman", species, "--sites-in-rows", "--long", "--areas", areas
+    )
+    long = str(folder / "long.csv")
+    assert "one of --count-col and --one-per-row" in message(
+        "effort", long, "--long", "--one-per-row", "--count-col", "count"
+    )
+    assert "--one-per-row" in message("effort", str(folder / "records.csv"), "--long")
+    assert "No column 'plot'" in message("effort", long, "--long", "--site-col", "plot")
+    assert "is for `sars coleman` and `sars effort`" in message("fit", "xu_abundance")
+    assert "has species in rows" in message("effort", "xu_abundance", "--sites-in-rows")
+    assert "nor a bundled dataset: xu_abundance" in message("effort", "nosuch.csv")
+    assert "standard input" in message("coleman", "-", "--areas", "-")
+    # the sites-in-rows file read as species in rows: its sites have no areas
+    assert "No area for" in message("coleman", str(folder / "sites.csv"), "--areas", areas)
+
+
+def test_areas_file_errors(capsys, counts, tmp_path):
+    folder, _ = counts
+    species = str(folder / "species.csv")
+
+    def message(text, *more):
+        path = tmp_path / "bad_areas.csv"
+        path.write_text(text)
+        code, _, err = run(capsys, "coleman", species, "--areas", str(path), *more)
+        assert code == 1
+        return err
+
+    assert "No area for 1 of the 3 sites: c" in message("site,area\na,1\nb,4\n")
+    assert "more than one area: a" in message("site,area\na,1\na,2\nb,4\nc,1\n")
+    assert "must be positive numbers: see b" in message("site,area\na,1\nb,-4\nc,1\n")
+    assert "No column naming the sites" in message("plot,area\na,1\nb,4\nc,1\n")
+    assert "No column 'km2'" in message("site,area\na,1\nb,4\nc,1\n", "--area-col", "km2")
+    code, envelope = run_json(
+        capsys, "coleman", species, "--areas", str(tmp_path / "bad_areas.csv"),
+        "--areas-site-col", "site", "--n-sim", "0",
+    )  # fmt: skip
+    assert code == 0
+
+    # A table of counts alone: its first column is a site, not the species names.
+    bare = tmp_path / "bare.csv"
+    bare.write_text("a,b,c\n10,40,3\n5,20,0\n1,9,2\n2,3,0\n")
+    code, _, err = run(capsys, "coleman", str(bare), "--areas", str(folder / "areas.csv"))
+    assert code == 1 and "must hold the names of the rows" in err
+
+
+def _write(folder, name, text):
+    path = folder / name
+    path.write_text(text)
+    return str(path)
+
+
+def test_site_names_match_as_written(capsys, tmp_path):
+    """Names that look like numbers aren't turned into numbers: 01 stays 01,
+    and a blank row in the areas file doesn't make 1 into 1.0."""
+    padded = _write(tmp_path, "padded.csv", "sp, 01,02 ,03\nw,10,40,3\nr,5,20,0\nf,1,9,2\n")
+    areas = _write(tmp_path, "areas.csv", "site,area\n01,1\n 02,4\n03 ,0.5\n,9\n")
+    code, envelope = run_json(capsys, "coleman", padded, "--areas", areas, "--n-sim", "0")
+    assert code == 0, envelope
+    rows = envelope["result"]["summary"]["sites"]
+    assert [row["site"] for row in rows] == ["01", "02", "03"]
+    assert [row["area"] for row in rows] == [1.0, 4.0, 0.5]
+
+    plain = _write(tmp_path, "plain.csv", "sp,1,2,3\nw,10,40,3\nr,5,20,0\nf,1,9,2\n")
+    code, _, err = run(capsys, "coleman", plain, "--areas", areas)
+    assert code == 1 and "No area for 3 of the 3 sites: 1, 2, 3" in err
+    numbered = _write(tmp_path, "numbered.csv", "site,area\n1,1\n2,4\n3,0.5\n,9\n")
+    code, envelope = run_json(capsys, "coleman", plain, "--areas", numbered, "--n-sim", "0")
+    assert code == 0 and [r["site"] for r in envelope["result"]["summary"]["sites"]] == [
+        "1",
+        "2",
+        "3",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("rows", "message"),
+    [
+        ("a,w,1\na,w,-1\nb,w,2\n", "whole numbers, 0 or more"),
+        ("a,w,0.5\na,w,0.5\nb,w,2\n", "see row 1"),
+        ("a,w,3\nb,w,\n", "see row 2"),
+        ("a,w,3\nb,w,many\n", "whole numbers"),
+    ],
+)
+def test_long_counts_are_checked_row_by_row(capsys, tmp_path, rows, message):
+    path = _write(tmp_path, "long.csv", "site,species,count\n" + rows)
+    code, _, err = run(capsys, "effort", path, "--long")
+    assert code == 1 and message in err
+
+
+def test_abundance_table_guards(capsys, tmp_path):
+    def message(*argv):
+        code, _, err = run(capsys, *argv)
+        assert code == 1, err
+        return err
+
+    twice = _write(tmp_path, "twice.csv", "sp,x,x,z\nw,1,2,3\nr,4,5,6\n")
+    assert "a column named twice: x" in message("effort", twice)
+    text = _write(tmp_path, "text.csv", "sp,x,y\nw,1,few\nr,4,5\n")
+    assert "must hold counts" in message("effort", text)
+    same = _write(tmp_path, "same.csv", "sp,x,y\nw,1,2\nw ,4,5\n")
+    assert "A species is named twice: w" in message("effort", same)
+
+    long = _write(tmp_path, "long.csv", "site,species,count,area\na,w,3,1\nb,w,2,4\nb,r,1,\n")
+    assert "No column 'aera'" in message("effort", long, "--long", "--area-col", "aera")
+    assert "missing or not a number: b" in message("coleman", long, "--long")
+    wide = _write(tmp_path, "wide.csv", "sp,x,y\nw,1,2\nr,4,5\n")
+    assert "--area-col goes with --areas" in message("effort", wide, "--area-col", "km2")
+    assert "--areas-site-col goes with --areas" in message("effort", wide, "--areas-site-col", "s")
+    areas = _write(tmp_path, "areas.csv", "site,area\nx,1\ny,2\n")
+    assert "must be from 0 to" in message("coleman", wide, "--areas", areas, "--n-sim", "-1")
+    assert "must be from 0 to" in message("coleman", wide, "--areas", areas, "--n-sim", "2000000")
+    assert "seed can't be negative" in message("coleman", wide, "--areas", areas, "--seed", "-1")
+    assert "finite" in message("effort", wide, "--base", "size", "--level", "inf")
+
+
+def test_effort_warns_when_the_first_column_looks_like_counts(capsys, tmp_path):
+    bare = _write(tmp_path, "bare.csv", "x,y,z\n5,1,2\n1,3,0\n2,2,9\n")
+    code, out, err = run(capsys, "effort", bare)
+    assert code == 0 and "holds only numbers and is read as the names of the species" in err
+    assert [line.split(",")[0] for line in out.splitlines()[1:]] == ["y", "z"]
+    named = _write(tmp_path, "named.csv", "sp,y,z\nw,1,2\nr,3,0\nf,2,9\n")
+    code, _, err = run(capsys, "effort", named)
+    assert code == 0 and "warning" not in err
+
+
+def test_a_long_table_with_its_own_areas_gives_way_to_an_areas_file(capsys, tmp_path):
+    long = _write(tmp_path, "long.csv", "site,species,count,area\na,w,3,1\na,r,2,1\nb,w,2,4\n")
+    areas = _write(tmp_path, "areas.csv", "site,area\na,100\nb,400\n")
+    code, envelope = run_json(capsys, "effort", long, "--long", "--areas", areas)
+    assert [row["area"] for row in envelope["result"]["sites"]] == [100.0, 400.0]

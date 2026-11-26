@@ -305,3 +305,11 @@ def test_a_reference_back_is_read_only_among_candidates(tamper):
     tamper(document["object"]["fields"])
     with pytest.raises(ValueError):
         sars.from_json(json.dumps(document))
+
+
+def test_a_coleman_fit_round_trips():
+    fit = sars.coleman(sars.load_xu_abundance(), sars.load_xu()["area"].to_numpy())
+    again = sars.from_json(sars.to_json(fit))
+    pd.testing.assert_frame_equal(again.sites, fit.sites)
+    pd.testing.assert_series_equal(again.abundance, fit.abundance)
+    assert again.total_area == fit.total_area and again.rejected == fit.rejected
