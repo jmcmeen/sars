@@ -616,3 +616,117 @@ def test_a_habitat_column_cannot_be_named_group(capsys, tmp_path):
         capsys, "countryside", str(path), "--habitats", "group,Area_SH", "--species", "Spcs_AG"
     )
     assert code == 1 and "can't be named 'group'" in err
+
+
+# --- gdm: a column of island age ---
+
+
+@pytest.fixture
+def ages_csv(tmp_path):
+    """Islands whose richness has a hump in island age, in a column `age`."""
+    rng = np.random.default_rng(3)
+    area = np.geomspace(2.0, 5000.0, 14)[rng.permutation(14)]
+    age = np.linspace(0.5, 12.0, 14)
+    species = 5 + 6 * np.log(area) + 9 * age - 0.7 * age**2 + rng.normal(0, 2, 14)
+    path = tmp_path / "islands.csv"
+    with path.open("w") as out:
+        out.write("area,species,age\n")
+        for row in zip(area, species, age, strict=True):
+            out.write(",".join(repr(float(v)) for v in row) + "\n")
+    return path
+
+
+def test_gdm(capsys, ages_csv):
+    import pandas as pd
+
+    expected = sars.sar_gdm(pd.read_csv(ages_csv), time_col="age", mod_sel=True)
+    code, envelope = run_json(capsys, "gdm", str(ages_csv), "--time-col", "age", "--mod-sel")
+    assert code == 0
+    summary = envelope["result"]["summary"]
+    assert summary["type"] == "GDMFit" and summary["model"] == "loga" and summary["n"] == 14
+    assert summary["params"] == pytest.approx(expected.params)
+    assert summary["p_values"]["Ti2"] == pytest.approx(expected.p_values["Ti2"])
+    assert [row["model"] for row in summary["comparison"]] == list(expected.comparison["model"])
+    assert sars.from_json(json.dumps(envelope["result"]["object"])).params == expected.params
+
+    code, out, _ = run(capsys, "gdm", str(ages_csv), "--time-col", "age")
+    assert code == 0 and out.startswith("loga: S = Int + A*log(area)")
+    assert "Against simpler models" not in out
+
+
+def test_gdm_all_forms_then_predict(capsys, ages_csv, tmp_path):
+    import pandas as pd
+
+    saved = tmp_path / "gdm.json"
+    code, envelope = run_json(
+        capsys, "gdm", str(ages_csv), "--time-col", "age", "-m", "all", "--save", str(saved)
+    )
+    assert code == 0
+    summary = envelope["result"]["summary"]
+    expected = sars.sar_gdm(pd.read_csv(ages_csv), time_col="age", model="all")
+    assert summary["best"] == expected.best.model
+    assert set(summary["fits"]) == {"loga", "linear", "power_area", "power_area_time"}
+
+    # From every form saved, predict uses the best; one age serves every area.
+    code, envelope = run_json(capsys, "predict", str(saved), "10", "100", "--time", "3")
+    rows = envelope["result"]["predictions"]
+    assert code == 0 and envelope["result"]["model"] == expected.best.model
+    assert [row["time"] for row in rows] == [3.0, 3.0]
+    assert [row["species"] for row in rows] == pytest.approx(expected.best.predict([10, 100], 3))
+    code, out, _ = run(capsys, "predict", str(saved), "10", "100", "--time", "2", "5")
+    assert code == 0 and out.splitlines()[1].startswith("100\t5\t")
+
+
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        (["10"], "give the ages too"),
+        (["10", "20", "30", "--time", "1", "2"], "got 2 ages for 3 areas"),
+        (["-5", "--time", "1"], "Areas must be positive"),
+    ],
+)
+def test_gdm_predict_errors(capsys, ages_csv, tmp_path, argv, message):
+    saved = tmp_path / "gdm.json"
+    assert run(capsys, "gdm", str(ages_csv), "--time-col", "age", "--save", str(saved))[0] == 0
+    code, _, err = run(capsys, "predict", str(saved), *argv)
+    assert code == 1 and message in err
+
+
+def test_gdm_errors(capsys, ages_csv, tmp_path):
+    code, _, err = run(capsys, "gdm", str(ages_csv))
+    assert code == 1 and "No column 'time'" in err and "--time-col" in err
+    code, _, err = run(capsys, "gdm", "galap")
+    assert code == 1 and "holds area and richness only" in err
+    code, _, err = run(capsys, "gdm", "nosuch.csv")
+    assert code == 1 and "this command has none" in err
+    few = tmp_path / "few.csv"
+    few.write_text("area,species,time\n1,2,1\n2,3,2\n3,5,3\n")
+    code, _, err = run(capsys, "gdm", str(few))
+    assert code == 1 and "at least 5 islands" in err
+
+
+def test_a_gdm_candidate_without_time_predicts_from_area_alone(capsys, ages_csv, tmp_path):
+    import pandas as pd
+
+    fit = sars.sar_gdm(pd.read_csv(ages_csv), time_col="age", mod_sel=True)
+    saved = tmp_path / "area_only.json"
+    sars.save(fit.candidates["A"], saved)
+    code, envelope = run_json(capsys, "predict", str(saved), "10", "100")
+    assert code == 0
+    assert [row["species"] for row in envelope["result"]["predictions"]] == pytest.approx(
+        fit.candidates["A"].predict([10.0, 100.0])
+    )
+
+
+def test_a_small_gdm_has_null_criteria(capsys, tmp_path):
+    path = tmp_path / "five.csv"
+    path.write_text("area,species,time\n1,3,1\n8,9,2\n3,12,3\n20,14,4\n6,8,5\n")
+    code, envelope = run_json(capsys, "gdm", str(path), "--mod-sel")
+    assert code == 0 and envelope["result"]["summary"]["AICc"] is None
+
+
+def test_only_a_gdm_predicts_with_island_ages(capsys, tmp_path):
+    saved = tmp_path / "power.json"
+    assert run(capsys, "fit", "galap", "--save", str(saved))[0] == 0
+    code, _, err = run(capsys, "predict", str(saved), "10", "--time", "1")
+    assert code == 1 and "Only a general dynamic model" in err

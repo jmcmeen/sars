@@ -114,6 +114,16 @@ def _print_summary(summary: dict[str, Any], out: Any) -> None:
     import pandas as pd
 
     kind = summary["type"]
+    if kind == "GDMFit":
+        _print_gdm(summary, out)
+        return
+    if kind == "GDMMultiFit":
+        print(f"Best: {summary['best']} (the general dynamic model, by AICc)", file=out)
+        _print_table(summary["models"], out, text=("model", "k", "converged"))
+        for fit in summary["fits"].values():
+            print("", file=out)
+            _print_gdm(fit, out)
+        return
     if kind == "HabitatFit":
         forms = {
             "power_log": "power forms, fitted on the logs",
@@ -240,6 +250,29 @@ def _print_summary(summary: dict[str, Any], out: Any) -> None:
     for label in ("excluded", "not_fitted"):
         for model, reason in summary.get(label, {}).items():
             print(f"{label.replace('_', ' ')}: {model}: {reason}", file=out)
+
+
+def _print_gdm(summary: dict[str, Any], out: Any) -> None:
+    print(f"{summary['model']}: {summary['formula']}", file=out)
+    rows = [
+        {
+            "term": name,
+            "estimate": value,
+            "se": summary["std_errors"][name],
+            "p": summary["p_values"][name],
+        }
+        for name, value in summary["params"].items()
+    ]
+    _print_table(rows, out, text=("term",))
+    print(
+        f"R2 = {_fmt(summary['R2'])}  RSE = {_fmt(summary['RSE'])}  AIC = {_fmt(summary['AIC'])}  "
+        f"AICc = {_fmt(summary['AICc'])}  BIC = {_fmt(summary['BIC'])}  n = {summary['n']}"
+        + ("" if summary["converged"] else "  (did not converge)"),
+        file=out,
+    )
+    if summary["comparison"] is not None:
+        print("Against simpler models of the same form:", file=out)
+        _print_table(summary["comparison"], out, text=("model", "k", "converged"))
 
 
 def _print_table(rows: list[dict[str, Any]], out: Any, text: Sequence[str] = ()) -> None:
@@ -479,6 +512,25 @@ def _column(frame: Any, column: str, source: str, option: str) -> None:
         )
 
 
+def _cmd_gdm(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
+    frame = _read_table(args.data, command="gdm")
+    for column, option in (
+        (args.area_col, "--area-col"),
+        (args.species_col, "--species-col"),
+        (args.time_col, "--time-col"),
+    ):
+        _column(frame, column, args.data, option)
+    obj = ops.gdm(
+        frame,
+        model=args.model,
+        mod_sel=args.mod_sel,
+        area_col=args.area_col,
+        species_col=args.species_col,
+        time_col=args.time_col,
+    )
+    return _finish(obj, args)
+
+
 def _cmd_habitat(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
     frame = _read_table(args.data, command="habitat")
     for column, option in (
@@ -545,11 +597,12 @@ def _cmd_predict(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
         obj = sars.load(args.fit)
     except FileNotFoundError as exc:
         raise InputError(f"No such file: {args.fit}") from exc
-    result = ops.predict(obj, args.areas)
+    result = ops.predict(obj, args.areas, time=args.time)
 
     def show(out: Any) -> None:
         for row in result["predictions"]:
-            print(f"{row['area']:.6g}\t{_fmt(row['species'])}", file=out)
+            age = f"{row['time']:.6g}\t" if "time" in row else ""
+            print(f"{row['area']:.6g}\t{age}{_fmt(row['species'])}", file=out)
 
     return result, show
 
@@ -876,6 +929,34 @@ def build_parser() -> argparse.ArgumentParser:
     _add_output_args(ci)
     ci.set_defaults(handler=_cmd_ci)
 
+    gdm = commands.add_parser(
+        "gdm",
+        help="fit the general dynamic model (area and island age)",
+        description="Fit the general dynamic model of oceanic island biogeography: richness "
+        "from island area and a hump in island age (time and time squared). The data have a "
+        "column of island age beside area and richness.",
+    )
+    gdm.add_argument("data", help="a CSV file, or - for standard input")
+    gdm.add_argument("--area-col", default="area", help="the area column (default: area)")
+    gdm.add_argument(
+        "--species-col", default="species", help="the richness column (default: species)"
+    )
+    gdm.add_argument("--time-col", default="time", help="the island age column (default: time)")
+    gdm.add_argument(
+        "-m",
+        "--model",
+        choices=["loga", "linear", "power_area", "power_area_time", "all"],
+        default="loga",
+        help="how area and time enter (default: loga); `all` fits and ranks the four",
+    )
+    gdm.add_argument(
+        "--mod-sel",
+        action="store_true",
+        help="also compare with the simpler models: area and time, area only, intercept only",
+    )
+    _add_output_args(gdm)
+    gdm.set_defaults(handler=_cmd_gdm)
+
     habitat = commands.add_parser(
         "habitat",
         help="fit the habitat models (area and number of habitats)",
@@ -964,6 +1045,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     predict.add_argument("fit", type=Path, help="a result saved with --save")
     predict.add_argument("areas", nargs="+", type=float, metavar="AREA", help="areas to predict at")
+    predict.add_argument(
+        "--time",
+        nargs="+",
+        type=float,
+        metavar="T",
+        help="island ages, for a general dynamic model: one for each area, or one for all",
+    )
     _add_output_args(predict, save=False)
     predict.set_defaults(handler=_cmd_predict)
 

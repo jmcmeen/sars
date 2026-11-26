@@ -38,9 +38,10 @@ table (see [Other tables](#other-tables)).
 | `sars many DATA DATA ... \| sars many TABLE --by COL [-m MODEL ...] [--no-threshold] [--n-jobs N]` | Fits the same models to many datasets and summarizes them in one table: best model and weight, log-log z, threshold model (see [`sar_many`](api/inference.md)). |
 | `sars loglog DATA [--log-base e\|2\|10] [--con C] [--compare]` | Fits the log-log power model by least squares, with standard errors, t tests and p values (see [`lin_pow`](api/models.md)). |
 | `sars ci DATA [--area A ...] [-m MODEL ...] [--method fast\|full] [--n-boot N] [--seed S] [--n-jobs N]` | The model-averaged richness at the areas (ten over the data's range by default), with bootstrap intervals (see [`bootstrap_ci`](api/inference.md)). |
+| `sars gdm DATA [-m loga\|linear\|power_area\|power_area_time\|all] [--mod-sel] [--time-col COL]` | Fits the general dynamic model: richness from island area and a hump in island age (see [`sar_gdm`](api/gdm.md)). `--mod-sel` compares it with the simpler models without the hump, without time, and with neither. |
 | `sars habitat DATA [--mod-type power_log\|power\|logarithmic] [--habitats-col COL] [--con C] [--log-base e\|2\|10]` | Fits the habitat models (choros, jigsaw, Kallimanis and the curve on area alone) to data with a number of habitats per island, and ranks them by AICc (see [`sar_habitat`](api/habitat.md)). |
 | `sars countryside DATA --habitats COL,... --species COL,... [--mod-type power\|logarithmic] [--grid-start partial\|exhaustive\|none] [--z-lower Z] [--n-starts N\|all]` | Fits the countryside model: each species group's richness from the areas of several habitats (see [`sar_countryside`](api/habitat.md)). |
-| `sars predict FILE AREA ...` | Predicts richness at the areas from a result saved with `--save`. |
+| `sars predict FILE AREA ... [--time T ...]` | Predicts richness at the areas from a result saved with `--save`. A general dynamic model needs island ages too. |
 | `sars serve [--host H] [--port P] [--token-file F] [--timeout S]` | Serves the same operations over HTTP; needs the `server` extra (see [HTTP server](server.md)). |
 | `sars datasets [NAME]` | Lists the bundled datasets and tables, or writes one as CSV. |
 
@@ -57,6 +58,20 @@ The JSON envelope records the backend used.
 
 These commands read a CSV file, standard input or their own bundled table, and take
 `--json` and `--save` like the others.
+
+**General dynamic model** (`sars gdm`): one row per island, with a column of island age
+beside area and richness. The columns are `area`, `species` and `time` unless named with
+`--area-col`, `--species-col` and `--time-col`. No table is bundled for it.
+
+```console
+$ sars gdm islands.csv --time-col age_myr --mod-sel
+$ sars gdm islands.csv -m all --save gdm.json
+$ sars predict gdm.json 10 100 --time 2.5
+```
+
+`sars predict` takes the island ages with `--time`, after the areas: one for each area,
+or one for all.
+From a saved `-m all` result it predicts with the best form.
 
 **Habitat models** (`sars habitat`): one row per island, with a column for the number of
 habitats (or another measure of heterogeneity) beside area and richness. The columns are
@@ -78,8 +93,8 @@ $ sars countryside countryside
 $ sars countryside sites.csv --habitats forest,farmland --species forest_spp,farm_spp,generalists
 ```
 
-`sars predict` doesn't predict from these results, since they need more than areas: load
-the saved file in Python and call its `predict`.
+`sars predict` doesn't predict from a saved habitat or countryside result, since they
+need more than areas: load the saved file in Python and call its `predict`.
 
 ## Saving and predicting
 

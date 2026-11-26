@@ -479,6 +479,28 @@ def countryside(
     )
 
 
+def gdm(
+    data: Any,
+    model: str = "loga",
+    mod_sel: bool = False,
+    area_col: str = "area",
+    species_col: str = "species",
+    time_col: str = "time",
+) -> Any:
+    """The general dynamic model: richness from island area and a hump in
+    island age."""
+    import sars
+
+    return sars.sar_gdm(
+        data,
+        model=model,
+        mod_sel=mod_sel,
+        area_col=area_col,
+        species_col=species_col,
+        time_col=time_col,
+    )
+
+
 def parameters(obj: Any, conf: float = 0.95) -> dict[str, list[dict[str, Any]]]:
     """Each fitted model's parameter table (standard errors, t tests and
     confidence intervals), by model name: one model, or every model of a
@@ -493,9 +515,18 @@ def parameters(obj: Any, conf: float = 0.95) -> dict[str, list[dict[str, Any]]]:
     return tables
 
 
-def predict(obj: Any, areas: Sequence[float]) -> dict[str, Any]:
-    """Predicted richness at ``areas`` from a fitted result."""
+def predict(
+    obj: Any, areas: Sequence[float], time: Sequence[float] | None = None
+) -> dict[str, Any]:
+    """Predicted richness at ``areas`` from a fitted result. A general dynamic
+    model needs ``time`` too: an island age for each area, or one for all."""
     import numpy as np
+
+    kind = type(obj).__name__
+    if kind == "GDMMultiFit":
+        obj, kind = obj.best, "GDMFit"
+    if kind == "GDMFit":
+        return _predict_gdm(obj, areas, time)
 
     if not hasattr(obj, "predict"):
         raise InputError(
@@ -512,12 +543,41 @@ def predict(obj: Any, areas: Sequence[float]) -> dict[str, Any]:
             "which this command doesn't take; load it in Python (sars.load) and call its "
             "predict."
         )
+    if time is not None:
+        raise InputError(f"Only a general dynamic model predicts with island ages, not a {kind}.")
     at = np.asarray(areas, dtype=float)
     if not np.isfinite(at).all():
         raise InputError("Areas must be finite numbers.")
     species = np.asarray(obj.predict(at), dtype=float)
     rows = [{"area": float(a), "species": number(s)} for a, s in zip(at, species, strict=True)]
     return {"type": type(obj).__name__, "predictions": rows}
+
+
+def _predict_gdm(obj: Any, areas: Sequence[float], time: Sequence[float] | None) -> dict[str, Any]:
+    import numpy as np
+
+    at = np.asarray(areas, dtype=float)
+    if time is None:
+        if len(obj.params) >= 3:  # the fit has a time term
+            raise InputError(
+                "A general dynamic model predicts from area and island age: give the ages "
+                "too, one for each area or one for all."
+            )
+        species = np.asarray(obj.predict(at), dtype=float)
+        rows = [{"area": float(a), "species": number(s)} for a, s in zip(at, species, strict=True)]
+        return {"type": "GDMFit", "model": obj.model, "predictions": rows}
+    if len(time) not in (1, len(areas)):
+        raise InputError(
+            f"Give one island age for each area, or one for all: got {len(time)} ages "
+            f"for {len(areas)} areas."
+        )
+    ages = np.broadcast_to(np.asarray(time, dtype=float), at.shape)
+    species = np.asarray(obj.predict(at, ages), dtype=float)
+    rows = [
+        {"area": float(a), "time": float(t), "species": number(s)}
+        for a, t, s in zip(at, ages, species, strict=True)
+    ]
+    return {"type": "GDMFit", "model": obj.model, "predictions": rows}
 
 
 def from_saved(saved: Any) -> Any:
@@ -691,6 +751,31 @@ def summary(obj: Any) -> dict[str, Any]:
             "n_models_attempted": obj.n_models_attempted,
             "dropped": dict(obj.dropped),
             "intervals": rows,
+        }
+    if kind == "GDMFit":
+        return {
+            "type": kind,
+            "model": obj.model,
+            "terms": obj.terms,
+            "formula": obj.formula,
+            "params": {k: number(v) for k, v in obj.params.items()},
+            "std_errors": {k: number(v) for k, v in obj.std_errors.items()},
+            "p_values": {k: number(v) for k, v in obj.p_values.items()},
+            "R2": number(obj.r_squared),
+            "RSE": number(obj.rse),
+            "AIC": number(obj.aic),
+            "AICc": number(obj.aicc),
+            "BIC": number(obj.bic),
+            "n": obj.n,
+            "converged": bool(obj.converged),
+            "comparison": None if obj.comparison is None else records(obj.comparison),
+        }
+    if kind == "GDMMultiFit":
+        return {
+            "type": kind,
+            "best": obj.summary.iloc[0]["model"],
+            "models": records(obj.summary),
+            "fits": {name: summary(fit) for name, fit in obj.fits.items()},
         }
     if kind == "HabitatFit":
         return {

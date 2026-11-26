@@ -19,6 +19,11 @@ reconstructed from the commit history and the
   named with `--habitats` and `--species`. Both take `--json` and `--save`,
   and the bundled `habitat` and `countryside` tables by name; `sars datasets`
   lists them.
+- `sars gdm`: the general dynamic model on the command line, from a table
+  with a column of island age (`--time-col`), with `--model` and `--mod-sel`.
+  `sars predict` takes `--time` to predict from a saved one.
+- `sars.save`, `sars.load`, `to_json` and `from_json` handle `GDMFit` and
+  `GDMMultiFit`.
 
 ## [0.11.12] - 2026-11-26
 

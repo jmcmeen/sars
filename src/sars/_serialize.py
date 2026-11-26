@@ -19,6 +19,7 @@ def _result_types() -> dict[str, type]:
     """The result classes JSON may rebuild, by name. Nothing else is ever
     constructed from a file, so loading one can't run arbitrary code."""
     from sars._crossval import LOOCV
+    from sars._gdm import GDMFit, GDMMultiFit
     from sars._habitat import CountrysideFit, HabitatFit
     from sars._inference import AveragedSAR, BootstrappedCI, MultiSARFit
     from sars._linpow import LinPowFit
@@ -42,6 +43,8 @@ def _result_types() -> dict[str, type]:
         HabitatFit,
         CountrysideFit,
         MixedLinPowFit,
+        GDMFit,
+        GDMMultiFit,
     ]
     return {cls.__name__: cls for cls in classes}
 
@@ -51,8 +54,9 @@ def to_json(obj: Any, indent: int | None = None) -> str:
 
     Works for every result the package returns (`SARFit`, `MultiSARFit`,
     `AveragedSAR`, `BootstrappedCI`, `LinPowFit`, `ThresholdFit`,
-    `ThresholdCI`, `ManySARFit`, `LOOCV`, `HabitatLoss`, `HabitatFit`, `CountrysideFit`, `MixedLinPowFit`), with its data, parameters and
-    settings; but not `BayesLinPowFit`, whose posterior ArviZ saves. The
+    `ThresholdCI`, `ManySARFit`, `LOOCV`, `HabitatLoss`, `HabitatFit`,
+    `CountrysideFit`, `MixedLinPowFit`, `GDMFit`, `GDMMultiFit`), with its
+    data, parameters and settings; but not `BayesLinPowFit`, whose posterior ArviZ saves. The
     text is standard JSON: NaN and infinite numbers (an AICc that is
     undefined, say) are written as strings and read back as numbers. It
     records the format version and the sars version that wrote it.
@@ -172,7 +176,9 @@ def _encode(value: Any) -> Any:
         if _result_types().get(name) is not type(value):
             raise TypeError(f"Can't save a {name}: not a sars result.")
         fields = {
-            f.name: _encode(getattr(value, f.name)) for f in dataclasses.fields(value) if f.init
+            f.name: _encode_field(value, getattr(value, f.name))
+            for f in dataclasses.fields(value)
+            if f.init
         }
         return {"__type__": name, "fields": fields}
     if isinstance(value, pd.DataFrame):
@@ -215,6 +221,20 @@ def _encode(value: Any) -> Any:
             raise TypeError(f"Can't save a dict with non-string keys: {list(value)[:3]}")
         return {"__dict__": {k: _encode(v) for k, v in value.items()}}
     raise TypeError(f"Can't save a value of type {type(value).__name__}.")
+
+
+def _encode_field(owner: Any, value: Any) -> Any:
+    """A field's value; a dict entry that is the object holding it (a GDM fit
+    is one of its own candidates) is written as a reference back to it."""
+    if isinstance(value, dict) and any(v is owner for v in value.values()):
+        if not all(isinstance(k, str) for k in value):
+            raise TypeError(f"Can't save a dict with non-string keys: {list(value)[:3]}")
+        return {
+            "__dict__": {
+                k: {"__self__": True} if v is owner else _encode(v) for k, v in value.items()
+            }
+        }
+    return _encode(value)
 
 
 def _encode_frame(frame: pd.DataFrame) -> dict[str, Any]:
@@ -294,8 +314,33 @@ def _decode(value: Any) -> Any:
         name = value["__type__"]
         if name not in types:
             raise ValueError(f"Saved object names type {name!r}, which isn't a sars result.")
-        fields = {k: _decode(v) for k, v in value["fields"].items()}
-        return types[name](**fields)
+        # A reference back to the object ({"__self__": true}) is read only as
+        # a direct entry of one of its dict fields, beside objects of its own
+        # type (a GDM fit among its candidates); anywhere else it is refused.
+        fields: dict[str, Any] = {}
+        back: list[tuple[dict[str, Any], str]] = []
+        for field_name, raw in value["fields"].items():
+            entries = raw.get("__dict__") if isinstance(raw, dict) else None
+            if isinstance(entries, dict) and any(v == {"__self__": True} for v in entries.values()):
+                decoded: dict[str, Any] = {}
+                for key, item in entries.items():
+                    if item == {"__self__": True}:
+                        back.append((decoded, key))
+                    else:
+                        decoded[key] = _decode(item)
+                        if type(decoded[key]) is not types[name]:
+                            raise ValueError(
+                                f"A reference back to a {name} sits beside a "
+                                f"{type(decoded[key]).__name__} in {field_name!r}."
+                            )
+                    decoded.setdefault(key, None)
+                fields[field_name] = decoded
+            else:
+                fields[field_name] = _decode(raw)
+        obj = types[name](**fields)
+        for holder, key in back:
+            holder[key] = obj
+        return obj
     if "__frame__" in value:
         return _decode_frame(value["__frame__"])
     if "__series__" in value:

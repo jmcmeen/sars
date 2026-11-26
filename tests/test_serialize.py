@@ -247,3 +247,61 @@ def test_series_round_trip(series):
 
     again = _decode(json.loads(json.dumps(_encode(series), allow_nan=False)))
     pd.testing.assert_series_equal(again, series)
+
+
+def _gdm_islands():
+    """Islands whose richness has a hump in island age."""
+    rng = np.random.default_rng(3)
+    area = np.geomspace(2.0, 5000.0, 14)[rng.permutation(14)]
+    time = np.linspace(0.5, 12.0, 14)
+    species = 5 + 6 * np.log(area) + 9 * time - 0.7 * time**2 + rng.normal(0, 2, 14)
+    return pd.DataFrame({"area": area, "species": species, "time": time})
+
+
+def test_a_gdm_fit_round_trips_with_its_candidates():
+    """A GDM fit is one of its own candidates: the reference back to it is
+    saved as one, and restored."""
+    fit = sars.sar_gdm(_gdm_islands(), mod_sel=True)
+    again = sars.from_json(sars.to_json(fit))
+    assert again.candidates["GDM"] is again
+    assert list(again.candidates) == list(fit.candidates)
+    assert again.candidates["A + T"].params == fit.candidates["A + T"].params
+    assert again.candidates["A"].candidates is None
+    pd.testing.assert_frame_equal(again.comparison, fit.comparison)
+    np.testing.assert_array_equal(
+        again.predict([10.0, 100.0], 3.0), fit.predict([10.0, 100.0], 3.0)
+    )
+
+    plain = sars.from_json(sars.to_json(sars.sar_gdm(_gdm_islands())))
+    assert plain.candidates is None and plain.params == sars.sar_gdm(_gdm_islands()).params
+
+
+def test_a_gdm_multi_fit_round_trips():
+    multi = sars.sar_gdm(_gdm_islands(), model="all", mod_sel=True)
+    again = sars.from_json(sars.to_json(multi))
+    assert list(again.fits) == list(multi.fits)
+    pd.testing.assert_frame_equal(again.summary, multi.summary)
+    for name, fit in again.fits.items():
+        assert fit.candidates["GDM"] is fit
+        assert fit.params == multi.fits[name].params
+        assert fit.candidates["A + T"].params == multi.fits[name].candidates["A + T"].params
+    assert again.best.model == multi.best.model
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        lambda fields: fields.__setitem__("candidates", {"__self__": True}),
+        lambda fields: fields.__setitem__("n", {"__self__": True}),
+        lambda fields: fields["params"]["__dict__"].__setitem__("Int", {"__self__": True}),
+        lambda fields: fields["candidates"]["__dict__"].__setitem__("A", [{"__self__": True}]),
+    ],
+    ids=["as a field", "as a number", "among numbers", "in a list"],
+)
+def test_a_reference_back_is_read_only_among_candidates(tamper):
+    import json
+
+    document = json.loads(sars.to_json(sars.sar_gdm(_gdm_islands(), mod_sel=True)))
+    tamper(document["object"]["fields"])
+    with pytest.raises(ValueError):
+        sars.from_json(json.dumps(document))
