@@ -69,6 +69,12 @@ def _read_table(source: str, command: str | None = None) -> Any:
     raise InputError(f"No such file: {source} ({known}).")
 
 
+def _is_bundled(source: str) -> bool:
+    """Whether ``source`` is read as a bundled table: a file of the same name
+    comes first."""
+    return source != "-" and not Path(source).is_file()
+
+
 def _read_data(source: str, area_col: str, species_col: str, label_col: str | None = None) -> Any:
     """A data frame of area and species from a CSV file, standard input
     (``-``) or a bundled dataset's name. ``label_col`` keeps a column naming the
@@ -495,7 +501,7 @@ def _cmd_habitat(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
 
 def _cmd_countryside(args: argparse.Namespace) -> tuple[dict[str, Any], Printer]:
     frame = _read_table(args.data, command="countryside")
-    defaults = TABLES[args.data]["columns"] if args.data in TABLES else {}
+    defaults = TABLES[args.data]["columns"] if _is_bundled(args.data) else {}
     habitats = ops.column_names(args.habitats) or defaults.get("habitats")
     species = ops.column_names(args.species) or defaults.get("species")
     if habitats is None or species is None:

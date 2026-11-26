@@ -565,11 +565,32 @@ def test_datasets_lists_the_other_tables(capsys):
             ["countryside", "countryside", "--habitats", "Area_AG", "--species", "Area_AG"],
             "both a habitat and a species",
         ),
+        (["habitat", "habitat", "--habitats-col", "area"], "three different columns"),
     ],
 )
 def test_other_tables_errors(capsys, argv, message):
     code, _, err = run(capsys, *argv)
     assert code == 1 and message in err
+
+
+def test_other_tables_from_standard_input(capsys, monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.StringIO(sars.load_habitat().to_csv(index=False)))
+    code, envelope = run_json(capsys, "habitat", "-")
+    assert code == 0 and envelope["result"]["summary"]["n"] == 12
+    # A header and no rows is an input error, not a traceback.
+    monkeypatch.setattr("sys.stdin", io.StringIO("area,habitats,species\n"))
+    code, _, err = run(capsys, "habitat", "-")
+    assert code == 1 and "no rows" in err
+    monkeypatch.setattr("sys.stdin", io.StringIO("a,s\n"))
+    code, _, err = run(capsys, "countryside", "-", "--habitats", "a", "--species", "s")
+    assert code == 1 and "no rows" in err
+
+
+def test_a_file_named_like_a_bundled_table_names_its_own_columns(capsys, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "countryside").write_text("forest,farm,birds\n1,2,3\n2,1,4\n3,3,5\n")
+    code, _, err = run(capsys, "countryside", "countryside")
+    assert code == 1 and "Name the habitat area columns with --habitats" in err
 
 
 def test_countryside_needs_its_columns_named(capsys, tmp_path):
@@ -586,3 +607,12 @@ def test_predict_refuses_a_habitat_fit(capsys, tmp_path):
     assert run(capsys, "habitat", "habitat", "--save", str(saved))[0] == 0
     code, _, err = run(capsys, "predict", str(saved), "10")
     assert code == 1 and "a number of habitats for each area" in err
+
+
+def test_a_habitat_column_cannot_be_named_group(capsys, tmp_path):
+    path = tmp_path / "sites.csv"
+    sars.load_countryside().rename(columns={"Area_AG": "group"}).to_csv(path, index=False)
+    code, _, err = run(
+        capsys, "countryside", str(path), "--habitats", "group,Area_SH", "--species", "Spcs_AG"
+    )
+    assert code == 1 and "can't be named 'group'" in err

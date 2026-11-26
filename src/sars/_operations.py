@@ -425,6 +425,13 @@ def habitat(
     curve on area alone), ranked by AICc."""
     import sars
 
+    columns = [area_col, habitats_col, species_col]
+    if len(set(columns)) < 3:
+        raise InputError(
+            f"Area, habitats and richness must be three different columns, got {columns}."
+        )
+    if len(data) == 0:
+        raise InputError("The table has no rows.")
     return sars.sar_habitat(
         data,
         mod_type=mod_type,
@@ -456,7 +463,12 @@ def countryside(
     both = sorted(set(habitats) & set(species))
     if both:
         raise InputError(f"A column is named as both a habitat and a species: {', '.join(both)}.")
-    obj = sars.sar_countryside(
+    if "group" in habitats:
+        # The result's tables name each species group in a column `group`.
+        raise InputError("A habitat column can't be named 'group'; rename it.")
+    if len(data) == 0:
+        raise InputError("The table has no rows.")
+    return sars.sar_countryside(
         data,
         habitats=list(habitats),
         species=list(species),
@@ -465,9 +477,6 @@ def countryside(
         z_lower=z_lower,
         n_starts=n_starts,
     )
-    if not obj.groups:
-        raise InputError("No species group could be fitted.")
-    return obj
 
 
 def parameters(obj: Any, conf: float = 0.95) -> dict[str, list[dict[str, Any]]]:
