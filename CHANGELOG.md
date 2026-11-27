@@ -10,6 +10,8 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+## [0.11.14] - 2026-11-27
+
 ### Added
 
 - HTTP endpoints for the commands that read more than area and richness:
@@ -955,7 +957,8 @@ reconstructed from the commit history and the
 - Project skeleton: package layout, CI, publishing workflow, license, and
   citation file.
 
-[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.13...HEAD
+[Unreleased]: https://github.com/jmcmeen/sars/compare/v0.11.14...HEAD
+[0.11.14]: https://github.com/jmcmeen/sars/compare/v0.11.13...v0.11.14
 [0.11.13]: https://github.com/jmcmeen/sars/compare/v0.11.12...v0.11.13
 [0.11.12]: https://github.com/jmcmeen/sars/compare/v0.11.11...v0.11.12
 [0.11.11]: https://github.com/jmcmeen/sars/compare/v0.11.10...v0.11.11
