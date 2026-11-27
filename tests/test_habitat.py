@@ -264,3 +264,17 @@ def test_screened_starts_find_the_full_grids_optimum(mod_type):
     screened = sars.sar_countryside(merged, **args)
     full = sars.sar_countryside(merged, n_starts=None, **args)
     np.testing.assert_allclose(screened.params["rss"], full.params["rss"], rtol=1e-6)
+
+
+@pytest.mark.parametrize(("grid_start", "k"), [("partial", 7), ("exhaustive", 5), ("none", 14)])
+def test_countryside_refuses_a_grid_too_large_to_build(grid_start, k):
+    import numpy as np
+    import pandas as pd
+
+    rng = np.random.default_rng(0)
+    data = pd.DataFrame({f"h{i}": rng.uniform(1, 10, 12) for i in range(k)})
+    data["s"] = rng.integers(1, 20, 12)
+    with pytest.raises(ValueError, match="starting values"):
+        sars.sar_countryside(
+            data, habitats=[f"h{i}" for i in range(k)], species=["s"], grid_start=grid_start
+        )

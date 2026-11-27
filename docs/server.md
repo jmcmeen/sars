@@ -27,7 +27,7 @@ with `--json`: `{sars, command, ok, result | error, warnings}`. The envelope's
 | Endpoint | Does what this command does |
 |---|---|
 | `GET /v1/version` | The `sars` and API versions (no token needed) |
-| `GET /v1/datasets` | `sars datasets` |
+| `GET /v1/datasets` | `sars datasets`: the datasets, and the other bundled `tables` |
 | `POST /v1/fit` | `sars fit` |
 | `POST /v1/average` | `sars average` |
 | `POST /v1/threshold` | `sars threshold` |
@@ -36,7 +36,12 @@ with `--json`: `{sars, command, ok, result | error, warnings}`. The envelope's
 | `POST /v1/many` | `sars many` (`datasets`: name to data, or `bundled`: names) |
 | `POST /v1/loglog` | `sars loglog` |
 | `POST /v1/ci` | `sars ci` |
-| `POST /v1/predict` | `sars predict`, from a saved result |
+| `POST /v1/predict` | `sars predict`, from a saved result (`time`: island ages, for a general dynamic model) |
+| `POST /v1/gdm` | `sars gdm` |
+| `POST /v1/habitat` | `sars habitat` |
+| `POST /v1/countryside` | `sars countryside` |
+| `POST /v1/coleman` | `sars coleman` |
+| `POST /v1/effort` | `sars effort` |
 
 The request bodies are in the [OpenAPI document](api/openapi.json), which a running server
 also serves at `/docs` and `/openapi.json`.
@@ -61,6 +66,35 @@ sites, 50 model names, 1,000 loss scenarios and 100,000 bootstrap resamples. To 
 ```json
 {"result": {"sars_json": 1, "sars_version": "...", "object": {...}}, "areas": [1, 100]}
 ```
+
+### Other tables
+
+The analyses that read more than area and richness take their own `data` (see the command
+line's [Other tables](cli.md#other-tables)):
+
+| Endpoint | `data` | Bundled `dataset` |
+|---|---|---|
+| `/v1/gdm` | `area`, `species` and `time` (island age), a value per island | none |
+| `/v1/habitat` | `area`, `habitats` and `species`, a value per island | `habitat` |
+| `/v1/countryside` | `habitats` and `species`: each a mapping of name to a value per site (the area of each habitat, the richness of each species group) | `countryside` |
+| `/v1/coleman`, `/v1/effort` | `sites` (names), `counts` (a row per species, a count per site), and optionally `species` (names) and `areas` (a value per site, which `coleman` needs) | `xu_abundance`, with its sites' areas |
+
+```console
+$ curl -s localhost:8765/v1/coleman -H 'Content-Type: application/json' -d '{
+    "data": {"sites": ["a", "b", "c"], "areas": [1, 4, 0.5],
+             "species": ["wren", "robin", "finch"],
+             "counts": [[10, 40, 3], [5, 20, 0], [1, 9, 2]]},
+    "n_sim": 999, "seed": 1}'
+```
+
+Counts go in with species in rows only; the command line's other layouts are for files.
+`effort` returns its table as `result.sites`, a row per site. An abundance table holds up
+to 1,000,000 counts; a countryside table up to 50 habitats and 50 species groups, and
+1,000,000 values. The countryside model's starting grid grows with every habitat, so it
+takes at most 6 on the default grid (see [`sar_countryside`](api/habitat.md)), and the
+exhaustive grid or `"n_starts": null` can run for minutes. To predict
+from a saved general dynamic model, send the island ages as `time`: one per area, or one
+for all.
 
 ## Running it safely
 

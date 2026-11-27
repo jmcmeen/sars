@@ -134,6 +134,10 @@ $ sars effort counts.csv --areas islands.csv --base size --level 100 > standardi
 `coleman --save` saves the fit; `sars predict` then gives the richness expected under
 random placement at an area. `effort` has no `--save`: its result is the table.
 
+The countryside model's starting grid holds every combination of each habitat's values,
+so it takes at most 6 habitats on the default grid, 4 with `--grid-start exhaustive` and
+13 with `--grid-start none`.
+
 `sars predict` doesn't predict from a saved habitat or countryside result, since they
 need more than areas: load the saved file in Python and call its `predict`.
 

@@ -10,6 +10,26 @@ reconstructed from the commit history and the
 
 ## [Unreleased]
 
+### Added
+
+- HTTP endpoints for the commands that read more than area and richness:
+  `POST /v1/gdm`, `/v1/habitat`, `/v1/countryside`, `/v1/coleman` and
+  `/v1/effort`, each running its command's operation on inline data or the
+  bundled table. `POST /v1/predict` takes `time`, the island ages a saved
+  general dynamic model needs, and `GET /v1/datasets` lists the bundled
+  tables beside the datasets.
+
+### Fixed
+
+- `sar_countryside` refuses more habitats than its starting grid can hold (6
+  on the default grid, 4 on the exhaustive, 13 with `grid_start="none"`)
+  instead of building a grid that exhausts memory: the grid has every
+  combination of each habitat's starting values, before `n_starts` chooses
+  among them.
+- `sars coleman` refuses a simulation test too large to hold in memory
+  (simulations times sites), and `sars effort` refuses site areas that
+  aren't positive numbers.
+
 ## [0.11.13] - 2026-11-26
 
 ### Added
