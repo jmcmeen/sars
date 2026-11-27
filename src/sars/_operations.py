@@ -66,6 +66,9 @@ MAX_RESAMPLE_VALUES = 200_000_000
 
 # The most simulated placements a Coleman test may run.
 MAX_SIMULATIONS = 1_000_000
+# The most simulated richness values it may hold at once (simulations times
+# sites): 50 million, under a gigabyte with the counts drawn beside them.
+MAX_SIMULATED_VALUES = 50_000_000
 
 
 def _check_resamples(n_boot: int, n: int) -> None:
@@ -675,6 +678,13 @@ def coleman(
         )
     if seed is not None and seed < 0:
         raise InputError(f"The seed can't be negative, got {seed}.")
+    n_sites = len(areas)
+    if n_sim * n_sites > MAX_SIMULATED_VALUES:
+        raise InputError(
+            f"{n_sim} simulations of {n_sites} sites is more than the "
+            f"{MAX_SIMULATED_VALUES:,} simulated values a test here may hold; use fewer "
+            "simulations."
+        )
     fit = sars.coleman(abundance, list(areas))
     test = fit.placement_test(n_sim=n_sim, rng=np.random.default_rng(seed)) if n_sim else None
     return fit, test
@@ -709,6 +719,8 @@ def effort(
 
     if level is not None and not math.isfinite(level):
         raise InputError(f"The level must be a finite number, got {level}.")
+    if areas is not None and not all(math.isfinite(a) and a > 0 for a in areas):
+        raise InputError("Site areas must be positive numbers.")
     table = sars.standardised_richness(
         abundance, area=None if areas is None else list(areas), base=base, level=level
     )

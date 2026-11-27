@@ -37,7 +37,7 @@
             "description": "the sites' names",
             "items": {
               "maxLength": 100,
-              "minLength": 1,
+              "pattern": "^\\S(.*\\S)?$",
               "type": "string"
             },
             "maxItems": 100000,
@@ -50,7 +50,7 @@
               {
                 "items": {
                   "maxLength": 100,
-                  "minLength": 1,
+                  "pattern": "^\\S(.*\\S)?$",
                   "type": "string"
                 },
                 "maxItems": 100000,
@@ -512,37 +512,39 @@
         "description": "Per site: the area of each habitat and the richness of each species\ngroup, each by name.",
         "properties": {
           "habitats": {
-            "additionalProperties": {
-              "items": {
-                "type": "number"
-              },
-              "maxItems": 100000,
-              "minItems": 1,
-              "type": "array"
-            },
-            "maxProperties": 200,
+            "maxProperties": 50,
             "minProperties": 1,
+            "patternProperties": {
+              "^\\S(.*\\S)?$": {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 100000,
+                "minItems": 1,
+                "type": "array"
+              }
+            },
             "propertyNames": {
-              "maxLength": 100,
-              "minLength": 1
+              "maxLength": 100
             },
             "title": "Habitats",
             "type": "object"
           },
           "species": {
-            "additionalProperties": {
-              "items": {
-                "type": "number"
-              },
-              "maxItems": 100000,
-              "minItems": 1,
-              "type": "array"
-            },
-            "maxProperties": 200,
+            "maxProperties": 50,
             "minProperties": 1,
+            "patternProperties": {
+              "^\\S(.*\\S)?$": {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 100000,
+                "minItems": 1,
+                "type": "array"
+              }
+            },
             "propertyNames": {
-              "maxLength": 100,
-              "minLength": 1
+              "maxLength": 100
             },
             "title": "Species",
             "type": "object"

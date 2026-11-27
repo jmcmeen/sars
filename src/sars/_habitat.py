@@ -395,6 +395,10 @@ _GRIDS: dict[str, list[float | None]] = {
     "exhaustive": [1e-10, 1e-8, 1e-6, 1e-4, 0.01, 1.0, 1000.0, 1e4, 1e5, 1e6, 1e7, 1e8, 1e10, None],
     "none": [1e-6, 1.0, None],
 }
+# The most starting values a grid may hold. Every combination is built before
+# any is fitted from: 8 values per habitat on the partial grid (a million at
+# 6 habitats, about 400 MB), 14 on the exhaustive, 3 with "none".
+MAX_STARTS = 2_000_000
 _Z_GRIDS: dict[str, list[float | None]] = {
     "partial": [0.01, 0.1, 0.7, None],
     "exhaustive": [0.001, 0.01, 0.1, 0.25, 0.5, 1.0, None],
@@ -555,8 +559,10 @@ def sar_countryside(
     Raises
     ------
     ValueError
-        For unknown columns or arguments, non-finite values, or a site with
-        no area under the logarithmic model.
+        For unknown columns or arguments, non-finite values, a site with no
+        area under the logarithmic model, or more habitats than the starting
+        grid allows (6 on the "partial" grid, 4 on "exhaustive", 13 with
+        "none": the grid has every combination of each habitat's values).
 
     Warns
     -----
@@ -594,6 +600,18 @@ def sar_countryside(
         isinstance(n_starts, bool) or not isinstance(n_starts, int) or n_starts < 1
     ):
         raise ValueError(f"n_starts must be a positive whole number or None, got {n_starts!r}.")
+    n_grid = len(_GRIDS[grid_start]) ** len(habitats) * len(_Z_GRIDS[grid_start])
+    if n_grid > MAX_STARTS:
+        smaller = (
+            "; grid_start='none' tries fewer"
+            if grid_start != "none" and 3 ** len(habitats) <= MAX_STARTS
+            else ""
+        )
+        raise ValueError(
+            f"grid_start={grid_start!r} with {len(habitats)} habitats is a grid of "
+            f"{n_grid:,} starting values, more than the {MAX_STARTS:,} this fits from"
+            f"{smaller}. Combine habitats to fit fewer."
+        )
     frame = data[[*habitats, *species]].apply(pd.to_numeric, errors="coerce")
     values = frame.to_numpy(dtype=float)
     if not np.all(np.isfinite(values)):

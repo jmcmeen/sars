@@ -35,12 +35,14 @@ MAX_JOBS = 64
 IC = Literal["AICc", "AIC", "BIC"]
 # The bundled datasets (sars._operations.DATASETS; a test keeps the two the same).
 Dataset = Literal["galap", "gala", "aegean", "aegean2", "niering", "schrader", "xu"]
-# A column, site or species name.
-Name = Annotated[str, Field(min_length=1, max_length=100)]
+# A column, site or species name: no space at either end, so two names can't
+# differ only by one.
+Name = Annotated[str, Field(pattern=r"^\S(.*\S)?$", max_length=100)]
 Column = Annotated[list[float], Field(min_length=1, max_length=MAX_ROWS)]
-# The most counts an abundance table may hold (species times sites).
+# The most values an abundance or countryside table may hold (rows times
+# columns), and the most habitats or species groups.
 MAX_COUNTS = 1_000_000
-MAX_COLUMNS = 200
+MAX_COLUMNS = 50
 # A model name: letters and digits only, so it can't be read as a flag.
 ModelName = Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9]*$", max_length=32)]
 Models = Annotated[list[ModelName], Field(min_length=1, max_length=MAX_MODELS)]
@@ -285,8 +287,11 @@ class CountrysideData(BaseModel):
     def _consistent(self) -> CountrysideData:
         if set(self.habitats) & set(self.species):
             raise ValueError("a habitat and a species group can't share a name")
-        if len({len(v) for v in [*self.habitats.values(), *self.species.values()]}) != 1:
+        columns = [*self.habitats.values(), *self.species.values()]
+        if len({len(v) for v in columns}) != 1:
             raise ValueError("every habitat and species group must have a value per site")
+        if len(columns) * len(columns[0]) > MAX_COUNTS:
+            raise ValueError(f"at most {MAX_COUNTS} values (sites times columns)")
         return self
 
 

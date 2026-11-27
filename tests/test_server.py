@@ -552,3 +552,57 @@ def test_other_table_input_errors_are_422_with_an_envelope(client):
     assert response.status_code == 422 and response.json()["ok"] is False
     response = client.post("/v1/effort", json={"data": COUNTS, "level": 7})
     assert response.status_code == 422 and "between 0 and 1" in response.json()["error"]["message"]
+
+
+def test_resource_bounds_on_the_other_tables(client):
+    # The countryside grid has every combination of the habitats' starting values.
+    many = {
+        "habitats": {f"h{i}": [1.0, 2.0, 3.0, 4.0] for i in range(9)},
+        "species": {"s": [1.0, 2.0, 3.0, 4.0]},
+    }
+    response = client.post("/v1/countryside", json={"data": many})
+    assert response.status_code == 422
+    assert "starting values" in response.json()["error"]["message"]
+    # Simulations times sites.
+    wide = {"sites": [f"s{i}" for i in range(2000)], "counts": [[1] * 2000, [2] * 2000]}
+    wide["areas"] = [1.0] * 2000
+    response = client.post("/v1/coleman", json={"data": wide, "n_sim": 100_000})
+    assert response.status_code == 422
+    assert "simulated values" in response.json()["error"]["message"]
+
+
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [
+        ("/v1/effort", {"data": {**COUNTS, "sites": ["a", " a", "c"]}}),
+        ("/v1/effort", {"data": {**COUNTS, "species": ["w", " ", "f", "c"]}}),
+        ("/v1/countryside", {"data": {"habitats": {" x": [1, 2]}, "species": {"s": [1, 2]}}}),
+        (
+            "/v1/countryside",
+            {
+                "data": {
+                    "habitats": {f"h{i}": [1, 2] for i in range(51)},
+                    "species": {"s": [1, 2]},
+                }
+            },
+        ),
+    ],
+)
+def test_padded_names_and_too_many_columns_are_refused(client, path, body):
+    response = client.post(path, json=body)
+    assert response.status_code == 422 and "detail" in response.json()
+
+
+def test_effort_refuses_areas_that_are_not_positive(client):
+    response = client.post("/v1/effort", json={"data": {**COUNTS, "areas": [0, 4, 0.5]}})
+    assert response.status_code == 422
+    assert "positive numbers" in response.json()["error"]["message"]
+
+
+def test_a_gdm_prediction_needs_an_age_per_area(client):
+    saved = client.post("/v1/gdm", json={"data": AGES}).json()["result"]["object"]
+    body = {"result": saved, "areas": [1, 2, 3], "time": [1, 2]}
+    response = client.post("/v1/predict", json=body)
+    assert (
+        response.status_code == 422 and "2 ages for 3 areas" in response.json()["error"]["message"]
+    )

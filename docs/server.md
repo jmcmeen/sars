@@ -89,7 +89,10 @@ $ curl -s localhost:8765/v1/coleman -H 'Content-Type: application/json' -d '{
 
 Counts go in with species in rows only; the command line's other layouts are for files.
 `effort` returns its table as `result.sites`, a row per site. An abundance table holds up
-to 1,000,000 counts, and a countryside table up to 200 columns of each kind. To predict
+to 1,000,000 counts; a countryside table up to 50 habitats and 50 species groups, and
+1,000,000 values. The countryside model's starting grid grows with every habitat, so it
+takes at most 6 on the default grid (see [`sar_countryside`](api/habitat.md)), and the
+exhaustive grid or `"n_starts": null` can run for minutes. To predict
 from a saved general dynamic model, send the island ages as `time`: one per area, or one
 for all.
 
